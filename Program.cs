@@ -10,11 +10,12 @@ class Program
         var todoTaskList = new TodoTaskList();
 
         // initialize subcommands
-        rootCommand.Subcommands.Add(AddCommand.CreateAddCommand(todoTaskList));
-        rootCommand.Subcommands.Add(ListCommand.CreateListCommand(todoTaskList));
-        rootCommand.Subcommands.Add(CompleteCommand.CreateCompleteCommand(todoTaskList));
-        rootCommand.Subcommands.Add(DeleteCommand.CreateDeleteCommand(todoTaskList));
-
+        rootCommand.Add(AddCommand.CreateAddCommand(todoTaskList));
+        rootCommand.Add(ListCommand.CreateListCommand(todoTaskList));
+        rootCommand.Add(DeleteCommand.CreateDeleteCommand(todoTaskList));
+        var (checkCommand, uncheckCommand) = CheckCommand.CreateCheckCommands(todoTaskList);
+        rootCommand.Add(checkCommand);
+        rootCommand.Add(uncheckCommand);
         return rootCommand.Parse(args).Invoke();
     }
 }

@@ -26,15 +26,17 @@ class TodoTaskList
 
     public void AddTodoTask(TodoTask todoTask)
     {
-        TodoTasks = [.. TodoTasks, todoTask];
+        TodoTasks = [todoTask, .. TodoTasks];
         Save();
     }
-    private TodoTask? GetTodoTaskById(string taskId)
+
+    public TodoTask? GetTodoTaskById(string taskId)
     {
         var todoTask = TodoTasks.FirstOrDefault((task) => task?.Id == taskId, null);
         return todoTask;
     }
-    public void CompleteTask(string taskId)
+
+    public void CheckTask(string taskId)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
@@ -43,10 +45,23 @@ class TodoTaskList
             return;
         }
         DeleteTask(taskId, false);
-        var completedTask = todoTask with { IsComplete = true };
-        AddTodoTask(completedTask);
-
+        var checkedTask = todoTask.Check();
+        AddTodoTask(checkedTask);
     }
+
+    public void UncheckTask(string taskId)
+    {
+        var todoTask = GetTodoTaskById(taskId);
+        if (todoTask == null)
+        {
+            Console.WriteLine($"Could not find task with id {taskId}");
+            return;
+        }
+        DeleteTask(taskId);
+        var uncheckedTask = todoTask.UnCheck();
+        AddTodoTask(uncheckedTask);
+    }
+
     public void DeleteTask(string taskId, bool save = true)
     {
         var originalLength = TodoTasks.Length;
@@ -60,6 +75,7 @@ class TodoTaskList
 
         if (save) Save();
     }
+
     public void ListTodoTasks()
     {
         if (TodoTasks.Length == 0)
@@ -69,18 +85,18 @@ class TodoTaskList
         }
         foreach (var td in TodoTasks.OrderBy((td) => td.CreatedAt))
         {
-            Console.WriteLine($"({td.Id}) {(td.IsComplete ? "[x]" : "[ ]")} - {td.Description}");
+            Console.WriteLine($"({td.Id}) {(td.IsChecked ? "[x]" : "[ ]")} - {td.Description}");
         }
     }
 
-    void Save()
+    private void Save()
     {
         EnsureFilePath();
         var serialized = JsonSerializer.Serialize(TodoTasks);
         File.WriteAllText(filePath, serialized);
     }
 
-    static void EnsureFilePath()
+    private static void EnsureFilePath()
     {
         if (!Directory.Exists(directory))
         {
@@ -94,5 +110,4 @@ class TodoTaskList
             File.WriteAllText(filePath, "[]");
         }
     }
-
 }
