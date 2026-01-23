@@ -2,7 +2,7 @@ namespace cli_tasker;
 
 using System.CommandLine;
 
-class AddCommand
+static class AddCommand
 {
 
     public static Command CreateAddCommand(TodoTaskList taskList)

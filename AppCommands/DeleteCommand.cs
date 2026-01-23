@@ -2,7 +2,7 @@ namespace cli_tasker;
 
 using System.CommandLine;
 
-class DeleteCommand
+static class DeleteCommand
 {
     public static Command CreateDeleteCommand(TodoTaskList todoTaskList)
     {

@@ -43,25 +43,24 @@ class TodoTaskList
             return;
         }
         DeleteTask(taskId, false);
-        var completedTask = new TodoTask(todoTask.Id, todoTask.Description, true, todoTask.CreatedAt);
+        var completedTask = todoTask with { IsComplete = true };
         AddTodoTask(completedTask);
 
     }
     public void DeleteTask(string taskId, bool save = true)
     {
-        var exists = GetTodoTaskById(taskId);
-        if (exists == null)
+        var originalLength = TodoTasks.Length;
+        TodoTasks = [.. TodoTasks.Where(task => task.Id != taskId)];
+
+        if (TodoTasks.Length == originalLength)
         {
             Console.WriteLine($"Could not find task with id {taskId}");
             return;
         }
-        TodoTasks = [.. TodoTasks.Where(task => task.Id != taskId)];
-        if (save)
-        {
-            Save();
-        }
+
+        if (save) Save();
     }
-    public void Print()
+    public void ListTodoTasks()
     {
         if (TodoTasks.Length == 0)
         {

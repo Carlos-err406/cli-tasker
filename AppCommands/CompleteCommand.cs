@@ -3,7 +3,7 @@ namespace cli_tasker;
 using System.CommandLine;
 
 
-class CompleteCommand
+static class CompleteCommand
 {
     public static Command CreateCompleteCommand(TodoTaskList todoTaskList)
     {   
