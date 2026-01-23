@@ -4,7 +4,7 @@ using System.Text.Json;
 
 class TodoTaskList
 {
-    public TodoTask[] TodoTasks { get; set; } = [];
+    private TodoTask[] TodoTasks { get; set; } = [];
     private static readonly string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "cli-tasker");
     private static readonly string filePath = Path.Combine(directory, "tasks.json");
 
@@ -21,6 +21,7 @@ class TodoTaskList
         {
             Console.WriteLine($"Error reading tasks file: {ex.Message}");
             TodoTasks = [];
+        
         }
     }
 
