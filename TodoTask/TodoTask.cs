@@ -12,4 +12,8 @@ record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedA
     {
         return this with { IsChecked = false };
     }
+    public TodoTask Rename(string newDescription)
+    {
+        return this with { Description = newDescription };
+    }
 }

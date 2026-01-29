@@ -4,26 +4,42 @@ using System.CommandLine;
 
 static class DeleteCommand
 {
-    public static Command CreateDeleteCommand(TodoTaskList todoTaskList)
+    public static (Command, Command) CreateDeleteCommands(Option<string?> listOption)
     {
-        var deleteCommand = new Command("delete", "Delete a task");
-        var taskIdArg = new Argument<string>("taskId")
+        var deleteCommand = new Command("delete", "Delete one or more tasks");
+        var clearCommand = new Command("clear", "Delete all tasks");
+
+        var taskIdsArg = new Argument<string[]>("taskIds")
         {
-            Description="The id of the task to delete"
+            Description = "The id(s) of the task(s) to delete",
+            Arity = ArgumentArity.OneOrMore
         };
 
-        deleteCommand.Arguments.Add(taskIdArg);
-        deleteCommand.SetAction(parseResult =>
+        deleteCommand.Arguments.Add(taskIdsArg);
+
+        deleteCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var taskId = parseResult.GetValue(taskIdArg);
-            if(taskId == null)
+            var listName = parseResult.GetValue(listOption);
+            var todoTaskList = ListManager.GetTaskList(listName);
+
+            var taskIds = parseResult.GetValue(taskIdsArg);
+            if (taskIds == null || taskIds.Length == 0)
             {
-                Console.WriteLine("Task id is required to delete a task");
+                Console.WriteLine("At least one task id is required");
                 return;
             }
-            todoTaskList.DeleteTask(taskId);
-            Console.WriteLine($"Deleted task: {taskId}");
-        });
-        return deleteCommand;
+            todoTaskList.DeleteTasks(taskIds);
+        }));
+
+        clearCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
+        {
+            var listName = parseResult.GetValue(listOption);
+            var todoTaskList = ListManager.GetTaskList(listName);
+
+            todoTaskList.ClearTasks();
+            Console.WriteLine("Cleared all tasks");
+        }));
+
+        return (deleteCommand, clearCommand);
     }
 }

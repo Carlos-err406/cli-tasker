@@ -4,41 +4,43 @@ using System.CommandLine;
 
 static class CheckCommand
 {
-    public static (Command, Command) CreateCheckCommands(TodoTaskList todoTaskList)
+    public static (Command, Command) CreateCheckCommands(Option<string?> listOption)
     {
-        var checkCommand = new Command("check", "Check a task");
-        var uncheckCommand = new Command("uncheck", "Uncheck a task");
+        var checkCommand = new Command("check", "Check one or more tasks");
+        var uncheckCommand = new Command("uncheck", "Uncheck one or more tasks");
 
-        var taskIdArg = new Argument<string>("taskId")
+        var taskIdsArg = new Argument<string[]>("taskIds")
         {
-            Description = "The id of the task to complete"
+            Description = "The id(s) of the task(s) to check/uncheck",
+            Arity = ArgumentArity.OneOrMore
         };
 
-        checkCommand.Arguments.Add(taskIdArg);
-        uncheckCommand.Arguments.Add(taskIdArg);
+        checkCommand.Arguments.Add(taskIdsArg);
+        uncheckCommand.Arguments.Add(taskIdsArg);
 
         void action(ParseResult parseResult, bool check)
         {
-            var taskId = parseResult.GetValue(taskIdArg);
-            if (taskId == null)
+            var listName = parseResult.GetValue(listOption);
+            var todoTaskList = ListManager.GetTaskList(listName);
+
+            var taskIds = parseResult.GetValue(taskIdsArg);
+            if (taskIds == null || taskIds.Length == 0)
             {
-                Console.Write("Task id is required to complete a task");
+                Console.WriteLine("At least one task id is required");
                 return;
             }
             if (check)
             {
-                todoTaskList.CheckTask(taskId);
-                Console.WriteLine($"Checked task: {taskId}");
+                todoTaskList.CheckTasks(taskIds);
             }
             else
             {
-                todoTaskList.UncheckTask(taskId);
-                Console.WriteLine($"Unchecked task: {taskId}");
+                todoTaskList.UncheckTasks(taskIds);
             }
         }
 
-        checkCommand.SetAction(parseResult => action(parseResult, true));
-        uncheckCommand.SetAction(parseResult => action(parseResult, false));
+        checkCommand.SetAction(CommandHelper.WithErrorHandling(parseResult => action(parseResult, true)));
+        uncheckCommand.SetAction(CommandHelper.WithErrorHandling(parseResult => action(parseResult, false)));
 
         return (checkCommand, uncheckCommand);
     }

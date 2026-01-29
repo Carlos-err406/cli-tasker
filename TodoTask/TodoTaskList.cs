@@ -5,12 +5,20 @@ using System.Text.Json;
 class TodoTaskList
 {
     private TodoTask[] TodoTasks { get; set; } = [];
-    private static readonly string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "cli-tasker");
-    private static readonly string filePath = Path.Combine(directory, "tasks.json");
+    private readonly string filePath;
 
-    public TodoTaskList()
+    public TodoTaskList(string? listName = null)
     {
-        EnsureFilePath();
+        var name = listName ?? ListManager.DefaultListName;
+        filePath = ListManager.GetFilePath(name);
+
+        ListManager.EnsureDirectory();
+
+        if (!File.Exists(filePath))
+        {
+            File.WriteAllText(filePath, "[]");
+        }
+
         try
         {
             var raw = File.ReadAllText(filePath);
@@ -21,7 +29,6 @@ class TodoTaskList
         {
             Console.WriteLine($"Error reading tasks file: {ex.Message}");
             TodoTasks = [];
-        
         }
     }
 
@@ -77,14 +84,105 @@ class TodoTaskList
         if (save) Save();
     }
 
-    public void ListTodoTasks()
+    public void DeleteTasks(string[] taskIds)
     {
-        if (TodoTasks.Length == 0)
+        foreach (var taskId in taskIds)
         {
-            Console.WriteLine("No tasks saved yet... use the add command to create one");
+            var originalLength = TodoTasks.Length;
+            TodoTasks = [.. TodoTasks.Where(task => task.Id != taskId)];
+
+            if (TodoTasks.Length == originalLength)
+            {
+                Console.WriteLine($"Could not find task with id {taskId}");
+            }
+            else
+            {
+                Console.WriteLine($"Deleted task: {taskId}");
+            }
+        }
+        Save();
+    }
+
+    public void CheckTasks(string[] taskIds)
+    {
+        foreach (var taskId in taskIds)
+        {
+            var todoTask = GetTodoTaskById(taskId);
+            if (todoTask == null)
+            {
+                Console.WriteLine($"Could not find task with id {taskId}");
+                continue;
+            }
+            DeleteTask(taskId, false);
+            var checkedTask = todoTask.Check();
+            TodoTasks = [checkedTask, .. TodoTasks];
+            Console.WriteLine($"Checked task: {taskId}");
+        }
+        Save();
+    }
+
+    public void UncheckTasks(string[] taskIds)
+    {
+        foreach (var taskId in taskIds)
+        {
+            var todoTask = GetTodoTaskById(taskId);
+            if (todoTask == null)
+            {
+                Console.WriteLine($"Could not find task with id {taskId}");
+                continue;
+            }
+            DeleteTask(taskId, false);
+            var uncheckedTask = todoTask.UnCheck();
+            TodoTasks = [uncheckedTask, .. TodoTasks];
+            Console.WriteLine($"Unchecked task: {taskId}");
+        }
+        Save();
+    }
+
+    public void ClearTasks()
+    {
+        TodoTasks = [];
+        Save();
+    }
+
+    public void RenameTask(string taskId, string newDescription)
+    {
+        var todoTask = GetTodoTaskById(taskId);
+        if (todoTask == null)
+        {
+            Console.WriteLine($"Could not find task with id {taskId}");
             return;
         }
-        foreach (var td in TodoTasks.OrderBy((td) => td.CreatedAt))
+        DeleteTask(taskId, false);
+        var renamedTask = todoTask.Rename(newDescription);
+        TodoTasks = [renamedTask, .. TodoTasks];
+        Console.WriteLine($"Renamed task: {taskId}");
+        Save();
+    }
+
+    public void ListTodoTasks(bool? filterChecked = null)
+    {
+        var filteredTasks = filterChecked switch
+        {
+            true => TodoTasks.Where(td => td.IsChecked),
+            false => TodoTasks.Where(td => !td.IsChecked),
+            null => TodoTasks
+        };
+
+        var taskList = filteredTasks.OrderBy(td => td.CreatedAt).ToArray();
+
+        if (taskList.Length == 0)
+        {
+            var message = filterChecked switch
+            {
+                true => "No checked tasks found",
+                false => "No unchecked tasks found",
+                null => "No tasks saved yet... use the add command to create one"
+            };
+            Console.WriteLine(message);
+            return;
+        }
+        foreach (var td in taskList)
         {
             Console.WriteLine($"({td.Id}) {(td.IsChecked ? "[x]" : "[ ]")} - {td.Description}");
         }
@@ -92,23 +190,8 @@ class TodoTaskList
 
     private void Save()
     {
-        EnsureFilePath();
+        ListManager.EnsureDirectory();
         var serialized = JsonSerializer.Serialize(TodoTasks);
         File.WriteAllText(filePath, serialized);
-    }
-
-    private static void EnsureFilePath()
-    {
-        if (!Directory.Exists(directory))
-        {
-            Console.WriteLine($"App directory does not exist ({directory}), creating...");
-            Directory.CreateDirectory(directory);
-        }
-
-        if (!File.Exists(filePath))
-        {
-            Console.WriteLine($"Tasks file does not exist ({filePath}), creating empty tasks file...");
-            File.WriteAllText(filePath, "[]");
-        }
     }
 }

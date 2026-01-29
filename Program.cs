@@ -1,4 +1,4 @@
-﻿namespace cli_tasker;
+namespace cli_tasker;
 
 using System.CommandLine;
 
@@ -7,15 +7,26 @@ class Program
     static int Main(string[] args)
     {
         var rootCommand = new RootCommand("CLI task manager");
-        var todoTaskList = new TodoTaskList();
 
-        // initialize subcommands
-        rootCommand.Add(AddCommand.CreateAddCommand(todoTaskList));
-        rootCommand.Add(ListCommand.CreateListCommand(todoTaskList));
-        rootCommand.Add(DeleteCommand.CreateDeleteCommand(todoTaskList));
-        var (checkCommand, uncheckCommand) = CheckCommand.CreateCheckCommands(todoTaskList);
+        // Global option for selecting which list to use
+        var listOption = new Option<string?>("--list", "-l")
+        {
+            Description = "The list to use (default: tasks)"
+        };
+        rootCommand.Options.Add(listOption);
+
+        // Initialize subcommands
+        rootCommand.Add(AddCommand.CreateAddCommand(listOption));
+        rootCommand.Add(ListCommand.CreateListCommand(listOption));
+        var (deleteCommand, clearCommand) = DeleteCommand.CreateDeleteCommands(listOption);
+        rootCommand.Add(deleteCommand);
+        rootCommand.Add(clearCommand);
+        var (checkCommand, uncheckCommand) = CheckCommand.CreateCheckCommands(listOption);
         rootCommand.Add(checkCommand);
         rootCommand.Add(uncheckCommand);
+        rootCommand.Add(RenameCommand.CreateRenameCommand(listOption));
+        rootCommand.Add(ListsCommand.CreateListsCommand());
+
         return rootCommand.Parse(args).Invoke();
     }
 }
