@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using Spectre.Console;
 
 static class ListsCommand
 {
@@ -16,15 +17,21 @@ static class ListsCommand
 
             if (lists.Length == 0)
             {
-                Console.WriteLine("No lists found. Use 'tasker lists create <name>' to create one.");
+                Output.Info("No lists found. Use 'tasker lists create <name>' to create one.");
                 return;
             }
 
-            Console.WriteLine("Available lists:");
+            Output.Info("Available lists:");
             foreach (var list in lists)
             {
-                var marker = list == selected ? " (selected)" : "";
-                Console.WriteLine($"  {list}{marker}");
+                if (list == selected)
+                {
+                    Output.Markup($"  [bold]{Markup.Escape(list)} (selected)[/]");
+                }
+                else
+                {
+                    Output.Info($"  {list}");
+                }
             }
         });
 
@@ -51,12 +58,12 @@ static class ListsCommand
             var name = parseResult.GetValue(nameArg);
             if (name == null)
             {
-                Console.WriteLine("List name is required");
+                Output.Error("List name is required");
                 return;
             }
 
             ListManager.CreateList(name);
-            Console.WriteLine($"Created list '{name}'");
+            Output.Success($"Created list '{name}'");
         }));
 
         return createCommand;
@@ -76,12 +83,12 @@ static class ListsCommand
             var name = parseResult.GetValue(nameArg);
             if (name == null)
             {
-                Console.WriteLine("List name is required");
+                Output.Error("List name is required");
                 return;
             }
 
             ListManager.DeleteList(name);
-            Console.WriteLine($"Deleted list '{name}'");
+            Output.Success($"Deleted list '{name}'");
         }));
 
         return deleteCommand;
@@ -107,12 +114,12 @@ static class ListsCommand
             var newName = parseResult.GetValue(newNameArg);
             if (oldName == null || newName == null)
             {
-                Console.WriteLine("Both old and new list names are required");
+                Output.Error("Both old and new list names are required");
                 return;
             }
 
             ListManager.RenameList(oldName, newName);
-            Console.WriteLine($"Renamed list '{oldName}' to '{newName}'");
+            Output.Success($"Renamed list '{oldName}' to '{newName}'");
         }));
 
         return renameCommand;
@@ -132,7 +139,7 @@ static class ListsCommand
             var name = parseResult.GetValue(nameArg);
             if (name == null)
             {
-                Console.WriteLine("List name is required");
+                Output.Error("List name is required");
                 return;
             }
 
@@ -142,7 +149,7 @@ static class ListsCommand
             }
 
             AppConfig.SetSelectedList(name);
-            Console.WriteLine($"Selected list '{name}'");
+            Output.Success($"Selected list '{name}'");
         }));
 
         return selectCommand;

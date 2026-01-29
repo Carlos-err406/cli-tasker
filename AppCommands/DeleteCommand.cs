@@ -25,7 +25,7 @@ static class DeleteCommand
             var taskIds = parseResult.GetValue(taskIdsArg);
             if (taskIds == null || taskIds.Length == 0)
             {
-                Console.WriteLine("At least one task id is required");
+                Output.Error("At least one task id is required");
                 return;
             }
             todoTaskList.DeleteTasks(taskIds);
@@ -37,7 +37,7 @@ static class DeleteCommand
             var todoTaskList = ListManager.GetTaskList(listName);
 
             todoTaskList.ClearTasks();
-            Console.WriteLine("Cleared all tasks");
+            Output.Success("Cleared all tasks");
         }));
 
         return (deleteCommand, clearCommand);

@@ -20,12 +20,12 @@ static class AddCommand
             var description = parseResult.GetValue(descriptionArg);
             if (description == null)
             {
-                Console.WriteLine("Need a description to create a new task...");
+                Output.Error("Need a description to create a new task...");
                 return;
             }
             var task = TodoTask.CreateTodoTask(description);
             taskList.AddTodoTask(task);
-            Console.WriteLine("Task saved. Use the list command to see your tasks");
+            Output.Success("Task saved. Use the list command to see your tasks");
         }));
         return addCommand;
     }

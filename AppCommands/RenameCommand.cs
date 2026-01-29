@@ -26,7 +26,7 @@ static class RenameCommand
             var description = parseResult.GetValue(descriptionArg);
             if (taskId == null || description == null)
             {
-                Console.WriteLine("Need both a task ID and a new description...");
+                Output.Error("Task ID and new description are both required");
                 return;
             }
             taskList.RenameTask(taskId, description);

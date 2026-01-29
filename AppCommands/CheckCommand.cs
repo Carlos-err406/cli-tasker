@@ -26,7 +26,7 @@ static class CheckCommand
             var taskIds = parseResult.GetValue(taskIdsArg);
             if (taskIds == null || taskIds.Length == 0)
             {
-                Console.WriteLine("At least one task id is required");
+                Output.Error("At least one task id is required");
                 return;
             }
             if (check)

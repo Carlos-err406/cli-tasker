@@ -4,6 +4,8 @@ using System.Text.Json;
 
 static class AppConfig
 {
+    public const int TaskPrefixLength = 12; // Length of "(xxx) [ ] - "
+
     private static readonly string ConfigPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "cli-tasker",

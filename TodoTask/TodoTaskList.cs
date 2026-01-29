@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.Text.Json;
+using Spectre.Console;
 
 class TodoTaskList
 {
@@ -27,7 +28,7 @@ class TodoTaskList
         }
         catch (JsonException ex)
         {
-            Console.WriteLine($"Error reading tasks file: {ex.Message}");
+            Output.Error($"Error reading tasks file: {ex.Message}");
             TodoTasks = [];
         }
     }
@@ -49,7 +50,7 @@ class TodoTaskList
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
         {
-            Console.WriteLine($"Could not find task with id {taskId}");
+            Output.Error($"Could not find task with id {taskId}");
             return;
         }
         DeleteTask(taskId, false);
@@ -62,7 +63,7 @@ class TodoTaskList
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
         {
-            Console.WriteLine($"Could not find task with id {taskId}");
+            Output.Error($"Could not find task with id {taskId}");
             return;
         }
         DeleteTask(taskId);
@@ -77,7 +78,7 @@ class TodoTaskList
 
         if (TodoTasks.Length == originalLength)
         {
-            Console.WriteLine($"Could not find task with id {taskId}");
+            Output.Error($"Could not find task with id {taskId}");
             return;
         }
 
@@ -93,11 +94,11 @@ class TodoTaskList
 
             if (TodoTasks.Length == originalLength)
             {
-                Console.WriteLine($"Could not find task with id {taskId}");
+                Output.Error($"Could not find task with id {taskId}");
             }
             else
             {
-                Console.WriteLine($"Deleted task: {taskId}");
+                Output.Success($"Deleted task: {taskId}");
             }
         }
         Save();
@@ -110,13 +111,13 @@ class TodoTaskList
             var todoTask = GetTodoTaskById(taskId);
             if (todoTask == null)
             {
-                Console.WriteLine($"Could not find task with id {taskId}");
+                Output.Error($"Could not find task with id {taskId}");
                 continue;
             }
             DeleteTask(taskId, false);
             var checkedTask = todoTask.Check();
             TodoTasks = [checkedTask, .. TodoTasks];
-            Console.WriteLine($"Checked task: {taskId}");
+            Output.Success($"Checked task: {taskId}");
         }
         Save();
     }
@@ -128,13 +129,13 @@ class TodoTaskList
             var todoTask = GetTodoTaskById(taskId);
             if (todoTask == null)
             {
-                Console.WriteLine($"Could not find task with id {taskId}");
+                Output.Error($"Could not find task with id {taskId}");
                 continue;
             }
             DeleteTask(taskId, false);
             var uncheckedTask = todoTask.UnCheck();
             TodoTasks = [uncheckedTask, .. TodoTasks];
-            Console.WriteLine($"Unchecked task: {taskId}");
+            Output.Success($"Unchecked task: {taskId}");
         }
         Save();
     }
@@ -150,13 +151,13 @@ class TodoTaskList
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
         {
-            Console.WriteLine($"Could not find task with id {taskId}");
+            Output.Error($"Could not find task with id {taskId}");
             return;
         }
         DeleteTask(taskId, false);
         var renamedTask = todoTask.Rename(newDescription);
         TodoTasks = [renamedTask, .. TodoTasks];
-        Console.WriteLine($"Renamed task: {taskId}");
+        Output.Success($"Renamed task: {taskId}");
         Save();
     }
 
@@ -179,12 +180,21 @@ class TodoTaskList
                 false => "No unchecked tasks found",
                 null => "No tasks saved yet... use the add command to create one"
             };
-            Console.WriteLine(message);
+            Output.Info(message);
             return;
         }
         foreach (var td in taskList)
         {
-            Console.WriteLine($"({td.Id}) {(td.IsChecked ? "[x]" : "[ ]")} - {td.Description}");
+            var indent = new string(' ', AppConfig.TaskPrefixLength);
+            var lines = td.Description.Split('\n');
+            var firstLine = $"[bold]{Markup.Escape(lines[0])}[/]";
+            var restLines = lines.Length > 1
+                ? "\n" + indent + string.Join("\n" + indent, lines.Skip(1).Select(Markup.Escape))
+                : "";
+
+            var checkbox = td.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
+            var taskId = $"[dim]({td.Id})[/]";
+            Output.Markup($"{taskId} {checkbox} - {firstLine}{restLines}");
         }
     }
 

@@ -80,7 +80,7 @@ static partial class ListManager
         if (AppConfig.GetSelectedList() == name)
         {
             AppConfig.SetSelectedList(DefaultListName);
-            Console.WriteLine($"Note: '{name}' was the selected list. Selection reset to '{DefaultListName}'.");
+            Output.Warning($"Note: '{name}' was the selected list. Selection reset to '{DefaultListName}'.");
         }
     }
 

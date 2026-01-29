@@ -29,7 +29,7 @@ static class ListCommand
 
             if (showChecked && showUnchecked)
             {
-                Console.WriteLine("Cannot use both --checked and --unchecked at the same time");
+                Output.Error("Cannot use both --checked and --unchecked at the same time");
                 return;
             }
 

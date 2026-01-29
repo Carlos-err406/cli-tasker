@@ -14,7 +14,7 @@ static class CommandHelper
             }
             catch (TaskerException ex)
             {
-                Console.WriteLine($"Error: {ex.Message}");
+                Output.Error(ex.Message);
             }
         };
     }
