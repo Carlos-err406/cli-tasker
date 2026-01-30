@@ -26,6 +26,8 @@ class Program
         rootCommand.Add(uncheckCommand);
         rootCommand.Add(RenameCommand.CreateRenameCommand(listOption));
         rootCommand.Add(ListsCommand.CreateListsCommand());
+        rootCommand.Add(TrashCommand.CreateTrashCommand(listOption));
+        rootCommand.Add(SystemCommand.CreateSystemCommand());
 
         return rootCommand.Parse(args).Invoke();
     }
