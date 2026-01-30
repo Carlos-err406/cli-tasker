@@ -113,6 +113,13 @@ static partial class ListManager
         }
 
         File.Move(GetFilePath(oldName), GetFilePath(newName));
+
+        // Update selection if renaming the selected list
+        if (AppConfig.GetSelectedList() == oldName)
+        {
+            AppConfig.SetSelectedList(newName);
+            Output.Warning($"Note: '{oldName}' was the selected list. Selection updated to '{newName}'.");
+        }
     }
 
     // Setup
