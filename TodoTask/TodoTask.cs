@@ -1,9 +1,10 @@
 namespace cli_tasker;
 
 
-record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedAt)
+record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedAt, string ListName)
 {
-    public static TodoTask CreateTodoTask(string description) => new(Guid.NewGuid().ToString()[..3], description, false, DateTime.Now);
+    public static TodoTask CreateTodoTask(string description, string listName) =>
+        new(Guid.NewGuid().ToString()[..3], description, false, DateTime.Now, listName);
     public TodoTask Check()
     {
         return this with { IsChecked = true };
@@ -15,5 +16,9 @@ record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedA
     public TodoTask Rename(string newDescription)
     {
         return this with { Description = newDescription };
+    }
+    public TodoTask MoveToList(string listName)
+    {
+        return this with { ListName = listName };
     }
 }

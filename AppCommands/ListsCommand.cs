@@ -13,20 +13,20 @@ static class ListsCommand
         listsCommand.SetAction(_ =>
         {
             var lists = ListManager.GetAllListNames();
-            var selected = AppConfig.GetSelectedList();
+            var defaultList = AppConfig.GetDefaultList();
 
             if (lists.Length == 0)
             {
-                Output.Info("No lists found. Use 'tasker lists create <name>' to create one.");
+                Output.Info("No lists found. Add a task with: tasker add \"task\" -l <list-name>");
                 return;
             }
 
             Output.Info("Available lists:");
             foreach (var list in lists)
             {
-                if (list == selected)
+                if (list == defaultList)
                 {
-                    Output.Markup($"  [bold]{Markup.Escape(list)} (selected)[/]");
+                    Output.Markup($"  [bold]{Markup.Escape(list)} (default)[/]");
                 }
                 else
                 {
@@ -36,42 +36,16 @@ static class ListsCommand
         });
 
         // Subcommands
-        listsCommand.Add(CreateCreateCommand());
         listsCommand.Add(CreateDeleteCommand());
         listsCommand.Add(CreateRenameCommand());
-        listsCommand.Add(CreateSelectCommand());
+        listsCommand.Add(CreateSetDefaultCommand());
 
         return listsCommand;
     }
 
-    private static Command CreateCreateCommand()
-    {
-        var createCommand = new Command("create", "Create a new list");
-        var nameArg = new Argument<string>("name")
-        {
-            Description = "The name of the list to create"
-        };
-        createCommand.Arguments.Add(nameArg);
-
-        createCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
-        {
-            var name = parseResult.GetValue(nameArg);
-            if (name == null)
-            {
-                Output.Error("List name is required");
-                return;
-            }
-
-            ListManager.CreateList(name);
-            Output.Success($"Created list '{name}'");
-        }));
-
-        return createCommand;
-    }
-
     private static Command CreateDeleteCommand()
     {
-        var deleteCommand = new Command("delete", "Delete a list");
+        var deleteCommand = new Command("delete", "Delete a list and all its tasks");
         var nameArg = new Argument<string>("name")
         {
             Description = "The name of the list to delete"
@@ -88,7 +62,7 @@ static class ListsCommand
             }
 
             ListManager.DeleteList(name);
-            Output.Success($"Deleted list '{name}'");
+            Output.Success($"Deleted list '{name}' and all its tasks");
         }));
 
         return deleteCommand;
@@ -125,16 +99,16 @@ static class ListsCommand
         return renameCommand;
     }
 
-    private static Command CreateSelectCommand()
+    private static Command CreateSetDefaultCommand()
     {
-        var selectCommand = new Command("select", "Select a list as the default");
+        var setDefaultCommand = new Command("set-default", "Set the default list for new tasks");
         var nameArg = new Argument<string>("name")
         {
-            Description = "The name of the list to select"
+            Description = "The name of the list to set as default"
         };
-        selectCommand.Arguments.Add(nameArg);
+        setDefaultCommand.Arguments.Add(nameArg);
 
-        selectCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
+        setDefaultCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
             var name = parseResult.GetValue(nameArg);
             if (name == null)
@@ -143,15 +117,15 @@ static class ListsCommand
                 return;
             }
 
-            if (!ListManager.ListExists(name))
+            if (!ListManager.IsValidListName(name))
             {
-                throw new ListNotFoundException(name);
+                throw new InvalidListNameException(name);
             }
 
-            AppConfig.SetSelectedList(name);
-            Output.Success($"Selected list '{name}'");
+            AppConfig.SetDefaultList(name);
+            Output.Success($"Default list set to '{name}'");
         }));
 
-        return selectCommand;
+        return setDefaultCommand;
     }
 }

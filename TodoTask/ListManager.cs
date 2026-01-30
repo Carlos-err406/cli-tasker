@@ -6,10 +6,6 @@ static partial class ListManager
 {
     public const string DefaultListName = "tasks";
 
-    private static readonly string Directory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "cli-tasker");
-
     [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
     private static partial Regex ValidNameRegex();
 
@@ -22,32 +18,17 @@ static partial class ListManager
 
     public static bool ListExists(string name)
     {
-        return File.Exists(GetFilePath(name));
+        // Default list always exists
+        if (name == DefaultListName) return true;
+        // Other lists exist if they have tasks
+        return TodoTaskList.ListHasTasks(name);
     }
 
     // Discovery
 
-    public static string GetFilePath(string name)
-    {
-        return Path.Combine(Directory, $"{name}.json");
-    }
-
-    public static string GetTrashFilePath(string name)
-    {
-        return Path.Combine(Directory, $"{name}.trash.json");
-    }
-
     public static string[] GetAllListNames()
     {
-        EnsureDirectory();
-        return System.IO.Directory.GetFiles(Directory, "*.json")
-            .Where(f => !f.EndsWith(".trash.json"))
-            .Select(Path.GetFileNameWithoutExtension)
-            .Where(name => name != null && name != "config")
-            .Cast<string>()
-            .OrderBy(name => name != DefaultListName)
-            .ThenBy(name => name)
-            .ToArray();
+        return TodoTaskList.GetAllListNames();
     }
 
     // CRUD
@@ -64,8 +45,9 @@ static partial class ListManager
             throw new ListAlreadyExistsException(name);
         }
 
-        EnsureDirectory();
-        File.WriteAllText(GetFilePath(name), "[]");
+        // Lists are created implicitly when tasks are added
+        // This is now a no-op since we don't have separate list files
+        Output.Info($"List '{name}' will be created when you add tasks to it with: tasker add \"task\" -l {name}");
     }
 
     public static void DeleteList(string name)
@@ -80,13 +62,13 @@ static partial class ListManager
             throw new ListNotFoundException(name);
         }
 
-        File.Delete(GetFilePath(name));
+        TodoTaskList.DeleteList(name);
 
-        // Reset selection if deleting the selected list
-        if (AppConfig.GetSelectedList() == name)
+        // Reset default if deleting the default list
+        if (AppConfig.GetDefaultList() == name)
         {
-            AppConfig.SetSelectedList(DefaultListName);
-            Output.Warning($"Note: '{name}' was the selected list. Selection reset to '{DefaultListName}'.");
+            AppConfig.SetDefaultList(DefaultListName);
+            Output.Warning($"Note: '{name}' was the default list. Default reset to '{DefaultListName}'.");
         }
     }
 
@@ -112,23 +94,13 @@ static partial class ListManager
             throw new ListAlreadyExistsException(newName);
         }
 
-        File.Move(GetFilePath(oldName), GetFilePath(newName));
+        TodoTaskList.RenameList(oldName, newName);
 
-        // Update selection if renaming the selected list
-        if (AppConfig.GetSelectedList() == oldName)
+        // Update default if renaming the default list
+        if (AppConfig.GetDefaultList() == oldName)
         {
-            AppConfig.SetSelectedList(newName);
-            Output.Warning($"Note: '{oldName}' was the selected list. Selection updated to '{newName}'.");
-        }
-    }
-
-    // Setup
-
-    public static void EnsureDirectory()
-    {
-        if (!System.IO.Directory.Exists(Directory))
-        {
-            System.IO.Directory.CreateDirectory(Directory);
+            AppConfig.SetDefaultList(newName);
+            Output.Warning($"Note: '{oldName}' was the default list. Default updated to '{newName}'.");
         }
     }
 
@@ -136,15 +108,20 @@ static partial class ListManager
 
     public static TodoTaskList GetTaskList(string? listName)
     {
-        // Priority: -l flag > selected list > default ("tasks")
-        var name = listName ?? AppConfig.GetSelectedList();
-
-        // Validate list exists (unless it's the default, which auto-creates)
-        if (name != DefaultListName && !ListExists(name))
+        // If no list specified, return unfiltered (all tasks)
+        if (listName == null)
         {
-            throw new ListNotFoundException(name);
+            return new TodoTaskList();
         }
 
+        // Otherwise return filtered to specific list
+        return new TodoTaskList(listName);
+    }
+
+    public static TodoTaskList GetTaskListForAdding(string? listName)
+    {
+        // For adding: use specified list or default list
+        var name = listName ?? AppConfig.GetDefaultList();
         return new TodoTaskList(name);
     }
 }

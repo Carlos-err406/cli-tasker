@@ -11,7 +11,7 @@ static class AppConfig
         "cli-tasker",
         "config.json");
 
-    public static string GetSelectedList()
+    public static string GetDefaultList()
     {
         if (!File.Exists(ConfigPath))
         {
@@ -22,7 +22,7 @@ static class AppConfig
         {
             var json = File.ReadAllText(ConfigPath);
             var config = JsonSerializer.Deserialize<ConfigData>(json);
-            return config?.SelectedList ?? ListManager.DefaultListName;
+            return config?.DefaultList ?? ListManager.DefaultListName;
         }
         catch
         {
@@ -30,16 +30,20 @@ static class AppConfig
         }
     }
 
-    public static void SetSelectedList(string name)
+    public static void SetDefaultList(string name)
     {
-        ListManager.EnsureDirectory();
-        var config = new ConfigData { SelectedList = name };
+        var directory = Path.GetDirectoryName(ConfigPath);
+        if (directory != null && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+        var config = new ConfigData { DefaultList = name };
         var json = JsonSerializer.Serialize(config);
         File.WriteAllText(ConfigPath, json);
     }
 
     private class ConfigData
     {
-        public string? SelectedList { get; set; }
+        public string? DefaultList { get; set; }
     }
 }

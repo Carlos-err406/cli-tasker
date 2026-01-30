@@ -19,8 +19,8 @@ static class RenameCommand
         renameCommand.Arguments.Add(descriptionArg);
         renameCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption);
-            var taskList = ListManager.GetTaskList(listName);
+            // Operations by ID work globally (no list filter)
+            var taskList = new TodoTaskList();
 
             var taskId = parseResult.GetValue(taskIdArg);
             var description = parseResult.GetValue(descriptionArg);

@@ -7,7 +7,7 @@ static class DeleteCommand
     public static (Command, Command) CreateDeleteCommands(Option<string?> listOption)
     {
         var deleteCommand = new Command("delete", "Delete one or more tasks");
-        var clearCommand = new Command("clear", "Delete all tasks");
+        var clearCommand = new Command("clear", "Delete all tasks from a list");
 
         var taskIdsArg = new Argument<string[]>("taskIds")
         {
@@ -16,11 +16,12 @@ static class DeleteCommand
         };
 
         deleteCommand.Arguments.Add(taskIdsArg);
+        clearCommand.Options.Add(listOption);
 
         deleteCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption);
-            var todoTaskList = ListManager.GetTaskList(listName);
+            // Operations by ID work globally (no list filter)
+            var todoTaskList = new TodoTaskList();
 
             var taskIds = parseResult.GetValue(taskIdsArg);
             if (taskIds == null || taskIds.Length == 0)
@@ -34,11 +35,15 @@ static class DeleteCommand
         clearCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
             var listName = parseResult.GetValue(listOption);
-            var todoTaskList = ListManager.GetTaskList(listName);
-            var actualListName = listName ?? AppConfig.GetSelectedList();
+            if (listName == null)
+            {
+                Output.Error("Please specify a list with -l <list-name>");
+                return;
+            }
 
+            var todoTaskList = new TodoTaskList(listName);
             todoTaskList.ClearTasks();
-            Output.Success($"Cleared all tasks from '{actualListName}'");
+            Output.Success($"Cleared all tasks from '{listName}'");
         }));
 
         return (deleteCommand, clearCommand);

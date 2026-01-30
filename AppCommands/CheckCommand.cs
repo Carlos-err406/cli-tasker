@@ -20,8 +20,8 @@ static class CheckCommand
 
         void action(ParseResult parseResult, bool check)
         {
-            var listName = parseResult.GetValue(listOption);
-            var todoTaskList = ListManager.GetTaskList(listName);
+            // Operations by ID work globally (no list filter)
+            var todoTaskList = new TodoTaskList();
 
             var taskIds = parseResult.GetValue(taskIdsArg);
             if (taskIds == null || taskIds.Length == 0)

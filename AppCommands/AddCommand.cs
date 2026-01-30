@@ -7,6 +7,7 @@ static class AddCommand
     public static Command CreateAddCommand(Option<string?> listOption)
     {
         var addCommand = new Command("add", "Add a new task");
+        addCommand.Options.Add(listOption);
         var descriptionArg = new Argument<string>("description")
         {
             Description = "The task description"
@@ -14,8 +15,7 @@ static class AddCommand
         addCommand.Arguments.Add(descriptionArg);
         addCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption);
-            var taskList = ListManager.GetTaskList(listName);
+            var listName = parseResult.GetValue(listOption) ?? AppConfig.GetDefaultList();
 
             var description = parseResult.GetValue(descriptionArg);
             if (description == null)
@@ -23,9 +23,11 @@ static class AddCommand
                 Output.Error("Need a description to create a new task...");
                 return;
             }
-            var task = TodoTask.CreateTodoTask(description);
+
+            var task = TodoTask.CreateTodoTask(description, listName);
+            var taskList = new TodoTaskList();
             taskList.AddTodoTask(task);
-            Output.Success("Task saved. Use the list command to see your tasks");
+            Output.Success($"Task saved to '{listName}'. Use the list command to see your tasks");
         }));
         return addCommand;
     }

@@ -19,19 +19,15 @@ static class TrashCommand
     private static Command CreateListCommand(Option<string?> listOption)
     {
         var listCommand = new Command("list", "List deleted tasks in trash");
-
-        var allOption = new Option<bool>("--all", "-a")
-        {
-            Description = "Show trash from all lists"
-        };
-        listCommand.Options.Add(allOption);
+        listCommand.Options.Add(listOption);
 
         listCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var showAll = parseResult.GetValue(allOption);
+            var listName = parseResult.GetValue(listOption);
 
-            if (showAll)
+            if (listName == null)
             {
+                // Default: show all trash grouped by list
                 var listNames = ListManager.GetAllListNames();
                 foreach (var name in listNames)
                 {
@@ -43,8 +39,8 @@ static class TrashCommand
             }
             else
             {
-                var listName = parseResult.GetValue(listOption);
-                var todoTaskList = ListManager.GetTaskList(listName);
+                // Filter to specific list
+                var todoTaskList = new TodoTaskList(listName);
                 todoTaskList.ListTrash();
             }
         }));
@@ -63,8 +59,8 @@ static class TrashCommand
 
         restoreCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption);
-            var todoTaskList = ListManager.GetTaskList(listName);
+            // Operations by ID work globally (no list filter)
+            var todoTaskList = new TodoTaskList();
 
             var taskId = parseResult.GetValue(taskIdArg);
             if (taskId == null)
@@ -82,32 +78,22 @@ static class TrashCommand
     private static Command CreateClearCommand(Option<string?> listOption)
     {
         var clearCommand = new Command("clear", "Permanently delete all tasks in trash");
-
-        var allOption = new Option<bool>("--all", "-a")
-        {
-            Description = "Clear trash from all lists"
-        };
-        clearCommand.Options.Add(allOption);
+        clearCommand.Options.Add(listOption);
 
         clearCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var clearAll = parseResult.GetValue(allOption);
+            var listName = parseResult.GetValue(listOption);
 
-            if (clearAll)
+            if (listName == null)
             {
-                var listNames = ListManager.GetAllListNames();
-                var totalCleared = 0;
-                foreach (var name in listNames)
-                {
-                    var taskList = new TodoTaskList(name);
-                    totalCleared += taskList.ClearTrash(silent: true);
-                }
-                Output.Success($"Permanently deleted {totalCleared} task(s) from all trash");
+                // Clear all trash
+                var todoTaskList = new TodoTaskList();
+                todoTaskList.ClearTrash();
             }
             else
             {
-                var listName = parseResult.GetValue(listOption);
-                var todoTaskList = ListManager.GetTaskList(listName);
+                // Clear trash for specific list
+                var todoTaskList = new TodoTaskList(listName);
                 todoTaskList.ClearTrash();
             }
         }));
