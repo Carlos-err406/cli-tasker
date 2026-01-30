@@ -35,9 +35,10 @@ static class DeleteCommand
         {
             var listName = parseResult.GetValue(listOption);
             var todoTaskList = ListManager.GetTaskList(listName);
+            var actualListName = listName ?? AppConfig.GetSelectedList();
 
             todoTaskList.ClearTasks();
-            Output.Success("Cleared all tasks");
+            Output.Success($"Cleared all tasks from '{actualListName}'");
         }));
 
         return (deleteCommand, clearCommand);
