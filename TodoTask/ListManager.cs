@@ -32,10 +32,16 @@ static partial class ListManager
         return Path.Combine(Directory, $"{name}.json");
     }
 
+    public static string GetTrashFilePath(string name)
+    {
+        return Path.Combine(Directory, $"{name}.trash.json");
+    }
+
     public static string[] GetAllListNames()
     {
         EnsureDirectory();
         return System.IO.Directory.GetFiles(Directory, "*.json")
+            .Where(f => !f.EndsWith(".trash.json"))
             .Select(Path.GetFileNameWithoutExtension)
             .Where(name => name != null && name != "config")
             .Cast<string>()
