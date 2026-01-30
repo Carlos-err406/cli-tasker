@@ -15,17 +15,20 @@ static class ListCommand
         {
             Description = "Show only unchecked tasks"
         };
+        var allOption = new Option<bool>("--all", "-a")
+        {
+            Description = "Show tasks from all lists"
+        };
 
         listCommand.Options.Add(checkedOption);
         listCommand.Options.Add(uncheckedOption);
+        listCommand.Options.Add(allOption);
 
         listCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption);
-            var todoTaskList = ListManager.GetTaskList(listName);
-
             var showChecked = parseResult.GetValue(checkedOption);
             var showUnchecked = parseResult.GetValue(uncheckedOption);
+            var showAll = parseResult.GetValue(allOption);
 
             if (showChecked && showUnchecked)
             {
@@ -40,7 +43,23 @@ static class ListCommand
                 _ => null
             };
 
-            todoTaskList.ListTodoTasks(filterChecked);
+            if (showAll)
+            {
+                var listNames = ListManager.GetAllListNames();
+                foreach (var name in listNames)
+                {
+                    var taskList = new TodoTaskList(name);
+                    Output.Markup($"[bold underline]{name}[/]");
+                    taskList.ListTodoTasks(filterChecked);
+                    Output.Info("");
+                }
+            }
+            else
+            {
+                var listName = parseResult.GetValue(listOption);
+                var todoTaskList = ListManager.GetTaskList(listName);
+                todoTaskList.ListTodoTasks(filterChecked);
+            }
         }));
         return listCommand;
     }
