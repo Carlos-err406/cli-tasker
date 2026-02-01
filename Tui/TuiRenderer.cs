@@ -43,20 +43,37 @@ public class TuiRenderer
             return;
         }
 
-        // Calculate viewport
+        // Group tasks by list if viewing all lists
+        var showingAllLists = state.CurrentList == null;
+
+        // Calculate viewport - simple task-based viewport (not line-based for simplicity)
         var startIndex = Math.Max(0, state.CursorIndex - availableLines / 2);
         startIndex = Math.Min(startIndex, Math.Max(0, tasks.Count - availableLines));
         var endIndex = Math.Min(tasks.Count, startIndex + availableLines);
 
         var linesRendered = 0;
-        for (var i = startIndex; i < endIndex; i++)
+        string? lastListName = null;
+
+        for (var i = startIndex; i < endIndex && linesRendered < availableLines; i++)
         {
             var task = tasks[i];
+
+            // Render list header when switching to a new list (only when viewing all lists)
+            if (showingAllLists && task.ListName != lastListName)
+            {
+                if (linesRendered >= availableLines) break;
+                AnsiConsole.MarkupLine($"[bold cyan]── {Markup.Escape(task.ListName)} ──[/]");
+                linesRendered++;
+                lastListName = task.ListName;
+            }
+
+            if (linesRendered >= availableLines) break;
+
             var isSelected = i == state.CursorIndex;
             var isMultiSelected = state.SelectedTaskIds.Contains(task.Id);
 
-            RenderTask(task, isSelected, isMultiSelected, state.Mode, state.SearchQuery);
-            linesRendered++;
+            var taskLines = RenderTask(task, isSelected, isMultiSelected, state.Mode, state.SearchQuery);
+            linesRendered += taskLines;
         }
 
         // Clear remaining lines
@@ -64,7 +81,7 @@ public class TuiRenderer
             ClearLine();
     }
 
-    private void RenderTask(TodoTask task, bool isSelected, bool isMultiSelected, TuiMode mode, string? searchQuery)
+    private int RenderTask(TodoTask task, bool isSelected, bool isMultiSelected, TuiMode mode, string? searchQuery)
     {
         var selectionIndicator = mode == TuiMode.MultiSelect
             ? (isMultiSelected ? "[blue][[*]][/]" : "[dim][[ ]][/]")
@@ -74,46 +91,52 @@ public class TuiRenderer
         var checkbox = task.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
         var taskId = $"[dim]({task.Id})[/]";
 
-        // Get first line of description, highlight search matches
+        // Get all lines of description
         var lines = task.Description.Split('\n');
-        var firstLine = lines[0];
+        var linesRendered = 0;
 
-        // Highlight search query in description
-        if (!string.IsNullOrEmpty(searchQuery))
-        {
-            var escapedLine = Markup.Escape(firstLine);
-            var idx = firstLine.IndexOf(searchQuery, StringComparison.OrdinalIgnoreCase);
-            if (idx >= 0)
-            {
-                var before = Markup.Escape(firstLine[..idx]);
-                var match = Markup.Escape(firstLine.Substring(idx, searchQuery.Length));
-                var after = Markup.Escape(firstLine[(idx + searchQuery.Length)..]);
-                firstLine = $"{before}[yellow bold]{match}[/]{after}";
-            }
-            else
-            {
-                firstLine = escapedLine;
-            }
-        }
-        else
-        {
-            firstLine = Markup.Escape(firstLine);
-        }
-
+        // Render first line with full prefix
+        var firstLine = HighlightSearch(lines[0], searchQuery);
         var description = isSelected
             ? $"[bold]{firstLine}[/]"
             : (task.IsChecked ? $"[dim strikethrough]{firstLine}[/]" : firstLine);
 
-        // Truncate if too long
-        var maxWidth = Console.WindowWidth - TaskPrefixLength - 10;
-        if (firstLine.Length > maxWidth && maxWidth > 3)
+        AnsiConsole.MarkupLine($"{cursor}{selectionIndicator}{taskId} {checkbox} {description}");
+        linesRendered++;
+
+        // Render continuation lines with indent
+        if (lines.Length > 1)
         {
-            // Can't truncate markup easily, just render as-is
+            var indent = new string(' ', TaskPrefixLength);
+            var style = task.IsChecked ? "[dim strikethrough]" : "[dim]";
+            for (var i = 1; i < lines.Length; i++)
+            {
+                var continuationLine = HighlightSearch(lines[i], searchQuery);
+                AnsiConsole.MarkupLine($"{indent}{style}{continuationLine}[/]");
+                linesRendered++;
+            }
         }
 
-        var multiLineIndicator = lines.Length > 1 ? "[dim]...[/]" : "";
+        return linesRendered;
+    }
 
-        AnsiConsole.MarkupLine($"{cursor}{selectionIndicator}{taskId} {checkbox} {description}{multiLineIndicator}");
+    private static string HighlightSearch(string text, string? searchQuery)
+    {
+        if (string.IsNullOrEmpty(searchQuery))
+        {
+            return Markup.Escape(text);
+        }
+
+        var idx = text.IndexOf(searchQuery, StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0)
+        {
+            var before = Markup.Escape(text[..idx]);
+            var match = Markup.Escape(text.Substring(idx, searchQuery.Length));
+            var after = Markup.Escape(text[(idx + searchQuery.Length)..]);
+            return $"{before}[yellow bold]{match}[/]{after}";
+        }
+
+        return Markup.Escape(text);
     }
 
     private void RenderStatusBar(TuiState state, int taskCount)

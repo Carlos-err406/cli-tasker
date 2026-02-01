@@ -16,7 +16,7 @@ public class TuiApp
     public void Run()
     {
         // Check for TTY
-        if (Console.IsInputRedirected)
+        if (Console.IsInputRedirected || Console.IsOutputRedirected)
         {
             Output.Error("TUI mode requires an interactive terminal.");
             return;
@@ -30,7 +30,9 @@ public class TuiApp
         }
 
         Console.CursorVisible = false;
-        _renderer.Clear();
+        // Use alternate screen buffer to preserve terminal history
+        Console.Write("\x1b[?1049h");
+        Console.Clear(); // Clear the alternate buffer
 
         try
         {
@@ -60,7 +62,8 @@ public class TuiApp
         finally
         {
             Console.CursorVisible = true;
-            Console.Clear();
+            // Exit alternate screen buffer - restores previous terminal content
+            Console.Write("\x1b[?1049l");
         }
     }
 
@@ -79,7 +82,19 @@ public class TuiApp
                 .ToList();
         }
 
-        // Sort: unchecked first, then by creation date descending
+        // Sort: by list name (when viewing all), then unchecked first, then by creation date descending
+        if (_state.CurrentList == null)
+        {
+            // Viewing all lists - group by list name, default list first
+            return tasks
+                .OrderBy(t => t.ListName != ListManager.DefaultListName) // default list first
+                .ThenBy(t => t.ListName)
+                .ThenBy(t => t.IsChecked)
+                .ThenByDescending(t => t.CreatedAt)
+                .ToList();
+        }
+
+        // Single list view - unchecked first, then by creation date
         return tasks
             .OrderBy(t => t.IsChecked)
             .ThenByDescending(t => t.CreatedAt)

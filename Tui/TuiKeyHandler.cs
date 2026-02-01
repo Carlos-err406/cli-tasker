@@ -31,6 +31,7 @@ public class TuiKeyHandler
             // Navigation
             case ConsoleKey.J:
             case ConsoleKey.DownArrow:
+                if (taskCount == 0) return state;
                 return state with { CursorIndex = Math.Min(taskCount - 1, state.CursorIndex + 1) };
 
             case ConsoleKey.K:
@@ -38,8 +39,9 @@ public class TuiKeyHandler
                 return state with { CursorIndex = Math.Max(0, state.CursorIndex - 1) };
 
             case ConsoleKey.G:
+                if (taskCount == 0) return state;
                 if (key.Modifiers == ConsoleModifiers.Shift)
-                    return state with { CursorIndex = Math.Max(0, taskCount - 1) };
+                    return state with { CursorIndex = taskCount - 1 };
                 return state with { CursorIndex = 0 };
 
             // Toggle check
@@ -126,6 +128,7 @@ public class TuiKeyHandler
             // Navigation
             case ConsoleKey.J:
             case ConsoleKey.DownArrow:
+                if (taskCount == 0) return state;
                 return state with { CursorIndex = Math.Min(taskCount - 1, state.CursorIndex + 1) };
 
             case ConsoleKey.K:
