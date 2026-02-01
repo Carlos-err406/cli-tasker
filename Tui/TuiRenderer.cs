@@ -4,7 +4,6 @@ using Spectre.Console;
 
 public class TuiRenderer
 {
-
     public void Render(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         Console.SetCursorPosition(0, 0);
@@ -21,6 +20,8 @@ public class TuiRenderer
         {
             TuiMode.Search => $" [yellow]/[/][bold]{Markup.Escape(state.SearchQuery ?? "")}[/]",
             TuiMode.MultiSelect => $" [blue]({state.SelectedTaskIds.Count} selected)[/]",
+            TuiMode.InputAdd => " [yellow]+ new task[/]",
+            TuiMode.InputRename => " [yellow]editing[/]",
             _ => ""
         };
 
@@ -31,21 +32,19 @@ public class TuiRenderer
     private void RenderTasks(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         var terminalHeight = Console.WindowHeight;
-        var availableLines = terminalHeight - 6; // Header (2) + status bar (3) + padding
+        // Reserve more space at bottom for input modes
+        var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 2 : 0;
+        var availableLines = terminalHeight - 6 - inputModeExtraSpace;
 
         if (tasks.Count == 0)
         {
             AnsiConsole.MarkupLine("[dim]No tasks. Press [bold]a[/] to add one.[/]");
-            // Fill remaining space
             for (var i = 0; i < availableLines - 1; i++)
                 ClearLine();
             return;
         }
 
-        // Group tasks by list if viewing all lists
         var showingAllLists = state.CurrentList == null;
-
-        // Calculate viewport - simple task-based viewport (not line-based for simplicity)
         var startIndex = Math.Max(0, state.CursorIndex - availableLines / 2);
         startIndex = Math.Min(startIndex, Math.Max(0, tasks.Count - availableLines));
         var endIndex = Math.Min(tasks.Count, startIndex + availableLines);
@@ -57,7 +56,6 @@ public class TuiRenderer
         {
             var task = tasks[i];
 
-            // Render list header when switching to a new list (only when viewing all lists)
             if (showingAllLists && task.ListName != lastListName)
             {
                 if (linesRendered >= availableLines) break;
@@ -75,7 +73,6 @@ public class TuiRenderer
             linesRendered += taskLines;
         }
 
-        // Clear remaining lines
         for (var i = linesRendered; i < availableLines; i++)
             ClearLine();
     }
@@ -90,15 +87,12 @@ public class TuiRenderer
         var checkbox = task.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
         var taskId = $"[dim]({task.Id})[/]";
 
-        // Calculate prefix length for indent: cursor(1) + selection(0 or 3) + id(5) + space(1) + checkbox(3) + space(1)
         var prefixLength = 1 + (mode == TuiMode.MultiSelect ? 3 : 0) + 5 + 1 + 3 + 1;
         var indent = new string(' ', prefixLength);
 
-        // Get all lines of description
         var lines = task.Description.Split('\n');
         var linesRendered = 0;
 
-        // Render first line with full prefix
         var firstLine = HighlightSearch(lines[0], searchQuery);
         var description = isSelected
             ? $"[bold]{firstLine}[/]"
@@ -107,7 +101,6 @@ public class TuiRenderer
         AnsiConsole.MarkupLine($"{cursor}{selectionIndicator}{taskId} {checkbox} {description}");
         linesRendered++;
 
-        // Render continuation lines with indent
         if (lines.Length > 1)
         {
             var style = task.IsChecked ? "[dim strikethrough]" : "[dim]";
@@ -145,7 +138,14 @@ public class TuiRenderer
     {
         AnsiConsole.WriteLine();
 
-        // Status message or hints
+        // Render input field for input modes
+        if (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename)
+        {
+            RenderInputField(state);
+            return;
+        }
+
+        // Status message
         if (!string.IsNullOrEmpty(state.StatusMessage))
         {
             AnsiConsole.MarkupLine($"[green]{Markup.Escape(state.StatusMessage)}[/]");
@@ -158,13 +158,65 @@ public class TuiRenderer
         // Key hints based on mode
         var hints = state.Mode switch
         {
-            TuiMode.Normal => "[dim]j/k[/]:nav [dim]space[/]:toggle [dim]x[/]:del [dim]r[/]:rename [dim]a[/]:add [dim]l[/]:lists [dim]m[/]:move [dim]/[/]:search [dim]v[/]:select [dim]q[/]:quit",
+            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:toggle [dim]x[/]:del [dim]r[/]:rename [dim]a[/]:add [dim]l[/]:lists [dim]m[/]:move [dim]/[/]:search [dim]v[/]:select [dim]q[/]:quit",
             TuiMode.Search => "[dim]type[/]:filter [dim]enter[/]:done [dim]esc[/]:clear",
             TuiMode.MultiSelect => "[dim]space[/]:toggle [dim]x[/]:del [dim]c[/]:check [dim]u[/]:uncheck [dim]esc[/]:exit",
             _ => ""
         };
 
         AnsiConsole.MarkupLine(hints);
+    }
+
+    private void RenderInputField(TuiState state)
+    {
+        // Show status/hint on first line
+        if (!string.IsNullOrEmpty(state.StatusMessage))
+        {
+            AnsiConsole.MarkupLine($"[dim]{Markup.Escape(state.StatusMessage)}[/]");
+        }
+        else
+        {
+            ClearLine();
+        }
+
+        // Render input line with cursor
+        var maxWidth = Console.WindowWidth - 4; // Leave room for "> " prefix and padding
+        var buffer = state.InputBuffer;
+        var cursorPos = state.InputCursor;
+
+        // Handle long input by showing window around cursor
+        var displayStart = 0;
+        if (buffer.Length > maxWidth)
+        {
+            if (cursorPos > maxWidth - 10)
+            {
+                displayStart = cursorPos - maxWidth + 10;
+            }
+            displayStart = Math.Min(displayStart, buffer.Length - maxWidth);
+            displayStart = Math.Max(0, displayStart);
+        }
+
+        var displayEnd = Math.Min(buffer.Length, displayStart + maxWidth);
+        var visibleBuffer = buffer[displayStart..displayEnd];
+        var visibleCursor = cursorPos - displayStart;
+
+        // Build the display string with cursor indicator
+        var beforeCursor = visibleBuffer[..Math.Min(visibleCursor, visibleBuffer.Length)];
+        var atCursor = visibleCursor < visibleBuffer.Length ? visibleBuffer[visibleCursor].ToString() : " ";
+        var afterCursor = visibleCursor < visibleBuffer.Length - 1 ? visibleBuffer[(visibleCursor + 1)..] : "";
+
+        // Clear the line first
+        Console.Write(new string(' ', Console.WindowWidth));
+        Console.SetCursorPosition(0, Console.CursorTop);
+
+        // Render with cursor highlight
+        AnsiConsole.Markup($"[bold]>[/] {Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
+
+        // Pad and move to next line
+        Console.WriteLine();
+
+        // Show input hints
+        AnsiConsole.MarkupLine("[dim]enter[/]:confirm [dim]esc[/]:cancel [dim]←→[/]:move cursor");
     }
 
     private static void ClearLine()

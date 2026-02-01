@@ -18,6 +18,8 @@ public class TuiKeyHandler
             TuiMode.Normal => HandleNormalMode(key, state, tasks),
             TuiMode.Search => HandleSearchMode(key, state, tasks),
             TuiMode.MultiSelect => HandleMultiSelectMode(key, state, tasks),
+            TuiMode.InputAdd => HandleInputMode(key, state, isRename: false),
+            TuiMode.InputRename => HandleInputMode(key, state, isRename: true),
             _ => state
         };
     }
@@ -28,21 +30,20 @@ public class TuiKeyHandler
 
         switch (key.Key)
         {
-            // Navigation
-            case ConsoleKey.J:
+            // Navigation (arrow keys only)
             case ConsoleKey.DownArrow:
                 if (taskCount == 0) return state;
                 return state with { CursorIndex = Math.Min(taskCount - 1, state.CursorIndex + 1) };
 
-            case ConsoleKey.K:
             case ConsoleKey.UpArrow:
                 return state with { CursorIndex = Math.Max(0, state.CursorIndex - 1) };
 
-            case ConsoleKey.G:
-                if (taskCount == 0) return state;
-                if (key.Modifiers == ConsoleModifiers.Shift)
-                    return state with { CursorIndex = taskCount - 1 };
+            case ConsoleKey.Home:
                 return state with { CursorIndex = 0 };
+
+            case ConsoleKey.End:
+                if (taskCount == 0) return state;
+                return state with { CursorIndex = taskCount - 1 };
 
             // Toggle check
             case ConsoleKey.Spacebar:
@@ -54,13 +55,16 @@ public class TuiKeyHandler
             case ConsoleKey.Delete:
                 return DeleteTask(state, tasks);
 
-            // Rename
+            // Rename (inline)
             case ConsoleKey.R:
-                return RenameTask(state, tasks);
+                if (taskCount == 0 || state.CursorIndex >= taskCount) return state;
+                var taskToRename = tasks[state.CursorIndex];
+                return state.StartInputRename(taskToRename.Id, taskToRename.Description);
 
-            // Add
+            // Add (inline)
             case ConsoleKey.A:
-                return AddTask(state);
+                var listName = state.CurrentList ?? ListManager.DefaultListName;
+                return state.StartInputAdd(listName);
 
             // Switch list
             case ConsoleKey.L:
@@ -125,13 +129,11 @@ public class TuiKeyHandler
 
         switch (key.Key)
         {
-            // Navigation
-            case ConsoleKey.J:
+            // Navigation (arrow keys only)
             case ConsoleKey.DownArrow:
                 if (taskCount == 0) return state;
                 return state with { CursorIndex = Math.Min(taskCount - 1, state.CursorIndex + 1) };
 
-            case ConsoleKey.K:
             case ConsoleKey.UpArrow:
                 return state with { CursorIndex = Math.Max(0, state.CursorIndex - 1) };
 
@@ -149,15 +151,15 @@ public class TuiKeyHandler
             // Bulk delete
             case ConsoleKey.X:
             case ConsoleKey.Delete:
-                return BulkDelete(state, tasks);
+                return BulkDelete(state);
 
             // Bulk check
             case ConsoleKey.C:
-                return BulkCheck(state, tasks);
+                return BulkCheck(state);
 
             // Bulk uncheck
             case ConsoleKey.U:
-                return BulkUncheck(state, tasks);
+                return BulkUncheck(state);
 
             // Exit multi-select
             case ConsoleKey.Escape:
@@ -174,6 +176,101 @@ public class TuiKeyHandler
         }
     }
 
+    private TuiState HandleInputMode(ConsoleKeyInfo key, TuiState state, bool isRename)
+    {
+        switch (key.Key)
+        {
+            case ConsoleKey.Escape:
+                return state.CancelInput();
+
+            case ConsoleKey.Enter:
+                return ConfirmInput(state, isRename);
+
+            case ConsoleKey.Backspace:
+                if (state.InputCursor > 0)
+                {
+                    var newBuffer = state.InputBuffer.Remove(state.InputCursor - 1, 1);
+                    return state with
+                    {
+                        InputBuffer = newBuffer,
+                        InputCursor = state.InputCursor - 1
+                    };
+                }
+                return state;
+
+            case ConsoleKey.Delete:
+                if (state.InputCursor < state.InputBuffer.Length)
+                {
+                    var newBuffer = state.InputBuffer.Remove(state.InputCursor, 1);
+                    return state with { InputBuffer = newBuffer };
+                }
+                return state;
+
+            case ConsoleKey.LeftArrow:
+                return state with { InputCursor = Math.Max(0, state.InputCursor - 1) };
+
+            case ConsoleKey.RightArrow:
+                return state with { InputCursor = Math.Min(state.InputBuffer.Length, state.InputCursor + 1) };
+
+            case ConsoleKey.Home:
+                return state with { InputCursor = 0 };
+
+            case ConsoleKey.End:
+                return state with { InputCursor = state.InputBuffer.Length };
+
+            default:
+                if (!char.IsControl(key.KeyChar))
+                {
+                    var newBuffer = state.InputBuffer.Insert(state.InputCursor, key.KeyChar.ToString());
+                    return state with
+                    {
+                        InputBuffer = newBuffer,
+                        InputCursor = state.InputCursor + 1
+                    };
+                }
+                return state;
+        }
+    }
+
+    private TuiState ConfirmInput(TuiState state, bool isRename)
+    {
+        var text = state.InputBuffer.Trim();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return state.CancelInput();
+        }
+
+        if (isRename && state.InputTargetTaskId != null)
+        {
+            var taskList = new TodoTaskList(state.CurrentList);
+            taskList.RenameTask(state.InputTargetTaskId, text);
+            return (state with
+            {
+                Mode = TuiMode.Normal,
+                InputBuffer = "",
+                InputCursor = 0,
+                InputTargetTaskId = null
+            }).WithStatusMessage("Renamed");
+        }
+        else if (!isRename)
+        {
+            var listName = state.CurrentList ?? ListManager.DefaultListName;
+            var task = TodoTask.CreateTodoTask(text, listName);
+            var taskList = new TodoTaskList(state.CurrentList);
+            taskList.AddTodoTask(task);
+            return (state with
+            {
+                Mode = TuiMode.Normal,
+                InputBuffer = "",
+                InputCursor = 0,
+                CursorIndex = 0
+            }).WithStatusMessage("Added");
+        }
+
+        return state.CancelInput();
+    }
+
     private TuiState ToggleTask(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
@@ -187,7 +284,6 @@ public class TuiKeyHandler
         else
             taskList.CheckTask(task.Id);
 
-        // Keep cursor in place (task moves but cursor stays)
         return state.WithStatusMessage(task.IsChecked ? "Unchecked" : "Checked");
     }
 
@@ -201,80 +297,7 @@ public class TuiKeyHandler
         taskList.DeleteTask(task.Id);
 
         var newIndex = Math.Min(state.CursorIndex, Math.Max(0, tasks.Count - 2));
-        return state.WithStatusMessage("Deleted (z to undo)") with { CursorIndex = newIndex };
-    }
-
-    private TuiState RenameTask(TuiState state, IReadOnlyList<TodoTask> tasks)
-    {
-        if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
-            return state;
-
-        var task = tasks[state.CursorIndex];
-
-        // Show current task info before prompt
-        Console.Clear();
-        AnsiConsole.MarkupLine("[dim]Current:[/]");
-        foreach (var line in task.Description.Split('\n'))
-        {
-            AnsiConsole.MarkupLine($"  [dim]{Markup.Escape(line)}[/]");
-        }
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Enter new description (Ctrl+C to cancel):[/]");
-
-        try
-        {
-            var newDesc = AnsiConsole.Prompt(
-                new TextPrompt<string>(">")
-                    .DefaultValue(task.Description)
-                    .AllowEmpty());
-
-            if (string.IsNullOrWhiteSpace(newDesc))
-            {
-                return state.WithStatusMessage("Cancelled");
-            }
-
-            if (newDesc != task.Description)
-            {
-                var taskList = new TodoTaskList(state.CurrentList);
-                taskList.RenameTask(task.Id, newDesc);
-                return state.WithStatusMessage("Renamed");
-            }
-
-            return state;
-        }
-        catch (OperationCanceledException)
-        {
-            return state.WithStatusMessage("Cancelled");
-        }
-    }
-
-    private TuiState AddTask(TuiState state)
-    {
-        Console.Clear();
-        var listName = state.CurrentList ?? ListManager.DefaultListName;
-        AnsiConsole.MarkupLine($"[dim]Adding to list:[/] [bold]{Markup.Escape(listName)}[/]");
-        AnsiConsole.MarkupLine("[dim]Enter description (empty to cancel, Ctrl+C to cancel):[/]");
-
-        try
-        {
-            var desc = AnsiConsole.Prompt(
-                new TextPrompt<string>(">")
-                    .AllowEmpty());
-
-            if (string.IsNullOrWhiteSpace(desc))
-            {
-                return state.WithStatusMessage("Cancelled");
-            }
-
-            var task = TodoTask.CreateTodoTask(desc, listName);
-            var taskList = new TodoTaskList(state.CurrentList);
-            taskList.AddTodoTask(task);
-            return state.WithStatusMessage("Added") with { CursorIndex = 0 };
-        }
-        catch (OperationCanceledException)
-        {
-            return state.WithStatusMessage("Cancelled");
-        }
+        return state.WithStatusMessage("Deleted") with { CursorIndex = newIndex };
     }
 
     private TuiState SwitchList(TuiState state)
@@ -282,6 +305,7 @@ public class TuiKeyHandler
         Console.Clear();
         var lists = TodoTaskList.GetAllListNames().ToList();
         lists.Insert(0, "<All Lists>");
+        lists.Add("<Cancel>");
 
         var current = state.CurrentList ?? "<All Lists>";
         var selected = AnsiConsole.Prompt(
@@ -289,6 +313,9 @@ public class TuiKeyHandler
                 .Title("Switch to list:")
                 .AddChoices(lists)
                 .UseConverter(s => s == current ? $"{s} [dim](current)[/]" : s));
+
+        if (selected == "<Cancel>")
+            return state.WithStatusMessage("Cancelled");
 
         var newList = selected == "<All Lists>" ? null : selected;
         return state with { CurrentList = newList, CursorIndex = 0 };
@@ -303,6 +330,7 @@ public class TuiKeyHandler
 
         Console.Clear();
         var lists = TodoTaskList.GetAllListNames().ToList();
+        lists.Add("<Cancel>");
 
         var selected = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
@@ -310,12 +338,14 @@ public class TuiKeyHandler
                 .AddChoices(lists)
                 .UseConverter(s => s == task.ListName ? $"{s} [dim](current)[/]" : s));
 
+        if (selected == "<Cancel>")
+            return state.WithStatusMessage("Cancelled");
+
         if (selected != task.ListName)
         {
             var taskList = new TodoTaskList();
             taskList.MoveTask(task.Id, selected);
 
-            // If viewing a specific list, task may disappear
             var newIndex = state.CurrentList != null
                 ? Math.Min(state.CursorIndex, Math.Max(0, tasks.Count - 2))
                 : 0;
@@ -325,7 +355,7 @@ public class TuiKeyHandler
         return state;
     }
 
-    private TuiState BulkDelete(TuiState state, IReadOnlyList<TodoTask> tasks)
+    private TuiState BulkDelete(TuiState state)
     {
         if (state.SelectedTaskIds.Count == 0)
             return state;
@@ -334,7 +364,7 @@ public class TuiKeyHandler
         var taskList = new TodoTaskList();
         taskList.DeleteTasks(state.SelectedTaskIds.ToArray());
 
-        return state.WithStatusMessage($"Deleted {count} tasks (z to undo)") with
+        return state.WithStatusMessage($"Deleted {count} tasks") with
         {
             Mode = TuiMode.Normal,
             SelectedTaskIds = new HashSet<string>(),
@@ -342,7 +372,7 @@ public class TuiKeyHandler
         };
     }
 
-    private TuiState BulkCheck(TuiState state, IReadOnlyList<TodoTask> tasks)
+    private TuiState BulkCheck(TuiState state)
     {
         if (state.SelectedTaskIds.Count == 0)
             return state;
@@ -358,7 +388,7 @@ public class TuiKeyHandler
         };
     }
 
-    private TuiState BulkUncheck(TuiState state, IReadOnlyList<TodoTask> tasks)
+    private TuiState BulkUncheck(TuiState state)
     {
         if (state.SelectedTaskIds.Count == 0)
             return state;
