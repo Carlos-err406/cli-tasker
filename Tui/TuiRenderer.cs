@@ -169,7 +169,7 @@ public class TuiRenderer
 
         var hints = state.Mode switch
         {
-            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:toggle [dim]x[/]:del [dim]u[/]:undo [dim]^R[/]:redo [dim]a[/]:add [dim]r[/]:rename [dim]q[/]:quit",
+            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:toggle [dim]x[/]:del [dim]⌥Z[/]:undo [dim]⌥⇧Z[/]:redo [dim]a[/]:add [dim]r[/]:rename [dim]q[/]:quit",
             TuiMode.Search => "[dim]type[/]:filter [dim]enter[/]:done [dim]esc[/]:clear",
             TuiMode.MultiSelect => "[dim]space[/]:toggle [dim]x[/]:del [dim]c[/]:check [dim]u[/]:uncheck [dim]esc[/]:exit",
             _ => ""
@@ -245,7 +245,7 @@ public class TuiRenderer
         for (var i = endLine - startLine; i < 3; i++)
             ClearLine();
 
-        WriteLineCleared("[dim]^S[/]:save [dim]enter[/]:newline [dim]esc[/]:cancel [dim]⌥←→[/]:word");
+        WriteLineCleared("[dim]enter[/]:save [dim]⌥enter[/]:newline [dim]esc[/]:cancel [dim]⌥←→[/]:word");
     }
 
     /// <summary>
