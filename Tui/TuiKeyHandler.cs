@@ -178,6 +178,8 @@ public class TuiKeyHandler
 
     private TuiState HandleInputMode(ConsoleKeyInfo key, TuiState state, bool isRename)
     {
+        var hasAlt = (key.Modifiers & ConsoleModifiers.Alt) != 0;
+
         switch (key.Key)
         {
             case ConsoleKey.Escape:
@@ -187,7 +189,17 @@ public class TuiKeyHandler
                 return ConfirmInput(state, isRename);
 
             case ConsoleKey.Backspace:
-                if (state.InputCursor > 0)
+                if (hasAlt)
+                {
+                    // Delete word backward
+                    var wordStart = FindWordBoundaryBackward(state.InputBuffer, state.InputCursor);
+                    if (wordStart < state.InputCursor)
+                    {
+                        var newBuffer = state.InputBuffer.Remove(wordStart, state.InputCursor - wordStart);
+                        return state with { InputBuffer = newBuffer, InputCursor = wordStart };
+                    }
+                }
+                else if (state.InputCursor > 0)
                 {
                     var newBuffer = state.InputBuffer.Remove(state.InputCursor - 1, 1);
                     return state with
@@ -207,9 +219,19 @@ public class TuiKeyHandler
                 return state;
 
             case ConsoleKey.LeftArrow:
+                if (hasAlt)
+                {
+                    // Jump to previous word
+                    return state with { InputCursor = FindWordBoundaryBackward(state.InputBuffer, state.InputCursor) };
+                }
                 return state with { InputCursor = Math.Max(0, state.InputCursor - 1) };
 
             case ConsoleKey.RightArrow:
+                if (hasAlt)
+                {
+                    // Jump to next word
+                    return state with { InputCursor = FindWordBoundaryForward(state.InputBuffer, state.InputCursor) };
+                }
                 return state with { InputCursor = Math.Min(state.InputBuffer.Length, state.InputCursor + 1) };
 
             case ConsoleKey.Home:
@@ -230,6 +252,30 @@ public class TuiKeyHandler
                 }
                 return state;
         }
+    }
+
+    private static int FindWordBoundaryBackward(string text, int position)
+    {
+        if (position <= 0) return 0;
+
+        var i = position - 1;
+        // Skip whitespace
+        while (i > 0 && char.IsWhiteSpace(text[i])) i--;
+        // Skip word characters
+        while (i > 0 && !char.IsWhiteSpace(text[i - 1])) i--;
+        return i;
+    }
+
+    private static int FindWordBoundaryForward(string text, int position)
+    {
+        if (position >= text.Length) return text.Length;
+
+        var i = position;
+        // Skip current word characters
+        while (i < text.Length && !char.IsWhiteSpace(text[i])) i++;
+        // Skip whitespace
+        while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+        return i;
     }
 
     private TuiState ConfirmInput(TuiState state, bool isRename)

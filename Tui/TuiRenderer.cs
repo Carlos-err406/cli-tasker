@@ -4,6 +4,9 @@ using Spectre.Console;
 
 public class TuiRenderer
 {
+    // ANSI escape code to clear from cursor to end of line
+    private const string ClearToEndOfLine = "\x1b[K";
+
     public void Render(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         Console.SetCursorPosition(0, 0);
@@ -25,20 +28,19 @@ public class TuiRenderer
             _ => ""
         };
 
-        AnsiConsole.MarkupLine($"[bold underline]tasker[/] [dim]([/]{Markup.Escape(listName)}[dim])[/]{modeIndicator}");
-        AnsiConsole.WriteLine();
+        WriteLineCleared($"[bold underline]tasker[/] [dim]([/]{Markup.Escape(listName)}[dim])[/]{modeIndicator}");
+        ClearLine(); // Empty line after header
     }
 
     private void RenderTasks(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         var terminalHeight = Console.WindowHeight;
-        // Reserve more space at bottom for input modes
         var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 2 : 0;
         var availableLines = terminalHeight - 6 - inputModeExtraSpace;
 
         if (tasks.Count == 0)
         {
-            AnsiConsole.MarkupLine("[dim]No tasks. Press [bold]a[/] to add one.[/]");
+            WriteLineCleared("[dim]No tasks. Press [bold]a[/] to add one.[/]");
             for (var i = 0; i < availableLines - 1; i++)
                 ClearLine();
             return;
@@ -59,7 +61,7 @@ public class TuiRenderer
             if (showingAllLists && task.ListName != lastListName)
             {
                 if (linesRendered >= availableLines) break;
-                AnsiConsole.MarkupLine($"[bold cyan]── {Markup.Escape(task.ListName)} ──[/]");
+                WriteLineCleared($"[bold cyan]── {Markup.Escape(task.ListName)} ──[/]");
                 linesRendered++;
                 lastListName = task.ListName;
             }
@@ -98,7 +100,7 @@ public class TuiRenderer
             ? $"[bold]{firstLine}[/]"
             : (task.IsChecked ? $"[dim strikethrough]{firstLine}[/]" : firstLine);
 
-        AnsiConsole.MarkupLine($"{cursor}{selectionIndicator}{taskId} {checkbox} {description}");
+        WriteLineCleared($"{cursor}{selectionIndicator}{taskId} {checkbox} {description}");
         linesRendered++;
 
         if (lines.Length > 1)
@@ -107,7 +109,7 @@ public class TuiRenderer
             for (var i = 1; i < lines.Length; i++)
             {
                 var continuationLine = HighlightSearch(lines[i], searchQuery);
-                AnsiConsole.MarkupLine($"{indent}{style}{continuationLine}[/]");
+                WriteLineCleared($"{indent}{style}{continuationLine}[/]");
                 linesRendered++;
             }
         }
@@ -136,26 +138,23 @@ public class TuiRenderer
 
     private void RenderStatusBar(TuiState state, int taskCount)
     {
-        AnsiConsole.WriteLine();
+        ClearLine(); // Empty line before status bar
 
-        // Render input field for input modes
         if (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename)
         {
             RenderInputField(state);
             return;
         }
 
-        // Status message
         if (!string.IsNullOrEmpty(state.StatusMessage))
         {
-            AnsiConsole.MarkupLine($"[green]{Markup.Escape(state.StatusMessage)}[/]");
+            WriteLineCleared($"[green]{Markup.Escape(state.StatusMessage)}[/]");
         }
         else
         {
             ClearLine();
         }
 
-        // Key hints based on mode
         var hints = state.Mode switch
         {
             TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:toggle [dim]x[/]:del [dim]r[/]:rename [dim]a[/]:add [dim]l[/]:lists [dim]m[/]:move [dim]/[/]:search [dim]v[/]:select [dim]q[/]:quit",
@@ -164,27 +163,24 @@ public class TuiRenderer
             _ => ""
         };
 
-        AnsiConsole.MarkupLine(hints);
+        WriteLineCleared(hints);
     }
 
     private void RenderInputField(TuiState state)
     {
-        // Show status/hint on first line
         if (!string.IsNullOrEmpty(state.StatusMessage))
         {
-            AnsiConsole.MarkupLine($"[dim]{Markup.Escape(state.StatusMessage)}[/]");
+            WriteLineCleared($"[dim]{Markup.Escape(state.StatusMessage)}[/]");
         }
         else
         {
             ClearLine();
         }
 
-        // Render input line with cursor
-        var maxWidth = Console.WindowWidth - 4; // Leave room for "> " prefix and padding
+        var maxWidth = Console.WindowWidth - 4;
         var buffer = state.InputBuffer;
         var cursorPos = state.InputCursor;
 
-        // Handle long input by showing window around cursor
         var displayStart = 0;
         if (buffer.Length > maxWidth)
         {
@@ -200,30 +196,35 @@ public class TuiRenderer
         var visibleBuffer = buffer[displayStart..displayEnd];
         var visibleCursor = cursorPos - displayStart;
 
-        // Build the display string with cursor indicator
         var beforeCursor = visibleBuffer[..Math.Min(visibleCursor, visibleBuffer.Length)];
         var atCursor = visibleCursor < visibleBuffer.Length ? visibleBuffer[visibleCursor].ToString() : " ";
         var afterCursor = visibleCursor < visibleBuffer.Length - 1 ? visibleBuffer[(visibleCursor + 1)..] : "";
 
-        // Clear the line first
-        Console.Write(new string(' ', Console.WindowWidth));
-        Console.SetCursorPosition(0, Console.CursorTop);
-
-        // Render with cursor highlight
+        // Clear line and render input with cursor
+        Console.Write(ClearToEndOfLine);
         AnsiConsole.Markup($"[bold]>[/] {Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
-
-        // Pad and move to next line
         Console.WriteLine();
 
-        // Show input hints
-        AnsiConsole.MarkupLine("[dim]enter[/]:confirm [dim]esc[/]:cancel [dim]←→[/]:move cursor");
+        WriteLineCleared("[dim]enter[/]:confirm [dim]esc[/]:cancel [dim]←→[/]:move [dim]⌥←→[/]:word");
     }
 
+    /// <summary>
+    /// Write markup and clear to end of line, then move to next line
+    /// </summary>
+    private static void WriteLineCleared(string markup)
+    {
+        AnsiConsole.Markup(markup);
+        Console.Write(ClearToEndOfLine);
+        Console.WriteLine();
+    }
+
+    /// <summary>
+    /// Clear entire line and move to next line
+    /// </summary>
     private static void ClearLine()
     {
-        var width = Console.WindowWidth;
-        Console.Write(new string(' ', width));
-        Console.SetCursorPosition(0, Console.CursorTop + 1);
+        Console.Write(ClearToEndOfLine);
+        Console.WriteLine();
     }
 
     public void Clear()
