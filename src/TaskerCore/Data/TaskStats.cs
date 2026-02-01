@@ -1,6 +1,9 @@
-namespace cli_tasker;
+namespace TaskerCore.Data;
 
-record TaskStats
+/// <summary>
+/// Statistics about tasks in a list or across all lists.
+/// </summary>
+public record TaskStats
 {
     public int Total { get; init; }
     public int Checked { get; init; }

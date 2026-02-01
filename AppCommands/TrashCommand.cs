@@ -1,6 +1,10 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using Spectre.Console;
+using TaskerCore.Config;
+using TaskerCore.Data;
+using TaskerCore.Models;
 
 static class TrashCommand
 {
@@ -33,7 +37,7 @@ static class TrashCommand
                 {
                     var taskList = new TodoTaskList(name);
                     Output.Markup($"[bold underline]{name}[/]");
-                    taskList.ListTrash();
+                    DisplayTrash(taskList.GetTrash());
                     Output.Info("");
                 }
             }
@@ -41,11 +45,34 @@ static class TrashCommand
             {
                 // Filter to specific list
                 var todoTaskList = new TodoTaskList(listName);
-                todoTaskList.ListTrash();
+                DisplayTrash(todoTaskList.GetTrash());
             }
         }));
 
         return listCommand;
+    }
+
+    private static void DisplayTrash(List<TodoTask> trash)
+    {
+        if (trash.Count == 0)
+        {
+            Output.Info("Trash is empty");
+            return;
+        }
+
+        foreach (var td in trash)
+        {
+            var indent = new string(' ', AppConfig.TaskPrefixLength);
+            var lines = td.Description.Split('\n');
+            var firstLine = $"[bold]{Markup.Escape(lines[0])}[/]";
+            var restLines = lines.Length > 1
+                ? "\n" + indent + "[dim]" + string.Join("\n" + indent, lines.Skip(1).Select(Markup.Escape)) + "[/]"
+                : "";
+
+            var checkbox = td.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
+            var taskId = $"[dim]({td.Id})[/]";
+            Output.Markup($"{taskId} {checkbox} - {firstLine}{restLines}");
+        }
     }
 
     private static Command CreateRestoreCommand(Option<string?> listOption)
@@ -69,7 +96,7 @@ static class TrashCommand
                 return;
             }
 
-            todoTaskList.RestoreFromTrash(taskId);
+            Output.Result(todoTaskList.RestoreFromTrash(taskId));
         }));
 
         return restoreCommand;
@@ -84,18 +111,20 @@ static class TrashCommand
         {
             var listName = parseResult.GetValue(listOption);
 
+            int count;
             if (listName == null)
             {
                 // Clear all trash
                 var todoTaskList = new TodoTaskList();
-                todoTaskList.ClearTrash();
+                count = todoTaskList.ClearTrash();
             }
             else
             {
                 // Clear trash for specific list
                 var todoTaskList = new TodoTaskList(listName);
-                todoTaskList.ClearTrash();
+                count = todoTaskList.ClearTrash();
             }
+            Output.Success($"Permanently deleted {count} task(s) from trash");
         }));
 
         return clearCommand;

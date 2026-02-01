@@ -2,6 +2,9 @@ namespace cli_tasker;
 
 using System.CommandLine;
 using Spectre.Console;
+using TaskerCore.Config;
+using TaskerCore.Data;
+using TaskerCore.Exceptions;
 
 static class ListsCommand
 {
@@ -61,8 +64,7 @@ static class ListsCommand
                 return;
             }
 
-            ListManager.DeleteList(name);
-            Output.Success($"Deleted list '{name}' and all its tasks");
+            Output.Result(ListManager.DeleteList(name));
         }));
 
         return deleteCommand;
@@ -92,8 +94,7 @@ static class ListsCommand
                 return;
             }
 
-            ListManager.RenameList(oldName, newName);
-            Output.Success($"Renamed list '{oldName}' to '{newName}'");
+            Output.Result(ListManager.RenameList(oldName, newName));
         }));
 
         return renameCommand;

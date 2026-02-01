@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using TaskerCore.Exceptions;
 
 static class CommandHelper
 {

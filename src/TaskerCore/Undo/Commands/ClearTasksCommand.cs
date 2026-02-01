@@ -1,4 +1,7 @@
-namespace cli_tasker.Undo.Commands;
+namespace TaskerCore.Undo.Commands;
+
+using TaskerCore.Data;
+using TaskerCore.Models;
 
 public record ClearTasksCommand : IUndoableCommand
 {

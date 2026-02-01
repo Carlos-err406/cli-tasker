@@ -1,8 +1,8 @@
-namespace cli_tasker.Undo;
+namespace TaskerCore.Undo;
 
 using System.Security.Cryptography;
 using System.Text.Json;
-using cli_tasker.Undo.Commands;
+using TaskerCore.Undo.Commands;
 
 public sealed class UndoManager
 {
@@ -163,7 +163,7 @@ public sealed class UndoManager
 
     private void Save()
     {
-        EnsureDirectory();
+        StoragePaths.EnsureDirectory();
 
         var history = new UndoHistory
         {
@@ -212,11 +212,4 @@ public sealed class UndoManager
     {
         WriteIndented = true
     };
-
-    private static void EnsureDirectory()
-    {
-        var directory = Path.GetDirectoryName(UndoConfig.HistoryPath);
-        if (directory != null && !Directory.Exists(directory))
-            Directory.CreateDirectory(directory);
-    }
 }

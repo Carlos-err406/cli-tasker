@@ -1,4 +1,4 @@
-namespace cli_tasker.Undo;
+namespace TaskerCore.Undo;
 
 public record UndoHistory
 {

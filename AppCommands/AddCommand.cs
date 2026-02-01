@@ -1,6 +1,9 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using TaskerCore.Config;
+using TaskerCore.Data;
+using TaskerCore.Models;
 
 static class AddCommand
 {

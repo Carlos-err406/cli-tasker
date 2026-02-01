@@ -1,7 +1,7 @@
-namespace cli_tasker.Undo;
+namespace TaskerCore.Undo;
 
 using System.Text.Json.Serialization;
-using cli_tasker.Undo.Commands;
+using TaskerCore.Undo.Commands;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
 [JsonDerivedType(typeof(AddTaskCommand), "add")]

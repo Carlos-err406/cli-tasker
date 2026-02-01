@@ -1,4 +1,4 @@
-namespace cli_tasker;
+namespace TaskerCore.Exceptions;
 
 public class TaskerException : Exception
 {

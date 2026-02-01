@@ -1,4 +1,6 @@
-namespace cli_tasker.Undo.Commands;
+namespace TaskerCore.Undo.Commands;
+
+using TaskerCore.Data;
 
 public record RenameTaskCommand : IUndoableCommand
 {

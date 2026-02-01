@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using TaskerCore.Data;
 
 static class DeleteCommand
 {
@@ -29,7 +30,7 @@ static class DeleteCommand
                 Output.Error("At least one task id is required");
                 return;
             }
-            todoTaskList.DeleteTasks(taskIds);
+            Output.BatchResults(todoTaskList.DeleteTasks(taskIds));
         }));
 
         clearCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
@@ -42,8 +43,8 @@ static class DeleteCommand
             }
 
             var todoTaskList = new TodoTaskList(listName);
-            todoTaskList.ClearTasks();
-            Output.Success($"Cleared all tasks from '{listName}'");
+            var count = todoTaskList.ClearTasks();
+            Output.Success($"Cleared {count} task(s) from '{listName}'");
         }));
 
         return (deleteCommand, clearCommand);

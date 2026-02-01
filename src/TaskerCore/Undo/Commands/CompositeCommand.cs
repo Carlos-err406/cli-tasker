@@ -1,4 +1,4 @@
-namespace cli_tasker.Undo.Commands;
+namespace TaskerCore.Undo.Commands;
 
 public record CompositeCommand : IUndoableCommand
 {

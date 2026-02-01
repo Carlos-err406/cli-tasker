@@ -1,7 +1,9 @@
 namespace cli_tasker.Tui;
 
 using Spectre.Console;
-using cli_tasker.Undo;
+using TaskerCore.Data;
+using TaskerCore.Models;
+using TaskerCore.Undo;
 
 public class TuiKeyHandler
 {

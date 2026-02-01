@@ -1,8 +1,11 @@
-namespace cli_tasker;
+namespace TaskerCore.Data;
 
 using System.Text.RegularExpressions;
+using TaskerCore.Config;
+using TaskerCore.Exceptions;
+using TaskerCore.Results;
 
-static partial class ListManager
+public static partial class ListManager
 {
     public const string DefaultListName = "tasks";
 
@@ -31,9 +34,13 @@ static partial class ListManager
         return TodoTaskList.GetAllListNames();
     }
 
-    // CRUD
+    // CRUD - These return TaskResult instead of using Output directly
 
-    public static void CreateList(string name)
+    /// <summary>
+    /// Creates a new list. Lists are created implicitly when tasks are added.
+    /// </summary>
+    /// <returns>TaskResult indicating success or error.</returns>
+    public static TaskResult CreateList(string name)
     {
         if (!IsValidListName(name))
         {
@@ -46,11 +53,14 @@ static partial class ListManager
         }
 
         // Lists are created implicitly when tasks are added
-        // This is now a no-op since we don't have separate list files
-        Output.Info($"List '{name}' will be created when you add tasks to it with: tasker add \"task\" -l {name}");
+        return new TaskResult.Success($"List '{name}' will be created when you add tasks to it with: tasker add \"task\" -l {name}");
     }
 
-    public static void DeleteList(string name)
+    /// <summary>
+    /// Deletes a list and all its tasks.
+    /// </summary>
+    /// <returns>TaskResult indicating success or if default list was reset.</returns>
+    public static TaskResult DeleteList(string name)
     {
         if (name == DefaultListName)
         {
@@ -68,11 +78,17 @@ static partial class ListManager
         if (AppConfig.GetDefaultList() == name)
         {
             AppConfig.SetDefaultList(DefaultListName);
-            Output.Warning($"Note: '{name}' was the default list. Default reset to '{DefaultListName}'.");
+            return new TaskResult.Success($"Deleted list '{name}'. Note: It was the default list. Default reset to '{DefaultListName}'.");
         }
+
+        return new TaskResult.Success($"Deleted list '{name}'");
     }
 
-    public static void RenameList(string oldName, string newName)
+    /// <summary>
+    /// Renames a list.
+    /// </summary>
+    /// <returns>TaskResult indicating success or if default list was updated.</returns>
+    public static TaskResult RenameList(string oldName, string newName)
     {
         if (oldName == DefaultListName)
         {
@@ -100,8 +116,10 @@ static partial class ListManager
         if (AppConfig.GetDefaultList() == oldName)
         {
             AppConfig.SetDefaultList(newName);
-            Output.Warning($"Note: '{oldName}' was the default list. Default updated to '{newName}'.");
+            return new TaskResult.Success($"Renamed '{oldName}' to '{newName}'. Note: It was the default list. Default updated to '{newName}'.");
         }
+
+        return new TaskResult.Success($"Renamed list '{oldName}' to '{newName}'");
     }
 
     // Factory

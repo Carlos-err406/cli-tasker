@@ -1,11 +1,14 @@
-namespace cli_tasker.Undo.Commands;
+namespace TaskerCore.Undo.Commands;
+
+using TaskerCore.Data;
+using TaskerCore.Models;
 
 public record DeleteTaskCommand : IUndoableCommand
 {
     public required TodoTask DeletedTask { get; init; }
     public DateTime ExecutedAt { get; init; } = DateTime.Now;
 
-    public string Description => $"Delete: {Truncate(DeletedTask.Description, 30)}";
+    public string Description => $"Delete: {StringHelpers.Truncate(DeletedTask.Description, 30)}";
 
     public void Execute()
     {
@@ -18,11 +21,5 @@ public record DeleteTaskCommand : IUndoableCommand
         // Restore from captured state (not trash - trash may be cleared)
         var taskList = new TodoTaskList();
         taskList.AddTodoTask(DeletedTask, recordUndo: false);
-    }
-
-    private static string Truncate(string text, int maxLength)
-    {
-        var firstLine = text.Split('\n')[0];
-        return firstLine.Length <= maxLength ? firstLine : firstLine[..maxLength] + "...";
     }
 }

@@ -1,18 +1,13 @@
-namespace cli_tasker;
+namespace TaskerCore.Data;
 
 using System.Text.Json;
-using Spectre.Console;
-using cli_tasker.Undo;
-using cli_tasker.Undo.Commands;
+using TaskerCore.Models;
+using TaskerCore.Results;
+using TaskerCore.Undo;
+using TaskerCore.Undo.Commands;
 
-class TodoTaskList
+public class TodoTaskList
 {
-    private static readonly string Directory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "cli-tasker");
-
-    private static readonly string AllTasksPath = Path.Combine(Directory, "all-tasks.json");
-    private static readonly string AllTrashPath = Path.Combine(Directory, "all-tasks.trash.json");
     private static readonly object SaveLock = new();
 
     private TodoTask[] TodoTasks { get; set; } = [];
@@ -27,30 +22,29 @@ class TodoTaskList
 
     private void Load()
     {
-        EnsureDirectory();
+        StoragePaths.EnsureDirectory();
 
         // Load all tasks
-        if (File.Exists(AllTasksPath))
+        if (File.Exists(StoragePaths.AllTasksPath))
         {
             try
             {
-                var raw = File.ReadAllText(AllTasksPath);
+                var raw = File.ReadAllText(StoragePaths.AllTasksPath);
                 var deserialized = JsonSerializer.Deserialize<TodoTask[]>(raw);
                 TodoTasks = deserialized ?? [];
             }
-            catch (JsonException ex)
+            catch (JsonException)
             {
-                Output.Error($"Error reading tasks file: {ex.Message}");
                 TodoTasks = [];
             }
         }
 
         // Load all trash
-        if (File.Exists(AllTrashPath))
+        if (File.Exists(StoragePaths.AllTrashPath))
         {
             try
             {
-                var trashRaw = File.ReadAllText(AllTrashPath);
+                var trashRaw = File.ReadAllText(StoragePaths.AllTrashPath);
                 var trashDeserialized = JsonSerializer.Deserialize<TodoTask[]>(trashRaw);
                 TrashTasks = trashDeserialized ?? [];
             }
@@ -68,8 +62,27 @@ class TodoTaskList
     private TodoTask[] GetFilteredTrash() =>
         listNameFilter == null ? TrashTasks : TrashTasks.Where(t => t.ListName == listNameFilter).ToArray();
 
-    // Public accessor for TUI
+    // Public accessor for TUI and GUI
     public List<TodoTask> GetAllTasks() => GetFilteredTasks().ToList();
+
+    /// <summary>
+    /// Gets tasks sorted for display: unchecked first, then checked. Newest first within each group.
+    /// </summary>
+    public List<TodoTask> GetSortedTasks(bool? filterChecked = null)
+    {
+        var tasks = GetFilteredTasks();
+        var filteredTasks = filterChecked switch
+        {
+            true => tasks.Where(td => td.IsChecked),
+            false => tasks.Where(td => !td.IsChecked),
+            null => tasks
+        };
+
+        return filteredTasks
+            .OrderBy(td => td.IsChecked)
+            .ThenByDescending(td => td.CreatedAt)
+            .ToList();
+    }
 
     public void AddTodoTask(TodoTask todoTask, bool recordUndo = true)
     {
@@ -94,13 +107,12 @@ class TodoTaskList
         return TodoTasks.FirstOrDefault(task => task.Id == taskId);
     }
 
-    public void CheckTask(string taskId, bool recordUndo = true)
+    public TaskResult CheckTask(string taskId, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
         {
-            Output.Error($"Could not find task with id {taskId}");
-            return;
+            return new TaskResult.NotFound(taskId);
         }
 
         if (recordUndo)
@@ -118,15 +130,16 @@ class TodoTaskList
         {
             UndoManager.Instance.SaveHistory();
         }
+
+        return new TaskResult.Success($"Checked task: {taskId}");
     }
 
-    public void UncheckTask(string taskId, bool recordUndo = true)
+    public TaskResult UncheckTask(string taskId, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
         {
-            Output.Error($"Could not find task with id {taskId}");
-            return;
+            return new TaskResult.NotFound(taskId);
         }
 
         if (recordUndo)
@@ -144,15 +157,16 @@ class TodoTaskList
         {
             UndoManager.Instance.SaveHistory();
         }
+
+        return new TaskResult.Success($"Unchecked task: {taskId}");
     }
 
-    public void DeleteTask(string taskId, bool save = true, bool moveToTrash = true, bool recordUndo = true)
+    public TaskResult DeleteTask(string taskId, bool save = true, bool moveToTrash = true, bool recordUndo = true)
     {
         var task = GetTodoTaskById(taskId);
         if (task == null)
         {
-            Output.Error($"Could not find task with id {taskId}");
-            return;
+            return new TaskResult.NotFound(taskId);
         }
 
         if (recordUndo && moveToTrash)
@@ -176,21 +190,25 @@ class TodoTaskList
                 UndoManager.Instance.SaveHistory();
             }
         }
+
+        return new TaskResult.Success($"Deleted task: {taskId}");
     }
 
-    public void DeleteTasks(string[] taskIds, bool recordUndo = true)
+    public BatchTaskResult DeleteTasks(string[] taskIds, bool recordUndo = true)
     {
         if (recordUndo)
         {
             UndoManager.Instance.BeginBatch($"Delete {taskIds.Length} tasks");
         }
 
+        var results = new List<TaskResult>();
+
         foreach (var taskId in taskIds)
         {
             var task = GetTodoTaskById(taskId);
             if (task == null)
             {
-                Output.Error($"Could not find task with id {taskId}");
+                results.Add(new TaskResult.NotFound(taskId));
                 continue;
             }
 
@@ -202,7 +220,7 @@ class TodoTaskList
 
             TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
             TrashTasks = [task, .. TrashTasks];
-            Output.Success($"Deleted task: {taskId}");
+            results.Add(new TaskResult.Success($"Deleted task: {taskId}"));
         }
 
         if (recordUndo)
@@ -216,21 +234,25 @@ class TodoTaskList
         {
             UndoManager.Instance.SaveHistory();
         }
+
+        return new BatchTaskResult { Results = results };
     }
 
-    public void CheckTasks(string[] taskIds, bool recordUndo = true)
+    public BatchTaskResult CheckTasks(string[] taskIds, bool recordUndo = true)
     {
         if (recordUndo)
         {
             UndoManager.Instance.BeginBatch($"Check {taskIds.Length} tasks");
         }
 
+        var results = new List<TaskResult>();
+
         foreach (var taskId in taskIds)
         {
             var todoTask = GetTodoTaskById(taskId);
             if (todoTask == null)
             {
-                Output.Error($"Could not find task with id {taskId}");
+                results.Add(new TaskResult.NotFound(taskId));
                 continue;
             }
 
@@ -243,7 +265,7 @@ class TodoTaskList
             TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
             var checkedTask = todoTask.Check();
             TodoTasks = [checkedTask, .. TodoTasks];
-            Output.Success($"Checked task: {taskId}");
+            results.Add(new TaskResult.Success($"Checked task: {taskId}"));
         }
 
         if (recordUndo)
@@ -257,21 +279,25 @@ class TodoTaskList
         {
             UndoManager.Instance.SaveHistory();
         }
+
+        return new BatchTaskResult { Results = results };
     }
 
-    public void UncheckTasks(string[] taskIds, bool recordUndo = true)
+    public BatchTaskResult UncheckTasks(string[] taskIds, bool recordUndo = true)
     {
         if (recordUndo)
         {
             UndoManager.Instance.BeginBatch($"Uncheck {taskIds.Length} tasks");
         }
 
+        var results = new List<TaskResult>();
+
         foreach (var taskId in taskIds)
         {
             var todoTask = GetTodoTaskById(taskId);
             if (todoTask == null)
             {
-                Output.Error($"Could not find task with id {taskId}");
+                results.Add(new TaskResult.NotFound(taskId));
                 continue;
             }
 
@@ -284,7 +310,7 @@ class TodoTaskList
             TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
             var uncheckedTask = todoTask.UnCheck();
             TodoTasks = [uncheckedTask, .. TodoTasks];
-            Output.Success($"Unchecked task: {taskId}");
+            results.Add(new TaskResult.Success($"Unchecked task: {taskId}"));
         }
 
         if (recordUndo)
@@ -298,9 +324,11 @@ class TodoTaskList
         {
             UndoManager.Instance.SaveHistory();
         }
+
+        return new BatchTaskResult { Results = results };
     }
 
-    public void ClearTasks(bool recordUndo = true)
+    public int ClearTasks(bool recordUndo = true)
     {
         // Only clear tasks matching the filter
         var tasksToMove = GetFilteredTasks();
@@ -321,15 +349,16 @@ class TodoTaskList
         {
             UndoManager.Instance.SaveHistory();
         }
+
+        return tasksToMove.Length;
     }
 
-    public void RenameTask(string taskId, string newDescription, bool recordUndo = true)
+    public TaskResult RenameTask(string taskId, string newDescription, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
         {
-            Output.Error($"Could not find task with id {taskId}");
-            return;
+            return new TaskResult.NotFound(taskId);
         }
 
         if (recordUndo)
@@ -346,28 +375,27 @@ class TodoTaskList
         TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
         var renamedTask = todoTask.Rename(newDescription);
         TodoTasks = [renamedTask, .. TodoTasks];
-        Output.Success($"Renamed task: {taskId}");
         Save();
 
         if (recordUndo)
         {
             UndoManager.Instance.SaveHistory();
         }
+
+        return new TaskResult.Success($"Renamed task: {taskId}");
     }
 
-    public void MoveTask(string taskId, string targetList, bool recordUndo = true)
+    public TaskResult MoveTask(string taskId, string targetList, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
         {
-            Output.Error($"Could not find task with id {taskId}");
-            return;
+            return new TaskResult.NotFound(taskId);
         }
 
         if (todoTask.ListName == targetList)
         {
-            Output.Info($"Task is already in '{targetList}'");
-            return;
+            return new TaskResult.NoChange($"Task is already in '{targetList}'");
         }
 
         var sourceList = todoTask.ListName;
@@ -386,108 +414,45 @@ class TodoTaskList
         TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
         var movedTask = todoTask.MoveToList(targetList);
         TodoTasks = [movedTask, .. TodoTasks];
-        Output.Success($"Moved task {taskId} from '{sourceList}' to '{targetList}'");
         Save();
 
         if (recordUndo)
         {
             UndoManager.Instance.SaveHistory();
         }
-    }
 
-    public void ListTodoTasks(bool? filterChecked = null)
-    {
-        var tasks = GetFilteredTasks();
-        var filteredTasks = filterChecked switch
-        {
-            true => tasks.Where(td => td.IsChecked),
-            false => tasks.Where(td => !td.IsChecked),
-            null => tasks
-        };
-
-        var taskList = filteredTasks
-            .OrderBy(td => td.IsChecked)       // Unchecked tasks first
-            .ThenByDescending(td => td.CreatedAt)  // Newest first within each group
-            .ToArray();
-
-        if (taskList.Length == 0)
-        {
-            var message = filterChecked switch
-            {
-                true => "No checked tasks found",
-                false => "No unchecked tasks found",
-                null => "No tasks saved yet... use the add command to create one"
-            };
-            Output.Info(message);
-            return;
-        }
-        foreach (var td in taskList)
-        {
-            var indent = new string(' ', AppConfig.TaskPrefixLength);
-            var lines = td.Description.Split('\n');
-            var firstLine = $"[bold]{Markup.Escape(lines[0])}[/]";
-            var restLines = lines.Length > 1
-                ? "\n" + indent + "[dim]" + string.Join("\n" + indent, lines.Skip(1).Select(Markup.Escape)) + "[/]"
-                : "";
-
-            var checkbox = td.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
-            var taskId = $"[dim]({td.Id})[/]";
-            Output.Markup($"{taskId} {checkbox} - {firstLine}{restLines}");
-        }
+        return new TaskResult.Success($"Moved task {taskId} from '{sourceList}' to '{targetList}'");
     }
 
     // Trash methods
 
-    public void ListTrash()
+    public List<TodoTask> GetTrash()
     {
-        var trash = GetFilteredTrash();
-        if (trash.Length == 0)
-        {
-            Output.Info("Trash is empty");
-            return;
-        }
-
-        foreach (var td in trash)
-        {
-            var indent = new string(' ', AppConfig.TaskPrefixLength);
-            var lines = td.Description.Split('\n');
-            var firstLine = $"[bold]{Markup.Escape(lines[0])}[/]";
-            var restLines = lines.Length > 1
-                ? "\n" + indent + "[dim]" + string.Join("\n" + indent, lines.Skip(1).Select(Markup.Escape)) + "[/]"
-                : "";
-
-            var checkbox = td.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
-            var taskId = $"[dim]({td.Id})[/]";
-            Output.Markup($"{taskId} {checkbox} - {firstLine}{restLines}");
-        }
+        return GetFilteredTrash().ToList();
     }
 
-    public void RestoreFromTrash(string taskId)
+    public TaskResult RestoreFromTrash(string taskId)
     {
         var task = TrashTasks.FirstOrDefault(t => t.Id == taskId);
         if (task == null)
         {
-            Output.Error($"Could not find task with id {taskId} in trash");
-            return;
+            return new TaskResult.NotFound(taskId);
         }
 
         TrashTasks = [.. TrashTasks.Where(t => t.Id != taskId)];
         TodoTasks = [task, .. TodoTasks];
-        Output.Success($"Restored task: {taskId}");
         Save();
+
+        return new TaskResult.Success($"Restored task: {taskId}");
     }
 
-    public int ClearTrash(bool silent = false)
+    public int ClearTrash()
     {
         var trashToClear = GetFilteredTrash();
         var count = trashToClear.Length;
         var idsToRemove = trashToClear.Select(t => t.Id).ToHashSet();
         TrashTasks = [.. TrashTasks.Where(t => !idsToRemove.Contains(t.Id))];
         Save();
-        if (!silent)
-        {
-            Output.Success($"Permanently deleted {count} task(s) from trash");
-        }
         return count;
     }
 
@@ -508,15 +473,15 @@ class TodoTaskList
 
     public static string[] GetAllListNames()
     {
-        EnsureDirectory();
-        if (!File.Exists(AllTasksPath))
+        StoragePaths.EnsureDirectory();
+        if (!File.Exists(StoragePaths.AllTasksPath))
         {
             return [ListManager.DefaultListName];
         }
 
         try
         {
-            var raw = File.ReadAllText(AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
             var tasks = JsonSerializer.Deserialize<TodoTask[]>(raw) ?? [];
             var listNames = tasks
                 .Select(t => t.ListName)
@@ -540,14 +505,14 @@ class TodoTaskList
 
     public static bool ListHasTasks(string listName)
     {
-        if (!File.Exists(AllTasksPath))
+        if (!File.Exists(StoragePaths.AllTasksPath))
         {
             return false;
         }
 
         try
         {
-            var raw = File.ReadAllText(AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
             var tasks = JsonSerializer.Deserialize<TodoTask[]>(raw) ?? [];
             return tasks.Any(t => t.ListName == listName);
         }
@@ -559,43 +524,43 @@ class TodoTaskList
 
     public static void DeleteList(string listName)
     {
-        EnsureDirectory();
-        if (!File.Exists(AllTasksPath))
+        StoragePaths.EnsureDirectory();
+        if (!File.Exists(StoragePaths.AllTasksPath))
         {
             return;
         }
 
-        var raw = File.ReadAllText(AllTasksPath);
+        var raw = File.ReadAllText(StoragePaths.AllTasksPath);
         var tasks = JsonSerializer.Deserialize<TodoTask[]>(raw) ?? [];
         var remainingTasks = tasks.Where(t => t.ListName != listName).ToArray();
 
         lock (SaveLock)
         {
-            File.WriteAllText(AllTasksPath, JsonSerializer.Serialize(remainingTasks));
+            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(remainingTasks));
         }
 
         // Also remove from trash
-        if (File.Exists(AllTrashPath))
+        if (File.Exists(StoragePaths.AllTrashPath))
         {
-            var trashRaw = File.ReadAllText(AllTrashPath);
+            var trashRaw = File.ReadAllText(StoragePaths.AllTrashPath);
             var trash = JsonSerializer.Deserialize<TodoTask[]>(trashRaw) ?? [];
             var remainingTrash = trash.Where(t => t.ListName != listName).ToArray();
             lock (SaveLock)
             {
-                File.WriteAllText(AllTrashPath, JsonSerializer.Serialize(remainingTrash));
+                File.WriteAllText(StoragePaths.AllTrashPath, JsonSerializer.Serialize(remainingTrash));
             }
         }
     }
 
     public static void RenameList(string oldName, string newName)
     {
-        EnsureDirectory();
-        if (!File.Exists(AllTasksPath))
+        StoragePaths.EnsureDirectory();
+        if (!File.Exists(StoragePaths.AllTasksPath))
         {
             return;
         }
 
-        var raw = File.ReadAllText(AllTasksPath);
+        var raw = File.ReadAllText(StoragePaths.AllTasksPath);
         var tasks = JsonSerializer.Deserialize<TodoTask[]>(raw) ?? [];
         var updatedTasks = tasks.Select(t =>
             t.ListName == oldName ? t with { ListName = newName } : t
@@ -603,42 +568,34 @@ class TodoTaskList
 
         lock (SaveLock)
         {
-            File.WriteAllText(AllTasksPath, JsonSerializer.Serialize(updatedTasks));
+            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(updatedTasks));
         }
 
         // Also update in trash
-        if (File.Exists(AllTrashPath))
+        if (File.Exists(StoragePaths.AllTrashPath))
         {
-            var trashRaw = File.ReadAllText(AllTrashPath);
+            var trashRaw = File.ReadAllText(StoragePaths.AllTrashPath);
             var trash = JsonSerializer.Deserialize<TodoTask[]>(trashRaw) ?? [];
             var updatedTrash = trash.Select(t =>
                 t.ListName == oldName ? t with { ListName = newName } : t
             ).ToArray();
             lock (SaveLock)
             {
-                File.WriteAllText(AllTrashPath, JsonSerializer.Serialize(updatedTrash));
+                File.WriteAllText(StoragePaths.AllTrashPath, JsonSerializer.Serialize(updatedTrash));
             }
         }
     }
 
     private void Save()
     {
-        EnsureDirectory();
+        StoragePaths.EnsureDirectory();
         lock (SaveLock)
         {
             var tasksJson = JsonSerializer.Serialize(TodoTasks);
-            File.WriteAllText(AllTasksPath, tasksJson);
+            File.WriteAllText(StoragePaths.AllTasksPath, tasksJson);
 
             var trashJson = JsonSerializer.Serialize(TrashTasks);
-            File.WriteAllText(AllTrashPath, trashJson);
-        }
-    }
-
-    private static void EnsureDirectory()
-    {
-        if (!System.IO.Directory.Exists(Directory))
-        {
-            System.IO.Directory.CreateDirectory(Directory);
+            File.WriteAllText(StoragePaths.AllTrashPath, trashJson);
         }
     }
 }
