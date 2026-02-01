@@ -1,6 +1,7 @@
 namespace cli_tasker.Tui;
 
 using Spectre.Console;
+using cli_tasker.Undo;
 
 public class TuiKeyHandler
 {
@@ -20,6 +21,8 @@ public class TuiKeyHandler
             TuiMode.MultiSelect => HandleMultiSelectMode(key, state, tasks),
             TuiMode.InputAdd => HandleInputMode(key, state, isRename: false),
             TuiMode.InputRename => HandleInputMode(key, state, isRename: true),
+            TuiMode.SelectMoveTarget => HandleSelectMoveMode(key, state),
+            TuiMode.SelectList => HandleSelectListMode(key, state),
             _ => state
         };
     }
@@ -68,11 +71,11 @@ public class TuiKeyHandler
 
             // Switch list
             case ConsoleKey.L:
-                return SwitchList(state);
+                return StartSwitchList(state);
 
             // Move task
             case ConsoleKey.M:
-                return MoveTask(state, tasks);
+                return StartMoveTask(state, tasks);
 
             // Search
             case ConsoleKey.Oem2: // '/' key
@@ -81,6 +84,14 @@ public class TuiKeyHandler
             // Multi-select
             case ConsoleKey.V:
                 return state with { Mode = TuiMode.MultiSelect, SelectedTaskIds = new HashSet<string>() };
+
+            // Redo (Shift+Z)
+            case ConsoleKey.Z when (key.Modifiers & ConsoleModifiers.Shift) != 0:
+                return PerformRedo(state);
+
+            // Undo (z)
+            case ConsoleKey.Z:
+                return PerformUndo(state);
 
             // Quit
             case ConsoleKey.Q:
@@ -91,6 +102,22 @@ public class TuiKeyHandler
             default:
                 return state;
         }
+    }
+
+    private static TuiState PerformUndo(TuiState state)
+    {
+        var desc = UndoManager.Instance.Undo();
+        return desc != null
+            ? state.WithStatusMessage($"Undone: {desc}")
+            : state.WithStatusMessage("Nothing to undo");
+    }
+
+    private static TuiState PerformRedo(TuiState state)
+    {
+        var desc = UndoManager.Instance.Redo();
+        return desc != null
+            ? state.WithStatusMessage($"Redone: {desc}")
+            : state.WithStatusMessage("Nothing to redo");
     }
 
     private TuiState HandleSearchMode(ConsoleKeyInfo key, TuiState state, IReadOnlyList<TodoTask> tasks)
@@ -394,59 +421,102 @@ public class TuiKeyHandler
         return state.WithStatusMessage("Deleted") with { CursorIndex = newIndex };
     }
 
-    private TuiState SwitchList(TuiState state)
+    private static TuiState StartSwitchList(TuiState state)
     {
-        Console.Clear();
         var lists = TodoTaskList.GetAllListNames().ToList();
         lists.Insert(0, "<All Lists>");
-        lists.Add("<Cancel>");
-
         var current = state.CurrentList ?? "<All Lists>";
-        var selected = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title("Switch to list:")
-                .AddChoices(lists)
-                .UseConverter(s => s == current ? $"{s} [dim](current)[/]" : s));
-
-        if (selected == "<Cancel>")
-            return state.WithStatusMessage("Cancelled");
-
-        var newList = selected == "<All Lists>" ? null : selected;
-        return state with { CurrentList = newList, CursorIndex = 0 };
+        return state.StartSelectList(current, lists.ToArray());
     }
 
-    private TuiState MoveTask(TuiState state, IReadOnlyList<TodoTask> tasks)
+    private static TuiState StartMoveTask(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
             return state;
 
         var task = tasks[state.CursorIndex];
+        var lists = TodoTaskList.GetAllListNames().ToArray();
+        return state.StartSelectMoveTarget(task.Id, task.ListName, lists);
+    }
 
-        Console.Clear();
-        var lists = TodoTaskList.GetAllListNames().ToList();
-        lists.Add("<Cancel>");
-
-        var selected = AnsiConsole.Prompt(
-            new SelectionPrompt<string>()
-                .Title($"Move task to list:")
-                .AddChoices(lists)
-                .UseConverter(s => s == task.ListName ? $"{s} [dim](current)[/]" : s));
-
-        if (selected == "<Cancel>")
-            return state.WithStatusMessage("Cancelled");
-
-        if (selected != task.ListName)
+    private TuiState HandleSelectMoveMode(ConsoleKeyInfo key, TuiState state)
+    {
+        switch (key.Key)
         {
-            var taskList = new TodoTaskList();
-            taskList.MoveTask(task.Id, selected);
+            case ConsoleKey.Escape:
+                return state.CancelSelect();
 
-            var newIndex = state.CurrentList != null
-                ? Math.Min(state.CursorIndex, Math.Max(0, tasks.Count - 2))
-                : 0;
-            return state.WithStatusMessage($"Moved to {selected}") with { CursorIndex = newIndex };
+            case ConsoleKey.DownArrow:
+                return state with { SelectCursor = Math.Min(state.SelectOptions.Length - 1, state.SelectCursor + 1) };
+
+            case ConsoleKey.UpArrow:
+                return state with { SelectCursor = Math.Max(0, state.SelectCursor - 1) };
+
+            case ConsoleKey.Enter:
+            case ConsoleKey.Spacebar:
+                var selected = state.SelectOptions[state.SelectCursor];
+                if (selected == state.SelectCurrentValue)
+                {
+                    return state.CancelSelect() with { StatusMessage = "Already in this list" };
+                }
+
+                var taskList = new TodoTaskList();
+                taskList.MoveTask(state.SelectTargetTaskId!, selected);
+
+                return (state with
+                {
+                    Mode = TuiMode.Normal,
+                    SelectOptions = Array.Empty<string>(),
+                    SelectCursor = 0,
+                    SelectTargetTaskId = null,
+                    SelectCurrentValue = null,
+                    CursorIndex = 0
+                }).WithStatusMessage($"Moved to {selected}");
+
+            case ConsoleKey.Q:
+                _app.Quit();
+                return state;
+
+            default:
+                return state;
         }
+    }
 
-        return state;
+    private TuiState HandleSelectListMode(ConsoleKeyInfo key, TuiState state)
+    {
+        switch (key.Key)
+        {
+            case ConsoleKey.Escape:
+                return state.CancelSelect();
+
+            case ConsoleKey.DownArrow:
+                return state with { SelectCursor = Math.Min(state.SelectOptions.Length - 1, state.SelectCursor + 1) };
+
+            case ConsoleKey.UpArrow:
+                return state with { SelectCursor = Math.Max(0, state.SelectCursor - 1) };
+
+            case ConsoleKey.Enter:
+            case ConsoleKey.Spacebar:
+                var selected = state.SelectOptions[state.SelectCursor];
+                var newList = selected == "<All Lists>" ? null : selected;
+
+                return (state with
+                {
+                    Mode = TuiMode.Normal,
+                    CurrentList = newList,
+                    SelectOptions = Array.Empty<string>(),
+                    SelectCursor = 0,
+                    SelectCurrentValue = null,
+                    CursorIndex = 0
+                }).WithStatusMessage($"Switched to {selected}");
+
+            case ConsoleKey.Q:
+                _app.Quit();
+                return state;
+
+            default:
+                return state;
+        }
     }
 
     private TuiState BulkDelete(TuiState state)

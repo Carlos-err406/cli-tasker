@@ -2,6 +2,8 @@ namespace cli_tasker;
 
 using System.Text.Json;
 using Spectre.Console;
+using cli_tasker.Undo;
+using cli_tasker.Undo.Commands;
 
 class TodoTaskList
 {
@@ -69,10 +71,21 @@ class TodoTaskList
     // Public accessor for TUI
     public List<TodoTask> GetAllTasks() => GetFilteredTasks().ToList();
 
-    public void AddTodoTask(TodoTask todoTask)
+    public void AddTodoTask(TodoTask todoTask, bool recordUndo = true)
     {
+        if (recordUndo)
+        {
+            var cmd = new AddTaskCommand { Task = todoTask };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
         TodoTasks = [todoTask, .. TodoTasks];
         Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
     public TodoTask? GetTodoTaskById(string taskId)
@@ -81,7 +94,7 @@ class TodoTaskList
         return TodoTasks.FirstOrDefault(task => task.Id == taskId);
     }
 
-    public void CheckTask(string taskId)
+    public void CheckTask(string taskId, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
@@ -89,13 +102,25 @@ class TodoTaskList
             Output.Error($"Could not find task with id {taskId}");
             return;
         }
-        DeleteTask(taskId, false);
+
+        if (recordUndo)
+        {
+            var cmd = new CheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
+        DeleteTask(taskId, save: false, moveToTrash: false, recordUndo: false);
         var checkedTask = todoTask.Check();
         TodoTasks = [checkedTask, .. TodoTasks];
         Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
-    public void UncheckTask(string taskId)
+    public void UncheckTask(string taskId, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
@@ -103,19 +128,37 @@ class TodoTaskList
             Output.Error($"Could not find task with id {taskId}");
             return;
         }
-        DeleteTask(taskId, save: false, moveToTrash: false);
+
+        if (recordUndo)
+        {
+            var cmd = new UncheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
+        DeleteTask(taskId, save: false, moveToTrash: false, recordUndo: false);
         var uncheckedTask = todoTask.UnCheck();
         TodoTasks = [uncheckedTask, .. TodoTasks];
         Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
-    public void DeleteTask(string taskId, bool save = true, bool moveToTrash = true)
+    public void DeleteTask(string taskId, bool save = true, bool moveToTrash = true, bool recordUndo = true)
     {
         var task = GetTodoTaskById(taskId);
         if (task == null)
         {
             Output.Error($"Could not find task with id {taskId}");
             return;
+        }
+
+        if (recordUndo && moveToTrash)
+        {
+            var cmd = new DeleteTaskCommand { DeletedTask = task };
+            UndoManager.Instance.RecordCommand(cmd);
         }
 
         TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
@@ -125,11 +168,23 @@ class TodoTaskList
             TrashTasks = [task, .. TrashTasks];
         }
 
-        if (save) Save();
+        if (save)
+        {
+            Save();
+            if (recordUndo && moveToTrash)
+            {
+                UndoManager.Instance.SaveHistory();
+            }
+        }
     }
 
-    public void DeleteTasks(string[] taskIds)
+    public void DeleteTasks(string[] taskIds, bool recordUndo = true)
     {
+        if (recordUndo)
+        {
+            UndoManager.Instance.BeginBatch($"Delete {taskIds.Length} tasks");
+        }
+
         foreach (var taskId in taskIds)
         {
             var task = GetTodoTaskById(taskId);
@@ -139,15 +194,37 @@ class TodoTaskList
                 continue;
             }
 
+            if (recordUndo)
+            {
+                var cmd = new DeleteTaskCommand { DeletedTask = task };
+                UndoManager.Instance.RecordCommand(cmd);
+            }
+
             TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
             TrashTasks = [task, .. TrashTasks];
             Output.Success($"Deleted task: {taskId}");
         }
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.EndBatch();
+        }
+
         Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
-    public void CheckTasks(string[] taskIds)
+    public void CheckTasks(string[] taskIds, bool recordUndo = true)
     {
+        if (recordUndo)
+        {
+            UndoManager.Instance.BeginBatch($"Check {taskIds.Length} tasks");
+        }
+
         foreach (var taskId in taskIds)
         {
             var todoTask = GetTodoTaskById(taskId);
@@ -156,16 +233,39 @@ class TodoTaskList
                 Output.Error($"Could not find task with id {taskId}");
                 continue;
             }
+
+            if (recordUndo)
+            {
+                var cmd = new CheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
+                UndoManager.Instance.RecordCommand(cmd);
+            }
+
             TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
             var checkedTask = todoTask.Check();
             TodoTasks = [checkedTask, .. TodoTasks];
             Output.Success($"Checked task: {taskId}");
         }
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.EndBatch();
+        }
+
         Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
-    public void UncheckTasks(string[] taskIds)
+    public void UncheckTasks(string[] taskIds, bool recordUndo = true)
     {
+        if (recordUndo)
+        {
+            UndoManager.Instance.BeginBatch($"Uncheck {taskIds.Length} tasks");
+        }
+
         foreach (var taskId in taskIds)
         {
             var todoTask = GetTodoTaskById(taskId);
@@ -174,26 +274,56 @@ class TodoTaskList
                 Output.Error($"Could not find task with id {taskId}");
                 continue;
             }
+
+            if (recordUndo)
+            {
+                var cmd = new UncheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
+                UndoManager.Instance.RecordCommand(cmd);
+            }
+
             TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
             var uncheckedTask = todoTask.UnCheck();
             TodoTasks = [uncheckedTask, .. TodoTasks];
             Output.Success($"Unchecked task: {taskId}");
         }
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.EndBatch();
+        }
+
         Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
-    public void ClearTasks()
+    public void ClearTasks(bool recordUndo = true)
     {
         // Only clear tasks matching the filter
         var tasksToMove = GetFilteredTasks();
+
+        if (recordUndo && tasksToMove.Length > 0)
+        {
+            var cmd = new ClearTasksCommand { ListName = listNameFilter, ClearedTasks = tasksToMove };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
         var taskIdsToRemove = tasksToMove.Select(t => t.Id).ToHashSet();
 
         TrashTasks = [.. tasksToMove, .. TrashTasks];
         TodoTasks = [.. TodoTasks.Where(t => !taskIdsToRemove.Contains(t.Id))];
         Save();
+
+        if (recordUndo && tasksToMove.Length > 0)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
-    public void RenameTask(string taskId, string newDescription)
+    public void RenameTask(string taskId, string newDescription, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
@@ -201,14 +331,31 @@ class TodoTaskList
             Output.Error($"Could not find task with id {taskId}");
             return;
         }
+
+        if (recordUndo)
+        {
+            var cmd = new RenameTaskCommand
+            {
+                TaskId = taskId,
+                OldDescription = todoTask.Description,
+                NewDescription = newDescription
+            };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
         TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
         var renamedTask = todoTask.Rename(newDescription);
         TodoTasks = [renamedTask, .. TodoTasks];
         Output.Success($"Renamed task: {taskId}");
         Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
-    public void MoveTask(string taskId, string targetList)
+    public void MoveTask(string taskId, string targetList, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
@@ -224,11 +371,28 @@ class TodoTaskList
         }
 
         var sourceList = todoTask.ListName;
+
+        if (recordUndo)
+        {
+            var cmd = new MoveTaskCommand
+            {
+                TaskId = taskId,
+                SourceList = sourceList,
+                TargetList = targetList
+            };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
         TodoTasks = [.. TodoTasks.Where(t => t.Id != taskId)];
         var movedTask = todoTask.MoveToList(targetList);
         TodoTasks = [movedTask, .. TodoTasks];
         Output.Success($"Moved task {taskId} from '{sourceList}' to '{targetList}'");
         Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
     }
 
     public void ListTodoTasks(bool? filterChecked = null)
