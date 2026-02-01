@@ -83,13 +83,13 @@ public class TuiKeyHandler
             case ConsoleKey.V:
                 return state with { Mode = TuiMode.MultiSelect, SelectedTaskIds = new HashSet<string>() };
 
-            // Undo (Ctrl+Z)
-            case ConsoleKey.Z when (key.Modifiers & ConsoleModifiers.Control) != 0:
-                return PerformUndo(state);
-
-            // Redo (Ctrl+Y)
-            case ConsoleKey.Y when (key.Modifiers & ConsoleModifiers.Control) != 0:
+            // Redo (Shift+Z)
+            case ConsoleKey.Z when (key.Modifiers & ConsoleModifiers.Shift) != 0:
                 return PerformRedo(state);
+
+            // Undo (z)
+            case ConsoleKey.Z:
+                return PerformUndo(state);
 
             // Quit
             case ConsoleKey.Q:

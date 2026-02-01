@@ -169,7 +169,7 @@ public class TuiRenderer
 
         var hints = state.Mode switch
         {
-            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:toggle [dim]x[/]:del [dim]^Z[/]:undo [dim]^Y[/]:redo [dim]a[/]:add [dim]r[/]:rename [dim]q[/]:quit",
+            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:toggle [dim]x[/]:del [dim]z[/]:undo [dim]Z[/]:redo [dim]a[/]:add [dim]r[/]:rename [dim]q[/]:quit",
             TuiMode.Search => "[dim]type[/]:filter [dim]enter[/]:done [dim]esc[/]:clear",
             TuiMode.MultiSelect => "[dim]space[/]:toggle [dim]x[/]:del [dim]c[/]:check [dim]u[/]:uncheck [dim]esc[/]:exit",
             _ => ""
