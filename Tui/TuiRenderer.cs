@@ -4,7 +4,6 @@ using Spectre.Console;
 
 public class TuiRenderer
 {
-    private const int TaskPrefixLength = 12;
 
     public void Render(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
@@ -91,6 +90,10 @@ public class TuiRenderer
         var checkbox = task.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
         var taskId = $"[dim]({task.Id})[/]";
 
+        // Calculate prefix length for indent: cursor(1) + selection(0 or 3) + id(5) + space(1) + checkbox(3) + space(1)
+        var prefixLength = 1 + (mode == TuiMode.MultiSelect ? 3 : 0) + 5 + 1 + 3 + 1;
+        var indent = new string(' ', prefixLength);
+
         // Get all lines of description
         var lines = task.Description.Split('\n');
         var linesRendered = 0;
@@ -107,7 +110,6 @@ public class TuiRenderer
         // Render continuation lines with indent
         if (lines.Length > 1)
         {
-            var indent = new string(' ', TaskPrefixLength);
             var style = task.IsChecked ? "[dim strikethrough]" : "[dim]";
             for (var i = 1; i < lines.Length; i++)
             {

@@ -187,8 +187,8 @@ public class TuiKeyHandler
         else
             taskList.CheckTask(task.Id);
 
-        // Cursor follows task to top
-        return state.WithStatusMessage(task.IsChecked ? "Unchecked" : "Checked") with { CursorIndex = 0 };
+        // Keep cursor in place (task moves but cursor stays)
+        return state.WithStatusMessage(task.IsChecked ? "Unchecked" : "Checked");
     }
 
     private TuiState DeleteTask(TuiState state, IReadOnlyList<TodoTask> tasks)
@@ -197,21 +197,11 @@ public class TuiKeyHandler
             return state;
 
         var task = tasks[state.CursorIndex];
+        var taskList = new TodoTaskList(state.CurrentList);
+        taskList.DeleteTask(task.Id);
 
-        // Confirmation
-        Console.Clear();
-        var confirmed = AnsiConsole.Confirm($"Delete task '{task.Description.Split('\n')[0]}'?", false);
-
-        if (confirmed)
-        {
-            var taskList = new TodoTaskList(state.CurrentList);
-            taskList.DeleteTask(task.Id);
-
-            var newIndex = Math.Min(state.CursorIndex, Math.Max(0, tasks.Count - 2));
-            return state.WithStatusMessage("Deleted") with { CursorIndex = newIndex };
-        }
-
-        return state;
+        var newIndex = Math.Min(state.CursorIndex, Math.Max(0, tasks.Count - 2));
+        return state.WithStatusMessage("Deleted (z to undo)") with { CursorIndex = newIndex };
     }
 
     private TuiState RenameTask(TuiState state, IReadOnlyList<TodoTask> tasks)
@@ -221,45 +211,70 @@ public class TuiKeyHandler
 
         var task = tasks[state.CursorIndex];
 
+        // Show current task info before prompt
         Console.Clear();
-        var newDesc = AnsiConsole.Prompt(
-            new TextPrompt<string>("Rename task:")
-                .DefaultValue(task.Description)
-                .Validate(d => string.IsNullOrWhiteSpace(d)
-                    ? ValidationResult.Error("Cannot be empty")
-                    : ValidationResult.Success()));
-
-        if (newDesc != task.Description)
+        AnsiConsole.MarkupLine("[dim]Current:[/]");
+        foreach (var line in task.Description.Split('\n'))
         {
-            var taskList = new TodoTaskList(state.CurrentList);
-            taskList.RenameTask(task.Id, newDesc);
-            // Task moves to top after rename
-            return state.WithStatusMessage("Renamed") with { CursorIndex = 0 };
+            AnsiConsole.MarkupLine($"  [dim]{Markup.Escape(line)}[/]");
         }
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[dim]Enter new description (Ctrl+C to cancel):[/]");
 
-        return state;
+        try
+        {
+            var newDesc = AnsiConsole.Prompt(
+                new TextPrompt<string>(">")
+                    .DefaultValue(task.Description)
+                    .AllowEmpty());
+
+            if (string.IsNullOrWhiteSpace(newDesc))
+            {
+                return state.WithStatusMessage("Cancelled");
+            }
+
+            if (newDesc != task.Description)
+            {
+                var taskList = new TodoTaskList(state.CurrentList);
+                taskList.RenameTask(task.Id, newDesc);
+                return state.WithStatusMessage("Renamed");
+            }
+
+            return state;
+        }
+        catch (OperationCanceledException)
+        {
+            return state.WithStatusMessage("Cancelled");
+        }
     }
 
     private TuiState AddTask(TuiState state)
     {
         Console.Clear();
-        var desc = AnsiConsole.Prompt(
-            new TextPrompt<string>("New task:")
-                .AllowEmpty()
-                .Validate(d => string.IsNullOrWhiteSpace(d)
-                    ? ValidationResult.Error("Cannot be empty")
-                    : ValidationResult.Success()));
+        var listName = state.CurrentList ?? ListManager.DefaultListName;
+        AnsiConsole.MarkupLine($"[dim]Adding to list:[/] [bold]{Markup.Escape(listName)}[/]");
+        AnsiConsole.MarkupLine("[dim]Enter description (empty to cancel, Ctrl+C to cancel):[/]");
 
-        if (!string.IsNullOrWhiteSpace(desc))
+        try
         {
-            var listName = state.CurrentList ?? ListManager.DefaultListName;
+            var desc = AnsiConsole.Prompt(
+                new TextPrompt<string>(">")
+                    .AllowEmpty());
+
+            if (string.IsNullOrWhiteSpace(desc))
+            {
+                return state.WithStatusMessage("Cancelled");
+            }
+
             var task = TodoTask.CreateTodoTask(desc, listName);
             var taskList = new TodoTaskList(state.CurrentList);
             taskList.AddTodoTask(task);
             return state.WithStatusMessage("Added") with { CursorIndex = 0 };
         }
-
-        return state;
+        catch (OperationCanceledException)
+        {
+            return state.WithStatusMessage("Cancelled");
+        }
     }
 
     private TuiState SwitchList(TuiState state)
@@ -315,23 +330,16 @@ public class TuiKeyHandler
         if (state.SelectedTaskIds.Count == 0)
             return state;
 
-        Console.Clear();
-        var confirmed = AnsiConsole.Confirm($"Delete {state.SelectedTaskIds.Count} task(s)?", false);
+        var count = state.SelectedTaskIds.Count;
+        var taskList = new TodoTaskList();
+        taskList.DeleteTasks(state.SelectedTaskIds.ToArray());
 
-        if (confirmed)
+        return state.WithStatusMessage($"Deleted {count} tasks (z to undo)") with
         {
-            var taskList = new TodoTaskList();
-            taskList.DeleteTasks(state.SelectedTaskIds.ToArray());
-
-            return state.WithStatusMessage($"Deleted {state.SelectedTaskIds.Count} tasks") with
-            {
-                Mode = TuiMode.Normal,
-                SelectedTaskIds = new HashSet<string>(),
-                CursorIndex = 0
-            };
-        }
-
-        return state;
+            Mode = TuiMode.Normal,
+            SelectedTaskIds = new HashSet<string>(),
+            CursorIndex = 0
+        };
     }
 
     private TuiState BulkCheck(TuiState state, IReadOnlyList<TodoTask> tasks)
