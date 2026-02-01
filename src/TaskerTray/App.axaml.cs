@@ -3,9 +3,11 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using TaskerCore.Data;
 using TaskerTray.ViewModels;
+using TaskerTray.Views;
 
 namespace TaskerTray;
 
@@ -29,6 +31,7 @@ public class App : Application
 
             _appViewModel = new AppViewModel();
             _appViewModel.QuitRequested += () => desktop.Shutdown();
+            _appViewModel.TasksChanged += OnTasksChanged;
 
             _taskListViewModel = new TaskListViewModel();
 
@@ -36,6 +39,12 @@ public class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void OnTasksChanged()
+    {
+        _taskListViewModel?.Refresh();
+        UpdateTrayMenu();
     }
 
     private void SetupTrayIcon()
@@ -46,18 +55,6 @@ public class App : Application
             IsVisible = true,
             Menu = CreateTrayMenu()
         };
-
-        // Subscribe to task list changes to update menu
-        if (_taskListViewModel != null)
-        {
-            _taskListViewModel.PropertyChanged += (_, e) =>
-            {
-                if (e.PropertyName == nameof(TaskListViewModel.Tasks))
-                {
-                    UpdateTrayMenu();
-                }
-            };
-        }
     }
 
     private string GetTooltipText()
@@ -76,8 +73,11 @@ public class App : Application
         var menu = new NativeMenu();
 
         // Add task section
-        var addItem = new NativeMenuItem("Add Task...");
-        addItem.Click += (_, _) => _appViewModel?.AddTaskCommand.Execute(null);
+        var addItem = new NativeMenuItem("Add Task...")
+        {
+            Gesture = new KeyGesture(Key.N, KeyModifiers.Meta)
+        };
+        addItem.Click += async (_, _) => await ShowQuickAddDialog();
         menu.Items.Add(addItem);
 
         menu.Items.Add(new NativeMenuItemSeparator());
@@ -92,21 +92,62 @@ public class App : Application
 
         menu.Items.Add(new NativeMenuItemSeparator());
 
+        // Undo/Redo
+        var undoItem = new NativeMenuItem("Undo")
+        {
+            Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta),
+            IsEnabled = _appViewModel?.CanUndo ?? false
+        };
+        undoItem.Click += (_, _) =>
+        {
+            _appViewModel?.UndoCommand.Execute(null);
+        };
+        menu.Items.Add(undoItem);
+
+        var redoItem = new NativeMenuItem("Redo")
+        {
+            Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta | KeyModifiers.Shift),
+            IsEnabled = _appViewModel?.CanRedo ?? false
+        };
+        redoItem.Click += (_, _) =>
+        {
+            _appViewModel?.RedoCommand.Execute(null);
+        };
+        menu.Items.Add(redoItem);
+
+        menu.Items.Add(new NativeMenuItemSeparator());
+
         // Refresh item
-        var refreshItem = new NativeMenuItem("Refresh");
+        var refreshItem = new NativeMenuItem("Refresh")
+        {
+            Gesture = new KeyGesture(Key.R, KeyModifiers.Meta)
+        };
         refreshItem.Click += (_, _) =>
         {
-            _taskListViewModel?.Refresh();
-            UpdateTrayMenu();
+            _appViewModel?.RefreshCommand.Execute(null);
         };
         menu.Items.Add(refreshItem);
 
         // Quit item
-        var quitItem = new NativeMenuItem("Quit Tasker");
+        var quitItem = new NativeMenuItem("Quit Tasker")
+        {
+            Gesture = new KeyGesture(Key.Q, KeyModifiers.Meta)
+        };
         quitItem.Click += (_, _) => _appViewModel?.QuitCommand.Execute(null);
         menu.Items.Add(quitItem);
 
         return menu;
+    }
+
+    private async System.Threading.Tasks.Task ShowQuickAddDialog()
+    {
+        var window = new QuickAddWindow();
+        var result = await window.ShowDialog<bool?>(null);
+
+        if (result == true && !string.IsNullOrEmpty(window.TaskDescription))
+        {
+            _appViewModel?.AddTaskWithDescription(window.TaskDescription);
+        }
     }
 
     private void AddTasksToMenu(NativeMenu menu)
@@ -160,13 +201,33 @@ public class App : Application
 
     private void AddTaskMenuItem(NativeMenu menu, TodoTaskViewModel task)
     {
-        var item = new NativeMenuItem(task.MenuText);
-        item.ToolTip = task.FullDescription;
-        item.Click += (_, _) =>
+        // Create a submenu for each task with toggle and delete options
+        var taskSubmenu = new NativeMenu();
+
+        var toggleItem = new NativeMenuItem(task.IsChecked ? "Uncheck" : "Check");
+        toggleItem.Click += (_, _) =>
         {
             task.ToggleCommand.Execute(null);
+            _taskListViewModel?.Refresh();
             UpdateTrayMenu();
         };
+        taskSubmenu.Items.Add(toggleItem);
+
+        var deleteItem = new NativeMenuItem("Delete");
+        deleteItem.Click += (_, _) =>
+        {
+            task.DeleteCommand.Execute(null);
+            _taskListViewModel?.Refresh();
+            UpdateTrayMenu();
+        };
+        taskSubmenu.Items.Add(deleteItem);
+
+        var item = new NativeMenuItem(task.MenuText)
+        {
+            Menu = taskSubmenu,
+            ToolTip = task.FullDescription
+        };
+
         menu.Items.Add(item);
     }
 

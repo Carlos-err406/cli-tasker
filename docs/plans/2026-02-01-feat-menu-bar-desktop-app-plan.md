@@ -586,14 +586,14 @@ public class ViewLocator : IDataTemplate
 #### Phase 4: Implement CRUD Operations
 
 **Tasks:**
-- [ ] Implement "Quick Add" with text input dialog
-- [ ] Implement task check/uncheck via menu click
-- [ ] Implement task delete via context menu or keyboard shortcut
+- [x] Implement "Quick Add" with text input dialog
+- [x] Implement task check/uncheck via menu click
+- [x] Implement task delete via context menu or keyboard shortcut
 - [ ] Implement task edit/rename via dialog
 - [ ] Implement move task to different list
-- [ ] Wire up undo/redo (Cmd+Z / Cmd+Shift+Z)
-- [ ] Show status messages for operations ("Added", "Deleted", etc.)
-- [ ] **Handle TaskResult returns from TodoTaskList operations**
+- [x] Wire up undo/redo (Cmd+Z / Cmd+Shift+Z)
+- [x] Show status messages for operations ("Added", "Deleted", etc.)
+- [x] **Handle TaskResult returns from TodoTaskList operations**
 
 **Deliverables:**
 - All CRUD operations functional
