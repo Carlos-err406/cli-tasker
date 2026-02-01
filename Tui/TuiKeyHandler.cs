@@ -179,6 +179,7 @@ public class TuiKeyHandler
     private TuiState HandleInputMode(ConsoleKeyInfo key, TuiState state, bool isRename)
     {
         var hasAlt = (key.Modifiers & ConsoleModifiers.Alt) != 0;
+        var hasShift = (key.Modifiers & ConsoleModifiers.Shift) != 0;
 
         switch (key.Key)
         {
@@ -186,6 +187,17 @@ public class TuiKeyHandler
                 return state.CancelInput();
 
             case ConsoleKey.Enter:
+                if (hasShift)
+                {
+                    // Shift+Enter = insert newline
+                    var newBuffer = state.InputBuffer.Insert(state.InputCursor, "\n");
+                    return state with
+                    {
+                        InputBuffer = newBuffer,
+                        InputCursor = state.InputCursor + 1
+                    };
+                }
+                // Enter = confirm
                 return ConfirmInput(state, isRename);
 
             case ConsoleKey.Backspace:
@@ -234,6 +246,12 @@ public class TuiKeyHandler
                 }
                 return state with { InputCursor = Math.Min(state.InputBuffer.Length, state.InputCursor + 1) };
 
+            case ConsoleKey.UpArrow:
+                return state with { InputCursor = MoveLineUp(state.InputBuffer, state.InputCursor) };
+
+            case ConsoleKey.DownArrow:
+                return state with { InputCursor = MoveLineDown(state.InputBuffer, state.InputCursor) };
+
             case ConsoleKey.Home:
                 return state with { InputCursor = 0 };
 
@@ -276,6 +294,41 @@ public class TuiKeyHandler
         // Skip whitespace
         while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
         return i;
+    }
+
+    private static int MoveLineUp(string text, int position)
+    {
+        // Find start of current line
+        var lineStart = text.LastIndexOf('\n', Math.Max(0, position - 1));
+        if (lineStart < 0) return position; // Already on first line
+
+        var colInCurrentLine = position - lineStart - 1;
+
+        // Find start of previous line
+        var prevLineStart = text.LastIndexOf('\n', Math.Max(0, lineStart - 1));
+        prevLineStart = prevLineStart < 0 ? 0 : prevLineStart + 1;
+
+        var prevLineLength = lineStart - prevLineStart;
+        return prevLineStart + Math.Min(colInCurrentLine, prevLineLength);
+    }
+
+    private static int MoveLineDown(string text, int position)
+    {
+        // Find start of current line
+        var lineStart = text.LastIndexOf('\n', Math.Max(0, position - 1));
+        lineStart = lineStart < 0 ? 0 : lineStart + 1;
+
+        var colInCurrentLine = position - lineStart;
+
+        // Find end of current line (next newline)
+        var lineEnd = text.IndexOf('\n', position);
+        if (lineEnd < 0) return position; // Already on last line
+
+        // Find end of next line
+        var nextLineEnd = text.IndexOf('\n', lineEnd + 1);
+        var nextLineLength = (nextLineEnd < 0 ? text.Length : nextLineEnd) - (lineEnd + 1);
+
+        return lineEnd + 1 + Math.Min(colInCurrentLine, nextLineLength);
     }
 
     private TuiState ConfirmInput(TuiState state, bool isRename)

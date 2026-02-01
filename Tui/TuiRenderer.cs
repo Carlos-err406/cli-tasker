@@ -35,7 +35,8 @@ public class TuiRenderer
     private void RenderTasks(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         var terminalHeight = Console.WindowHeight;
-        var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 2 : 0;
+        // Reserve extra space for multiline input (3 lines + hint)
+        var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 4 : 0;
         var availableLines = terminalHeight - 6 - inputModeExtraSpace;
 
         if (tasks.Count == 0)
@@ -177,35 +178,63 @@ public class TuiRenderer
             ClearLine();
         }
 
-        var maxWidth = Console.WindowWidth - 4;
         var buffer = state.InputBuffer;
         var cursorPos = state.InputCursor;
+        var maxWidth = Console.WindowWidth - 4;
 
-        var displayStart = 0;
-        if (buffer.Length > maxWidth)
+        // Split buffer into lines for multiline display
+        var lines = buffer.Split('\n');
+        var currentLineIndex = 0;
+        var posInLine = cursorPos;
+
+        // Find which line the cursor is on
+        var charCount = 0;
+        for (var i = 0; i < lines.Length; i++)
         {
-            if (cursorPos > maxWidth - 10)
+            if (cursorPos <= charCount + lines[i].Length)
             {
-                displayStart = cursorPos - maxWidth + 10;
+                currentLineIndex = i;
+                posInLine = cursorPos - charCount;
+                break;
             }
-            displayStart = Math.Min(displayStart, buffer.Length - maxWidth);
-            displayStart = Math.Max(0, displayStart);
+            charCount += lines[i].Length + 1; // +1 for newline
         }
 
-        var displayEnd = Math.Min(buffer.Length, displayStart + maxWidth);
-        var visibleBuffer = buffer[displayStart..displayEnd];
-        var visibleCursor = cursorPos - displayStart;
+        // Render each line (max 3 lines shown to keep UI compact)
+        var startLine = Math.Max(0, currentLineIndex - 1);
+        var endLine = Math.Min(lines.Length, startLine + 3);
 
-        var beforeCursor = visibleBuffer[..Math.Min(visibleCursor, visibleBuffer.Length)];
-        var atCursor = visibleCursor < visibleBuffer.Length ? visibleBuffer[visibleCursor].ToString() : " ";
-        var afterCursor = visibleCursor < visibleBuffer.Length - 1 ? visibleBuffer[(visibleCursor + 1)..] : "";
+        for (var i = startLine; i < endLine; i++)
+        {
+            var line = lines[i];
+            var prefix = i == 0 ? "[bold]>[/] " : "  ";
+            var isCursorLine = i == currentLineIndex;
 
-        // Clear line and render input with cursor
-        Console.Write(ClearToEndOfLine);
-        AnsiConsole.Markup($"[bold]>[/] {Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
-        Console.WriteLine();
+            if (isCursorLine)
+            {
+                // Render line with cursor highlight
+                var cursorInLine = Math.Min(posInLine, line.Length);
+                var beforeCursor = line[..cursorInLine];
+                var atCursor = cursorInLine < line.Length ? line[cursorInLine].ToString() : " ";
+                var afterCursor = cursorInLine < line.Length - 1 ? line[(cursorInLine + 1)..] : "";
 
-        WriteLineCleared("[dim]enter[/]:confirm [dim]esc[/]:cancel [dim]←→[/]:move [dim]⌥←→[/]:word");
+                Console.Write(ClearToEndOfLine);
+                AnsiConsole.Markup($"{prefix}{Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
+                Console.WriteLine();
+            }
+            else
+            {
+                // Render line without cursor
+                var displayLine = line.Length > maxWidth ? line[..maxWidth] + "…" : line;
+                WriteLineCleared($"{prefix}[dim]{Markup.Escape(displayLine)}[/]");
+            }
+        }
+
+        // Clear remaining lines if fewer than 3
+        for (var i = endLine - startLine; i < 3; i++)
+            ClearLine();
+
+        WriteLineCleared("[dim]enter[/]:confirm [dim]⇧enter[/]:newline [dim]esc[/]:cancel [dim]⌥←→[/]:word");
     }
 
     /// <summary>
