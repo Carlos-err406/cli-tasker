@@ -569,14 +569,14 @@ public class ViewLocator : IDataTemplate
 #### Phase 3: Implement Task Display
 
 **Tasks:**
-- [ ] Create `TaskListViewModel.cs` that loads tasks from TaskerCore
-- [ ] Implement dynamic `NativeMenu` population from task list
-- [ ] Show tasks grouped by list when viewing "All Lists"
-- [ ] Show task count badge on menu bar icon
-- [ ] Implement list switching (filter to specific list)
-- [ ] Handle empty states ("No tasks" message)
-- [ ] Truncate long task descriptions with "..." and tooltip
-- [ ] **Limit visible tasks to 15-20 with scroll**
+- [x] Create `TaskListViewModel.cs` that loads tasks from TaskerCore
+- [x] Implement dynamic `NativeMenu` population from task list
+- [x] Show tasks grouped by list when viewing "All Lists"
+- [x] Show task count badge on menu bar icon
+- [x] Implement list switching (filter to specific list)
+- [x] Handle empty states ("No tasks" message)
+- [x] Truncate long task descriptions with "..." and tooltip
+- [x] **Limit visible tasks to 15-20 with scroll**
 
 **Deliverables:**
 - Tasks visible in menu
