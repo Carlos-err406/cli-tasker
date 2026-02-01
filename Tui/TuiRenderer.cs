@@ -106,11 +106,22 @@ public class TuiRenderer
 
         if (lines.Length > 1)
         {
-            var style = task.IsChecked ? "[dim strikethrough]" : "[dim]";
             for (var i = 1; i < lines.Length; i++)
             {
                 var continuationLine = HighlightSearch(lines[i], searchQuery);
-                WriteLineCleared($"{indent}{style}{continuationLine}[/]");
+                if (isSelected)
+                {
+                    // Dimmed but NOT strikethrough when selected
+                    WriteLineCleared($"{indent}[dim]{continuationLine}[/]");
+                }
+                else if (task.IsChecked)
+                {
+                    WriteLineCleared($"{indent}[dim strikethrough]{continuationLine}[/]");
+                }
+                else
+                {
+                    WriteLineCleared($"{indent}[dim]{continuationLine}[/]");
+                }
                 linesRendered++;
             }
         }
