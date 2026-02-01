@@ -35,9 +35,10 @@ public class TuiRenderer
     private void RenderTasks(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         var terminalHeight = Console.WindowHeight;
-        // Reserve extra space for multiline input (3 lines + hint)
+        // Reserve extra space for multiline input (3 lines + hint) or selection (title + 5 options + hint)
         var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 4 : 0;
-        var availableLines = terminalHeight - 6 - inputModeExtraSpace;
+        var selectModeExtraSpace = (state.Mode == TuiMode.SelectMoveTarget || state.Mode == TuiMode.SelectList) ? 7 : 0;
+        var availableLines = terminalHeight - 6 - inputModeExtraSpace - selectModeExtraSpace;
 
         if (tasks.Count == 0)
         {
@@ -158,6 +159,12 @@ public class TuiRenderer
             return;
         }
 
+        if (state.Mode == TuiMode.SelectMoveTarget || state.Mode == TuiMode.SelectList)
+        {
+            RenderSelectField(state);
+            return;
+        }
+
         if (!string.IsNullOrEmpty(state.StatusMessage))
         {
             WriteLineCleared($"[green]{Markup.Escape(state.StatusMessage)}[/]");
@@ -246,6 +253,42 @@ public class TuiRenderer
             ClearLine();
 
         WriteLineCleared("[dim]^S[/]:save [dim]enter[/]:newline [dim]esc[/]:cancel [dim]⌥←→[/]:word");
+    }
+
+    private void RenderSelectField(TuiState state)
+    {
+        var title = state.Mode == TuiMode.SelectMoveTarget ? "Move to list:" : "Switch to list:";
+        WriteLineCleared($"[bold]{title}[/]");
+
+        // Show up to 5 options at a time, centered around cursor
+        var options = state.SelectOptions;
+        var cursor = state.SelectCursor;
+        var maxVisible = 5;
+
+        var startIndex = Math.Max(0, cursor - maxVisible / 2);
+        startIndex = Math.Min(startIndex, Math.Max(0, options.Length - maxVisible));
+        var endIndex = Math.Min(options.Length, startIndex + maxVisible);
+
+        for (var i = startIndex; i < endIndex; i++)
+        {
+            var option = options[i];
+            var isSelected = i == cursor;
+            var isCurrent = option == state.SelectCurrentValue;
+
+            var prefix = isSelected ? "[bold blue]>[/]" : " ";
+            var suffix = isCurrent ? " [dim](current)[/]" : "";
+            var text = isSelected
+                ? $"[bold]{Markup.Escape(option)}[/]"
+                : Markup.Escape(option);
+
+            WriteLineCleared($"{prefix} {text}{suffix}");
+        }
+
+        // Clear remaining lines if less than maxVisible
+        for (var i = endIndex - startIndex; i < maxVisible; i++)
+            ClearLine();
+
+        WriteLineCleared("[dim]↑↓[/]:select [dim]enter[/]:confirm [dim]esc[/]:cancel");
     }
 
     /// <summary>

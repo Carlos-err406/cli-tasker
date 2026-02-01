@@ -6,7 +6,9 @@ public enum TuiMode
     Search,
     MultiSelect,
     InputAdd,
-    InputRename
+    InputRename,
+    SelectMoveTarget,
+    SelectList
 }
 
 public record TuiState
@@ -23,6 +25,12 @@ public record TuiState
     public string InputBuffer { get; init; } = "";
     public int InputCursor { get; init; } = 0; // cursor position within buffer
     public string? InputTargetTaskId { get; init; } = null; // for rename
+
+    // Selection mode state (for move/switch list)
+    public string[] SelectOptions { get; init; } = Array.Empty<string>();
+    public int SelectCursor { get; init; } = 0;
+    public string? SelectTargetTaskId { get; init; } = null; // for move: task to move
+    public string? SelectCurrentValue { get; init; } = null; // current list (for highlighting)
 
     public TuiState WithStatusMessage(string message) => this with
     {
@@ -64,6 +72,35 @@ public record TuiState
         InputBuffer = "",
         InputCursor = 0,
         InputTargetTaskId = null,
+        StatusMessage = "Cancelled"
+    };
+
+    public TuiState StartSelectMoveTarget(string taskId, string currentList, string[] options) => this with
+    {
+        Mode = TuiMode.SelectMoveTarget,
+        SelectOptions = options,
+        SelectCursor = 0,
+        SelectTargetTaskId = taskId,
+        SelectCurrentValue = currentList,
+        StatusMessage = "Move to list (Esc to cancel)"
+    };
+
+    public TuiState StartSelectList(string? currentList, string[] options) => this with
+    {
+        Mode = TuiMode.SelectList,
+        SelectOptions = options,
+        SelectCursor = 0,
+        SelectCurrentValue = currentList,
+        StatusMessage = "Switch list (Esc to cancel)"
+    };
+
+    public TuiState CancelSelect() => this with
+    {
+        Mode = TuiMode.Normal,
+        SelectOptions = Array.Empty<string>(),
+        SelectCursor = 0,
+        SelectTargetTaskId = null,
+        SelectCurrentValue = null,
         StatusMessage = "Cancelled"
     };
 }
