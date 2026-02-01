@@ -234,7 +234,7 @@ public class TuiRenderer
         for (var i = endLine - startLine; i < 3; i++)
             ClearLine();
 
-        WriteLineCleared("[dim]enter[/]:confirm [dim]⇧enter[/]:newline [dim]esc[/]:cancel [dim]⌥←→[/]:word");
+        WriteLineCleared("[dim]^S[/]:save [dim]enter[/]:newline [dim]esc[/]:cancel [dim]⌥←→[/]:word");
     }
 
     /// <summary>

@@ -186,49 +186,46 @@ public class TuiKeyHandler
             case ConsoleKey.Escape:
                 return state.CancelInput();
 
-            case ConsoleKey.Enter:
-                if (hasShift)
-                {
-                    // Shift+Enter = insert newline
-                    var newBuffer = state.InputBuffer.Insert(state.InputCursor, "\n");
-                    return state with
-                    {
-                        InputBuffer = newBuffer,
-                        InputCursor = state.InputCursor + 1
-                    };
-                }
-                // Enter = confirm
+            case ConsoleKey.S when (key.Modifiers & ConsoleModifiers.Control) != 0:
+                // Ctrl+S = save/confirm
                 return ConfirmInput(state, isRename);
 
+            case ConsoleKey.Enter:
+            {
+                // Enter = insert newline
+                var buffer = state.InputBuffer.Insert(state.InputCursor, "\n");
+                return state with { InputBuffer = buffer, InputCursor = state.InputCursor + 1 };
+            }
+
             case ConsoleKey.Backspace:
+            {
                 if (hasAlt)
                 {
                     // Delete word backward
                     var wordStart = FindWordBoundaryBackward(state.InputBuffer, state.InputCursor);
                     if (wordStart < state.InputCursor)
                     {
-                        var newBuffer = state.InputBuffer.Remove(wordStart, state.InputCursor - wordStart);
-                        return state with { InputBuffer = newBuffer, InputCursor = wordStart };
+                        var buffer = state.InputBuffer.Remove(wordStart, state.InputCursor - wordStart);
+                        return state with { InputBuffer = buffer, InputCursor = wordStart };
                     }
                 }
                 else if (state.InputCursor > 0)
                 {
-                    var newBuffer = state.InputBuffer.Remove(state.InputCursor - 1, 1);
-                    return state with
-                    {
-                        InputBuffer = newBuffer,
-                        InputCursor = state.InputCursor - 1
-                    };
+                    var buffer = state.InputBuffer.Remove(state.InputCursor - 1, 1);
+                    return state with { InputBuffer = buffer, InputCursor = state.InputCursor - 1 };
                 }
                 return state;
+            }
 
             case ConsoleKey.Delete:
+            {
                 if (state.InputCursor < state.InputBuffer.Length)
                 {
-                    var newBuffer = state.InputBuffer.Remove(state.InputCursor, 1);
-                    return state with { InputBuffer = newBuffer };
+                    var buffer = state.InputBuffer.Remove(state.InputCursor, 1);
+                    return state with { InputBuffer = buffer };
                 }
                 return state;
+            }
 
             case ConsoleKey.LeftArrow:
                 if (hasAlt)
@@ -259,16 +256,14 @@ public class TuiKeyHandler
                 return state with { InputCursor = state.InputBuffer.Length };
 
             default:
+            {
                 if (!char.IsControl(key.KeyChar))
                 {
-                    var newBuffer = state.InputBuffer.Insert(state.InputCursor, key.KeyChar.ToString());
-                    return state with
-                    {
-                        InputBuffer = newBuffer,
-                        InputCursor = state.InputCursor + 1
-                    };
+                    var buffer = state.InputBuffer.Insert(state.InputCursor, key.KeyChar.ToString());
+                    return state with { InputBuffer = buffer, InputCursor = state.InputCursor + 1 };
                 }
                 return state;
+            }
         }
     }
 
