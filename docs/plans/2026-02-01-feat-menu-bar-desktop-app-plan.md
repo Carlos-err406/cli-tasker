@@ -495,22 +495,22 @@ public static class AtomicFileWriter
 #### Phase 1: Extract TaskerCore Library
 
 **Tasks:**
-- [ ] Create `TaskerCore.csproj` with net10.0 target, no UI dependencies
-- [ ] Move `TodoTask.cs` to `TaskerCore/Models/`
-- [ ] Move `TodoTaskList.cs` to `TaskerCore/Data/`, remove Spectre.Console dependency
-- [ ] **Refactor TodoTaskList methods to return TaskResult instead of void**
-- [ ] Move `ListManager.cs` to `TaskerCore/Data/`
-- [ ] Move `TaskStats.cs` to `TaskerCore/Data/`
-- [ ] Move `AppConfig.cs` to `TaskerCore/Config/`
-- [ ] Move `TaskerException.cs` to `TaskerCore/Exceptions/`
-- [ ] Move entire `Undo/` folder to `TaskerCore/Undo/`
-- [ ] Create `StoragePaths.cs` for centralized path management
-- [ ] **Create `CrossProcessLock.cs` using Named Mutex**
-- [ ] **Create `AtomicFileWriter.cs` for safe file writes**
-- [ ] **Create `DebouncedFileWatcher.cs` with polling fallback**
-- [ ] Add `ProjectReference` from cli-tasker to TaskerCore
-- [ ] **Extract duplicated `Truncate()` helper to `StringHelpers.cs`**
-- [ ] Verify CLI still builds and passes tests
+- [x] Create `TaskerCore.csproj` with net10.0 target, no UI dependencies
+- [x] Move `TodoTask.cs` to `TaskerCore/Models/`
+- [x] Move `TodoTaskList.cs` to `TaskerCore/Data/`, remove Spectre.Console dependency
+- [x] **Refactor TodoTaskList methods to return TaskResult instead of void**
+- [x] Move `ListManager.cs` to `TaskerCore/Data/`
+- [x] Move `TaskStats.cs` to `TaskerCore/Data/`
+- [x] Move `AppConfig.cs` to `TaskerCore/Config/`
+- [x] Move `TaskerException.cs` to `TaskerCore/Exceptions/`
+- [x] Move entire `Undo/` folder to `TaskerCore/Undo/`
+- [x] Create `StoragePaths.cs` for centralized path management
+- [x] **Create `CrossProcessLock.cs` using Named Mutex**
+- [x] **Create `AtomicFileWriter.cs` for safe file writes**
+- [x] **Create `DebouncedFileWatcher.cs` with polling fallback**
+- [x] Add `ProjectReference` from cli-tasker to TaskerCore
+- [x] **Extract duplicated `Truncate()` helper to `StringHelpers.cs`**
+- [x] Verify CLI still builds and passes tests
 
 **Deliverables:**
 - TaskerCore library with zero UI dependencies
@@ -520,16 +520,16 @@ public static class AtomicFileWriter
 #### Phase 2: Create TaskerTray Project
 
 **Tasks:**
-- [ ] Create `TaskerTray.csproj` with Avalonia dependencies
-- [ ] Add `ProjectReference` to TaskerCore
-- [ ] Create `Program.cs` entry point
-- [ ] Create `App.axaml` with TrayIcon definition
-- [ ] Create `App.axaml.cs` with `ShutdownMode.OnExplicitShutdown`
-- [ ] Create `AppViewModel.cs` with basic commands (Quit, Refresh)
-- [ ] **Create AOT-compatible ViewLocator (explicit type mapping, no reflection)**
-- [ ] Create `Info.plist` with `LSUIElement` for menu bar-only mode
-- [ ] Add icon assets (normal and syncing states)
-- [ ] Verify app launches in menu bar with no Dock icon
+- [x] Create `TaskerTray.csproj` with Avalonia dependencies
+- [x] Add `ProjectReference` to TaskerCore
+- [x] Create `Program.cs` entry point
+- [x] Create `App.axaml` with TrayIcon definition
+- [x] Create `App.axaml.cs` with `ShutdownMode.OnExplicitShutdown`
+- [x] Create `AppViewModel.cs` with basic commands (Quit, Refresh)
+- [x] **Create AOT-compatible ViewLocator (explicit type mapping, no reflection)**
+- [x] Create `Info.plist` with `LSUIElement` for menu bar-only mode
+- [x] Add icon assets (normal and syncing states)
+- [x] Verify app launches in menu bar with no Dock icon
 
 ### Research Insights: AOT-Compatible ViewLocator
 

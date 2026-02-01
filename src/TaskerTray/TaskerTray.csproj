@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>TaskerTray</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- macOS bundle settings -->
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <UseAppHost>true</UseAppHost>
+
+    <!-- Native AOT preparation (can enable later) -->
+    <!-- <PublishAot>true</PublishAot> -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avalonia packages -->
+    <PackageReference Include="Avalonia" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+
+    <!-- MVVM support -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../TaskerCore/TaskerCore.csproj" />
+  </ItemGroup>
+
+</Project>
