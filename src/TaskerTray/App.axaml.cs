@@ -6,6 +6,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using TaskerCore.Data;
+using TaskerTray.Services;
 using TaskerTray.ViewModels;
 using TaskerTray.Views;
 
@@ -16,6 +17,7 @@ public class App : Application
     private TrayIcon? _trayIcon;
     private AppViewModel? _appViewModel;
     private TaskListViewModel? _taskListViewModel;
+    private FileWatcherService? _fileWatcher;
 
     public override void Initialize()
     {
@@ -30,10 +32,18 @@ public class App : Application
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             _appViewModel = new AppViewModel();
-            _appViewModel.QuitRequested += () => desktop.Shutdown();
+            _appViewModel.QuitRequested += () =>
+            {
+                _fileWatcher?.Dispose();
+                desktop.Shutdown();
+            };
             _appViewModel.TasksChanged += OnTasksChanged;
 
             _taskListViewModel = new TaskListViewModel();
+
+            // Start watching for external file changes
+            _fileWatcher = new FileWatcherService();
+            _fileWatcher.ExternalChangeDetected += OnExternalChange;
 
             SetupTrayIcon();
         }
@@ -43,6 +53,16 @@ public class App : Application
 
     private void OnTasksChanged()
     {
+        _taskListViewModel?.Refresh();
+        UpdateTrayMenu();
+    }
+
+    private void OnExternalChange()
+    {
+        // Notify the ViewModel so it can update HasExternalChanges
+        _appViewModel?.NotifyExternalChange();
+
+        // Refresh task list to reflect external changes
         _taskListViewModel?.Refresh();
         UpdateTrayMenu();
     }

@@ -603,11 +603,11 @@ public class ViewLocator : IDataTemplate
 #### Phase 5: File Watching and Sync
 
 **Tasks:**
-- [ ] Implement `DebouncedFileWatcher` with hybrid watching + polling
-- [ ] Update icon when external changes detected (menu closed)
-- [ ] Show "Refresh" indicator when external changes detected (menu open)
-- [ ] Handle undo history invalidation gracefully (show message, clear history)
-- [ ] Implement cross-process locking using Named Mutex
+- [x] Implement `DebouncedFileWatcher` with hybrid watching + polling (in TaskerCore)
+- [x] Update icon when external changes detected (menu closed)
+- [x] Show "Refresh" indicator when external changes detected (menu open)
+- [x] Handle undo history invalidation gracefully (show message, clear history)
+- [x] Implement cross-process locking using Named Mutex (in TaskerCore)
 - [ ] **Add automatic backup before each save (rolling 5 backups)**
 - [ ] **Add post-write verification**
 - [ ] Test concurrent CLI/GUI operations
