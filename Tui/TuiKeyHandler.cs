@@ -1,6 +1,7 @@
 namespace cli_tasker.Tui;
 
 using Spectre.Console;
+using cli_tasker.Undo;
 
 public class TuiKeyHandler
 {
@@ -55,6 +56,10 @@ public class TuiKeyHandler
             case ConsoleKey.Delete:
                 return DeleteTask(state, tasks);
 
+            // Redo (Ctrl+R) - must be before plain R
+            case ConsoleKey.R when (key.Modifiers & ConsoleModifiers.Control) != 0:
+                return PerformRedo(state);
+
             // Rename (inline)
             case ConsoleKey.R:
                 if (taskCount == 0 || state.CursorIndex >= taskCount) return state;
@@ -82,6 +87,10 @@ public class TuiKeyHandler
             case ConsoleKey.V:
                 return state with { Mode = TuiMode.MultiSelect, SelectedTaskIds = new HashSet<string>() };
 
+            // Undo
+            case ConsoleKey.U:
+                return PerformUndo(state);
+
             // Quit
             case ConsoleKey.Q:
             case ConsoleKey.Escape:
@@ -91,6 +100,22 @@ public class TuiKeyHandler
             default:
                 return state;
         }
+    }
+
+    private static TuiState PerformUndo(TuiState state)
+    {
+        var desc = UndoManager.Instance.Undo();
+        return desc != null
+            ? state.WithStatusMessage($"Undone: {desc}")
+            : state.WithStatusMessage("Nothing to undo");
+    }
+
+    private static TuiState PerformRedo(TuiState state)
+    {
+        var desc = UndoManager.Instance.Redo();
+        return desc != null
+            ? state.WithStatusMessage($"Redone: {desc}")
+            : state.WithStatusMessage("Nothing to redo");
     }
 
     private TuiState HandleSearchMode(ConsoleKeyInfo key, TuiState state, IReadOnlyList<TodoTask> tasks)
