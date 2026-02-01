@@ -83,12 +83,12 @@ public class TuiKeyHandler
             case ConsoleKey.V:
                 return state with { Mode = TuiMode.MultiSelect, SelectedTaskIds = new HashSet<string>() };
 
-            // Undo (Option+Z)
-            case ConsoleKey.Z when (key.Modifiers & ConsoleModifiers.Alt) != 0 && (key.Modifiers & ConsoleModifiers.Shift) == 0:
+            // Undo (Ctrl+Z)
+            case ConsoleKey.Z when (key.Modifiers & ConsoleModifiers.Control) != 0:
                 return PerformUndo(state);
 
-            // Redo (Option+Shift+Z)
-            case ConsoleKey.Z when (key.Modifiers & ConsoleModifiers.Alt) != 0 && (key.Modifiers & ConsoleModifiers.Shift) != 0:
+            // Redo (Ctrl+Y)
+            case ConsoleKey.Y when (key.Modifiers & ConsoleModifiers.Control) != 0:
                 return PerformRedo(state);
 
             // Quit
@@ -211,16 +211,16 @@ public class TuiKeyHandler
             case ConsoleKey.Escape:
                 return state.CancelInput();
 
-            case ConsoleKey.Enter when hasAlt:
+            case ConsoleKey.S when (key.Modifiers & ConsoleModifiers.Control) != 0:
+                // Ctrl+S = save/confirm
+                return ConfirmInput(state, isRename);
+
+            case ConsoleKey.Enter:
             {
-                // Option+Enter = insert newline
+                // Enter = insert newline
                 var buffer = state.InputBuffer.Insert(state.InputCursor, "\n");
                 return state with { InputBuffer = buffer, InputCursor = state.InputCursor + 1 };
             }
-
-            case ConsoleKey.Enter:
-                // Enter = save/confirm
-                return ConfirmInput(state, isRename);
 
             case ConsoleKey.Backspace:
             {
