@@ -1,7 +1,7 @@
 namespace cli_tasker;
 
 
-record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedAt, string ListName)
+public record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedAt, string ListName)
 {
     public static TodoTask CreateTodoTask(string description, string listName) =>
         new(Guid.NewGuid().ToString()[..3], description, false, DateTime.Now, listName);

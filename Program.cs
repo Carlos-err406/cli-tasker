@@ -1,11 +1,20 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using cli_tasker.Tui;
 
 class Program
 {
     static int Main(string[] args)
     {
+        // Launch TUI if no arguments and terminal is interactive
+        if (args.Length == 0 && !Console.IsInputRedirected)
+        {
+            var tui = new TuiApp();
+            tui.Run();
+            return 0;
+        }
+
         var rootCommand = new RootCommand("CLI task manager");
 
         // Global option for selecting which list to use

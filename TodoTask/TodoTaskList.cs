@@ -66,6 +66,9 @@ class TodoTaskList
     private TodoTask[] GetFilteredTrash() =>
         listNameFilter == null ? TrashTasks : TrashTasks.Where(t => t.ListName == listNameFilter).ToArray();
 
+    // Public accessor for TUI
+    public List<TodoTask> GetAllTasks() => GetFilteredTasks().ToList();
+
     public void AddTodoTask(TodoTask todoTask)
     {
         TodoTasks = [todoTask, .. TodoTasks];
