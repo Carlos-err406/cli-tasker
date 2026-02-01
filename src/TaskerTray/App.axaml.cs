@@ -64,7 +64,15 @@ public class App : Application
 
         // Refresh task list to reflect external changes
         _taskListViewModel?.Refresh();
-        UpdateTrayMenu();
+
+        // Note: We don't call UpdateTrayMenu() here because replacing NativeMenu
+        // while the tray icon is visible can cause crashes on macOS.
+        // The menu will be rebuilt when the user opens it next time.
+        // Instead, we update the tooltip to indicate changes are available.
+        if (_trayIcon != null)
+        {
+            _trayIcon.ToolTipText = GetTooltipText() + " (refreshed)";
+        }
     }
 
     private void SetupTrayIcon()
@@ -74,6 +82,15 @@ public class App : Application
             ToolTipText = GetTooltipText(),
             IsVisible = true,
             Menu = CreateTrayMenu()
+        };
+
+        // Recreate menu when tray icon is clicked (to show fresh data)
+        _trayIcon.Clicked += (_, _) =>
+        {
+            // Refresh data before showing menu
+            _taskListViewModel?.Refresh();
+            _trayIcon.Menu = CreateTrayMenu();
+            _trayIcon.ToolTipText = GetTooltipText();
         };
     }
 
