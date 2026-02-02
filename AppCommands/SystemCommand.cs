@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using TaskerCore.Data;
 
 static class SystemCommand
 {

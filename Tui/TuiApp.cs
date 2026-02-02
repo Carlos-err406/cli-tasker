@@ -1,5 +1,8 @@
 namespace cli_tasker.Tui;
 
+using TaskerCore.Data;
+using TaskerCore.Models;
+
 public class TuiApp
 {
     private TuiState _state = new();

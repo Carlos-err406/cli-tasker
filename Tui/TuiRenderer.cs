@@ -1,6 +1,7 @@
 namespace cli_tasker.Tui;
 
 using Spectre.Console;
+using TaskerCore.Models;
 
 public class TuiRenderer
 {

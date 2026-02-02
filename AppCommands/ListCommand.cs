@@ -1,6 +1,10 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using Spectre.Console;
+using TaskerCore.Config;
+using TaskerCore.Data;
+using TaskerCore.Models;
 
 static class ListCommand
 {
@@ -47,7 +51,7 @@ static class ListCommand
                 {
                     var taskList = new TodoTaskList(name);
                     Output.Markup($"[bold underline]{name}[/]");
-                    taskList.ListTodoTasks(filterChecked);
+                    DisplayTasks(taskList.GetSortedTasks(filterChecked), filterChecked);
                     Output.Info("");
                 }
             }
@@ -55,9 +59,38 @@ static class ListCommand
             {
                 // Filter to specific list
                 var todoTaskList = new TodoTaskList(listName);
-                todoTaskList.ListTodoTasks(filterChecked);
+                DisplayTasks(todoTaskList.GetSortedTasks(filterChecked), filterChecked);
             }
         }));
         return listCommand;
+    }
+
+    private static void DisplayTasks(List<TodoTask> tasks, bool? filterChecked)
+    {
+        if (tasks.Count == 0)
+        {
+            var message = filterChecked switch
+            {
+                true => "No checked tasks found",
+                false => "No unchecked tasks found",
+                null => "No tasks saved yet... use the add command to create one"
+            };
+            Output.Info(message);
+            return;
+        }
+
+        foreach (var td in tasks)
+        {
+            var indent = new string(' ', AppConfig.TaskPrefixLength);
+            var lines = td.Description.Split('\n');
+            var firstLine = $"[bold]{Markup.Escape(lines[0])}[/]";
+            var restLines = lines.Length > 1
+                ? "\n" + indent + "[dim]" + string.Join("\n" + indent, lines.Skip(1).Select(Markup.Escape)) + "[/]"
+                : "";
+
+            var checkbox = td.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
+            var taskId = $"[dim]({td.Id})[/]";
+            Output.Markup($"{taskId} {checkbox} - {firstLine}{restLines}");
+        }
     }
 }

@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using TaskerCore.Data;
 
 static class RenameCommand
 {
@@ -29,7 +30,7 @@ static class RenameCommand
                 Output.Error("Task ID and new description are both required");
                 return;
             }
-            taskList.RenameTask(taskId, description);
+            Output.Result(taskList.RenameTask(taskId, description));
         }));
         return renameCommand;
     }

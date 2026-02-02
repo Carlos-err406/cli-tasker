@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using TaskerCore.Data;
 
 static class MoveCommand
 {
@@ -29,7 +30,7 @@ static class MoveCommand
                 Output.Error("Task ID and target list are both required");
                 return;
             }
-            taskList.MoveTask(taskId, targetList);
+            Output.Result(taskList.MoveTask(taskId, targetList));
         }));
         return moveCommand;
     }

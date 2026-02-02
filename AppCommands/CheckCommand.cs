@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using TaskerCore.Data;
 
 static class CheckCommand
 {
@@ -31,11 +32,11 @@ static class CheckCommand
             }
             if (check)
             {
-                todoTaskList.CheckTasks(taskIds);
+                Output.BatchResults(todoTaskList.CheckTasks(taskIds));
             }
             else
             {
-                todoTaskList.UncheckTasks(taskIds);
+                Output.BatchResults(todoTaskList.UncheckTasks(taskIds));
             }
         }
 

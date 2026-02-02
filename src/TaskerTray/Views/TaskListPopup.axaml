@@ -1,0 +1,81 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TaskerTray.Views.TaskListPopup"
+        Title="Tasker"
+        Width="340"
+        Height="520"
+        WindowStartupLocation="Manual"
+        SystemDecorations="None"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        CanResize="False"
+        ShowInTaskbar="False"
+        ShowActivated="True"
+        Topmost="True"
+        Focusable="True">
+
+    <Border CornerRadius="14"
+            Background="#E8202020"
+            BorderBrush="#404040"
+            BorderThickness="1"
+            Padding="0">
+
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Header -->
+            <Border Grid.Row="0"
+                    Background="#303030"
+                    CornerRadius="14,14,0,0"
+                    Padding="12,10">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="Tasker"
+                               FontWeight="SemiBold"
+                               FontSize="14"
+                               Foreground="White"
+                               VerticalAlignment="Center"/>
+                    <Button Grid.Column="1"
+                            x:Name="ListFilterButton"
+                            FontSize="12"
+                            Padding="10,6"
+                            CornerRadius="10"
+                            Click="OnListFilterClick">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock x:Name="ListFilterText" Text="All Lists" VerticalAlignment="Center"/>
+                            <TextBlock Text="▾" FontSize="9" VerticalAlignment="Center" Foreground="#888"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Task List - built programmatically for grouping support -->
+            <ScrollViewer Grid.Row="1"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="TaskListPanel" Margin="8" Spacing="4"/>
+            </ScrollViewer>
+
+            <!-- Footer -->
+            <Border Grid.Row="2"
+                    Background="#252525"
+                    CornerRadius="0,0,14,14"
+                    Padding="12,8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock x:Name="StatusText"
+                               Text=""
+                               FontSize="11"
+                               Foreground="#888"
+                               VerticalAlignment="Center"/>
+                    <Button Grid.Column="1"
+                            Content="Quit"
+                            Click="OnQuit"
+                            FontSize="10"
+                            Padding="8,4"
+                            Background="Transparent"
+                            Foreground="#666"
+                            CornerRadius="4"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

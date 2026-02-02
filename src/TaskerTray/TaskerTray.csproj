@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>TaskerTray</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- macOS bundle settings -->
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <UseAppHost>true</UseAppHost>
+    <SelfContained>true</SelfContained>
+
+    <!-- macOS app bundle configuration -->
+    <CFBundleName>Tasker</CFBundleName>
+    <CFBundleDisplayName>Tasker</CFBundleDisplayName>
+    <CFBundleIdentifier>com.cli-tasker.tray</CFBundleIdentifier>
+    <CFBundleVersion>1.0.0</CFBundleVersion>
+    <CFBundleShortVersionString>1.0.0</CFBundleShortVersionString>
+    <NSHighResolutionCapable>true</NSHighResolutionCapable>
+
+    <!-- Native AOT preparation (can enable later) -->
+    <!-- <PublishAot>true</PublishAot> -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avalonia packages -->
+    <PackageReference Include="Avalonia" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+
+    <!-- MVVM support -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../TaskerCore/TaskerCore.csproj" />
+  </ItemGroup>
+
+  <!-- Include assets as Avalonia resources -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- Include Info.plist for macOS app bundle -->
+  <ItemGroup>
+    <Content Include="Info.plist" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

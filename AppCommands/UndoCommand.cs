@@ -1,7 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
-using cli_tasker.Undo;
+using TaskerCore.Undo;
 
 static class UndoCommand
 {
