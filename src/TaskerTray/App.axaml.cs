@@ -1,13 +1,11 @@
 using System;
-using System.Linq;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Input;
 using Avalonia.Markup.Xaml;
-using TaskerCore.Data;
-using TaskerTray.Services;
-using TaskerTray.ViewModels;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using TaskerTray.Views;
 
 namespace TaskerTray;
@@ -15,311 +13,226 @@ namespace TaskerTray;
 public class App : Application
 {
     private TrayIcon? _trayIcon;
-    private AppViewModel? _appViewModel;
-    private TaskListViewModel? _taskListViewModel;
-    private FileWatcherService? _fileWatcher;
+    private TaskListPopup? _popup;
+    private IClassicDesktopStyleApplicationLifetime? _desktop;
+
+    static App()
+    {
+        // Hide from Dock as early as possible
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            HideFromDock();
+        }
+    }
 
     public override void Initialize()
     {
+        // Hide again before XAML loads
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            HideFromDock();
+        }
         AvaloniaXamlLoader.Load(this);
     }
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Hide from Dock on macOS
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            HideFromDock();
+        }
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            _desktop = desktop;
+
             // No main window - tray only
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-            _appViewModel = new AppViewModel();
-            _appViewModel.QuitRequested += () =>
-            {
-                _fileWatcher?.Dispose();
-                desktop.Shutdown();
-            };
-            _appViewModel.TasksChanged += OnTasksChanged;
-
-            _taskListViewModel = new TaskListViewModel();
-
-            // Start watching for external file changes
-            _fileWatcher = new FileWatcherService();
-            _fileWatcher.ExternalChangeDetected += OnExternalChange;
-
+            // Popup is created lazily on first use
             SetupTrayIcon();
         }
 
         base.OnFrameworkInitializationCompleted();
-    }
 
-    private void OnTasksChanged()
-    {
-        _taskListViewModel?.Refresh();
-        UpdateTrayMenu();
-    }
-
-    private void OnExternalChange()
-    {
-        // Notify the ViewModel so it can update HasExternalChanges
-        _appViewModel?.NotifyExternalChange();
-
-        // Refresh task list to reflect external changes
-        _taskListViewModel?.Refresh();
-
-        // Note: We don't call UpdateTrayMenu() here because replacing NativeMenu
-        // while the tray icon is visible can cause crashes on macOS.
-        // The menu will be rebuilt when the user opens it next time.
-        // Instead, we update the tooltip to indicate changes are available.
-        if (_trayIcon != null)
+        // Hide from Dock again after everything is initialized
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            _trayIcon.ToolTipText = GetTooltipText() + " (refreshed)";
+            HideFromDock();
+            System.Threading.Tasks.Task.Delay(500).ContinueWith(_ =>
+                Avalonia.Threading.Dispatcher.UIThread.Post(HideFromDock));
         }
     }
 
     private void SetupTrayIcon()
     {
-        _trayIcon = new TrayIcon
-        {
-            ToolTipText = GetTooltipText(),
-            IsVisible = true,
-            Menu = CreateTrayMenu()
-        };
+        // Load tray icon from embedded assets
+        using var iconStream = AssetLoader.Open(new Uri("avares://TaskerTray/Assets/tray-icon.png"));
+        var bitmap = new Bitmap(iconStream);
+        var icon = new WindowIcon(bitmap);
 
-        // Recreate menu when tray icon is clicked (to show fresh data)
-        _trayIcon.Clicked += (_, _) =>
-        {
-            // Refresh data before showing menu
-            _taskListViewModel?.Refresh();
-            _trayIcon.Menu = CreateTrayMenu();
-            _trayIcon.ToolTipText = GetTooltipText();
-        };
-    }
-
-    private string GetTooltipText()
-    {
-        if (_taskListViewModel == null) return "Tasker";
-
-        var pendingCount = _taskListViewModel.UncheckedCount;
-        var total = _taskListViewModel.TotalCount;
-
-        if (total == 0) return "Tasker - No tasks";
-        return $"Tasker - {pendingCount} pending / {total} total";
-    }
-
-    private NativeMenu CreateTrayMenu()
-    {
+        // Create menu - on macOS we need a menu for the tray icon to be clickable
         var menu = new NativeMenu();
 
-        // Add task section
-        var addItem = new NativeMenuItem("Add Task...")
+        // Show popup when menu opens
+        menu.Opening += (_, _) =>
         {
-            Gesture = new KeyGesture(Key.N, KeyModifiers.Meta)
+            // Capture mouse position (near tray icon)
+            CaptureMousePosition();
+            // Show popup
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowPopup());
         };
-        addItem.Click += async (_, _) => await ShowQuickAddDialog();
-        menu.Items.Add(addItem);
 
-        menu.Items.Add(new NativeMenuItemSeparator());
+        // Empty menu - just used to detect clicks
+        // Quit is available via Cmd+Q when popup is focused
 
-        // Task items section
-        AddTasksToMenu(menu);
-
-        menu.Items.Add(new NativeMenuItemSeparator());
-
-        // List filter submenu
-        AddListFilterSubmenu(menu);
-
-        menu.Items.Add(new NativeMenuItemSeparator());
-
-        // Undo/Redo
-        var undoItem = new NativeMenuItem("Undo")
+        _trayIcon = new TrayIcon
         {
-            Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta),
-            IsEnabled = _appViewModel?.CanUndo ?? false
+            Icon = icon,
+            ToolTipText = "Tasker",
+            IsVisible = true,
+            Menu = menu
         };
-        undoItem.Click += (_, _) =>
-        {
-            _appViewModel?.UndoCommand.Execute(null);
-        };
-        menu.Items.Add(undoItem);
-
-        var redoItem = new NativeMenuItem("Redo")
-        {
-            Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta | KeyModifiers.Shift),
-            IsEnabled = _appViewModel?.CanRedo ?? false
-        };
-        redoItem.Click += (_, _) =>
-        {
-            _appViewModel?.RedoCommand.Execute(null);
-        };
-        menu.Items.Add(redoItem);
-
-        menu.Items.Add(new NativeMenuItemSeparator());
-
-        // Refresh item
-        var refreshItem = new NativeMenuItem("Refresh")
-        {
-            Gesture = new KeyGesture(Key.R, KeyModifiers.Meta)
-        };
-        refreshItem.Click += (_, _) =>
-        {
-            _appViewModel?.RefreshCommand.Execute(null);
-        };
-        menu.Items.Add(refreshItem);
-
-        // Quit item
-        var quitItem = new NativeMenuItem("Quit Tasker")
-        {
-            Gesture = new KeyGesture(Key.Q, KeyModifiers.Meta)
-        };
-        quitItem.Click += (_, _) => _appViewModel?.QuitCommand.Execute(null);
-        menu.Items.Add(quitItem);
-
-        return menu;
     }
 
-    private async System.Threading.Tasks.Task ShowQuickAddDialog()
+    private PixelPoint? _lastMousePosition;
+
+    private void CaptureMousePosition()
     {
-        var window = new QuickAddWindow();
-        var result = await window.ShowDialog<bool?>(null);
-
-        if (result == true && !string.IsNullOrEmpty(window.TaskDescription))
+        // Try to get mouse position using native macOS API
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            _appViewModel?.AddTaskWithDescription(window.TaskDescription);
-        }
-    }
-
-    private void AddTasksToMenu(NativeMenu menu)
-    {
-        if (_taskListViewModel == null) return;
-
-        var tasks = _taskListViewModel.Tasks;
-
-        if (tasks.Count == 0)
-        {
-            var emptyItem = new NativeMenuItem("No tasks") { IsEnabled = false };
-            menu.Items.Add(emptyItem);
-            return;
-        }
-
-        // Check if viewing all lists (need grouping)
-        var isViewingAll = _taskListViewModel.CurrentListFilter == null;
-
-        if (isViewingAll)
-        {
-            // Group by list
-            foreach (var group in _taskListViewModel.GetTasksByList())
+            try
             {
-                // List header
-                var headerItem = new NativeMenuItem($"-- {group.Key} --") { IsEnabled = false };
-                menu.Items.Add(headerItem);
-
-                // Tasks in this list (limit to 10 per list)
-                foreach (var task in group.Take(10))
+                var mousePos = GetMacOSMousePosition();
+                if (mousePos.HasValue)
                 {
-                    AddTaskMenuItem(menu, task);
+                    _lastMousePosition = mousePos.Value;
                 }
             }
+            catch { }
+        }
+    }
+
+    private void ShowPopup()
+    {
+        // Create popup lazily on first use
+        if (_popup == null)
+        {
+            _popup = new TaskListPopup();
+            _popup.QuitRequested += () => _desktop?.Shutdown();
+        }
+
+        // Ensure we stay hidden from Dock
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            HideFromDock();
+        }
+
+        if (_popup.IsVisible)
+        {
+            _popup.Hide();
         }
         else
         {
-            // Single list - no grouping needed, limit to 20
-            foreach (var task in tasks.Take(20))
+            var screen = _popup.Screens.Primary;
+            if (screen != null)
             {
-                AddTaskMenuItem(menu, task);
+                var workingArea = screen.WorkingArea;
+                var popupWidth = 320;
+                var popupHeight = 450;
+
+                int x, y;
+
+                // Use captured mouse position to center popup below tray icon
+                if (_lastMousePosition.HasValue)
+                {
+                    // Center horizontally on mouse X position
+                    x = _lastMousePosition.Value.X - (popupWidth / 2);
+                    // Position below menu bar
+                    y = workingArea.Y + 5;
+
+                    // Keep within screen bounds
+                    x = Math.Max(workingArea.X + 10, Math.Min(x, workingArea.X + workingArea.Width - popupWidth - 10));
+                }
+                else
+                {
+                    // Fallback: top-right corner
+                    x = workingArea.X + workingArea.Width - popupWidth - 10;
+                    y = workingArea.Y + 5;
+                }
+
+                _popup.ShowAtPosition(new PixelPoint(x, y));
+            }
+            else
+            {
+                _popup.ShowAtPosition(new PixelPoint(100, 100));
             }
         }
-
-        // Show truncation message if needed
-        if (tasks.Count > 20)
-        {
-            var moreItem = new NativeMenuItem($"... and {tasks.Count - 20} more") { IsEnabled = false };
-            menu.Items.Add(moreItem);
-        }
     }
 
-    private void AddTaskMenuItem(NativeMenu menu, TodoTaskViewModel task)
+    // macOS: Get current mouse position
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern CGPoint CGEventGetLocation(IntPtr eventRef);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern IntPtr CGEventCreate(IntPtr source);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern void CFRelease(IntPtr cf);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CGPoint
     {
-        // Create a submenu for each task with toggle and delete options
-        var taskSubmenu = new NativeMenu();
-
-        var toggleItem = new NativeMenuItem(task.IsChecked ? "Uncheck" : "Check");
-        toggleItem.Click += (_, _) =>
-        {
-            task.ToggleCommand.Execute(null);
-            _taskListViewModel?.Refresh();
-            UpdateTrayMenu();
-        };
-        taskSubmenu.Items.Add(toggleItem);
-
-        var deleteItem = new NativeMenuItem("Delete");
-        deleteItem.Click += (_, _) =>
-        {
-            task.DeleteCommand.Execute(null);
-            _taskListViewModel?.Refresh();
-            UpdateTrayMenu();
-        };
-        taskSubmenu.Items.Add(deleteItem);
-
-        var item = new NativeMenuItem(task.MenuText)
-        {
-            Menu = taskSubmenu,
-            ToolTip = task.FullDescription
-        };
-
-        menu.Items.Add(item);
+        public double X;
+        public double Y;
     }
 
-    private void AddListFilterSubmenu(NativeMenu menu)
+    private PixelPoint? GetMacOSMousePosition()
     {
-        if (_taskListViewModel == null) return;
-
-        var submenu = new NativeMenu();
-        var filterItem = new NativeMenuItem("Filter by List")
+        try
         {
-            Menu = submenu
-        };
-
-        // "All Lists" option
-        var allItem = new NativeMenuItem("All Lists");
-        var isAllSelected = _taskListViewModel.CurrentListFilter == null;
-        allItem.Click += (_, _) =>
-        {
-            _taskListViewModel.SetListFilter(null);
-            UpdateTrayMenu();
-        };
-        if (isAllSelected)
-        {
-            allItem.Header = "* All Lists";
-        }
-        submenu.Items.Add(allItem);
-
-        submenu.Items.Add(new NativeMenuItemSeparator());
-
-        // Individual lists
-        foreach (var list in _taskListViewModel.AvailableLists.Skip(1)) // Skip "All Lists" entry
-        {
-            var listItem = new NativeMenuItem(list);
-            var isSelected = _taskListViewModel.CurrentListFilter == list;
-            if (isSelected)
+            var eventRef = CGEventCreate(IntPtr.Zero);
+            if (eventRef != IntPtr.Zero)
             {
-                listItem.Header = $"* {list}";
+                var point = CGEventGetLocation(eventRef);
+                CFRelease(eventRef);
+                return new PixelPoint((int)point.X, (int)point.Y);
             }
-            listItem.Click += (_, _) =>
-            {
-                _taskListViewModel.SetListFilter(list);
-                UpdateTrayMenu();
-            };
-            submenu.Items.Add(listItem);
         }
-
-        menu.Items.Add(filterItem);
+        catch { }
+        return null;
     }
 
-    private void UpdateTrayMenu()
+    // macOS: Hide app from Dock (set as accessory app)
+    [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_getClass")]
+    private static extern IntPtr objc_getClass(string className);
+
+    [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "sel_registerName")]
+    private static extern IntPtr sel_registerName(string selector);
+
+    [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+    private static extern IntPtr objc_msgSend_ReturnIntPtr(IntPtr receiver, IntPtr selector);
+
+    [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+    private static extern void objc_msgSend_SetLong(IntPtr receiver, IntPtr selector, long arg);
+
+    private static void HideFromDock()
     {
-        if (_trayIcon != null)
+        try
         {
-            _trayIcon.Menu = CreateTrayMenu();
-            _trayIcon.ToolTipText = GetTooltipText();
+            var nsAppClass = objc_getClass("NSApplication");
+            var sharedAppSel = sel_registerName("sharedApplication");
+            var setPolicySel = sel_registerName("setActivationPolicy:");
+
+            var nsApp = objc_msgSend_ReturnIntPtr(nsAppClass, sharedAppSel);
+            // 1 = NSApplicationActivationPolicyAccessory (no Dock icon)
+            objc_msgSend_SetLong(nsApp, setPolicySel, 1);
+        }
+        catch
+        {
+            // Silently fail on non-macOS or if API changes
         }
     }
 }

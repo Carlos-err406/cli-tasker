@@ -32,6 +32,16 @@ public partial class TodoTaskViewModel : ObservableObject
     public string FullDescription => _task.Description;
 
     /// <summary>
+    /// Description preview (lines after the first).
+    /// </summary>
+    public string DescriptionPreview => GetDescriptionPreview();
+
+    /// <summary>
+    /// Whether task has additional description beyond title.
+    /// </summary>
+    public bool HasDescription => _task.Description.Contains('\n');
+
+    /// <summary>
     /// Menu item text with checkbox indicator.
     /// </summary>
     public string MenuText => IsChecked ? $"[x] {DisplayText}" : $"[ ] {DisplayText}";
@@ -78,18 +88,40 @@ public partial class TodoTaskViewModel : ObservableObject
         }
     }
 
+    public void MoveToList(string targetList)
+    {
+        var taskList = new TodoTaskList();
+        var result = taskList.MoveTask(Id, targetList);
+
+        if (result is TaskResult.Success)
+        {
+            _onChanged?.Invoke(this);
+        }
+    }
+
+    public void Rename(string newDescription)
+    {
+        var taskList = new TodoTaskList();
+        var result = taskList.RenameTask(Id, newDescription);
+
+        if (result is TaskResult.Success)
+        {
+            _onChanged?.Invoke(this);
+        }
+    }
+
     private string GetDisplayText()
     {
-        // Get first line only
-        var firstLine = Description.Split('\n')[0];
+        // Get first line only - no truncation, let UI wrap
+        return Description.Split('\n')[0];
+    }
 
-        // Truncate long descriptions
-        const int maxLength = 40;
-        if (firstLine.Length > maxLength)
-        {
-            return StringHelpers.Truncate(firstLine, maxLength);
-        }
+    private string GetDescriptionPreview()
+    {
+        var lines = Description.Split('\n');
+        if (lines.Length <= 1) return string.Empty;
 
-        return firstLine;
+        // Join remaining lines - no truncation, let UI wrap
+        return string.Join(" ", lines.Skip(1).Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l)));
     }
 }

@@ -17,6 +17,10 @@
     <key>CFBundleVersion</key>
     <string>1</string>
 
+    <!-- App icon -->
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+
     <!-- Hide from Dock - menu bar only -->
     <key>LSUIElement</key>
     <true/>

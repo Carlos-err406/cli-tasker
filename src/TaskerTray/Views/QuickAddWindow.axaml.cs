@@ -13,7 +13,16 @@ public partial class QuickAddWindow : Window
         InitializeComponent();
 
         // Focus the input when window opens
-        Opened += (_, _) => TaskInput.Focus();
+        Opened += (_, _) =>
+        {
+            TaskInput.Focus();
+            TaskInput.SelectAll();
+        };
+    }
+
+    public void SetInitialText(string text)
+    {
+        TaskInput.Text = text;
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)

@@ -1,6 +1,10 @@
 # Build results
 bin/
 obj/
+publish/
+
+# macOS app bundle
+*.app/
 
 # IDE
 .vs/

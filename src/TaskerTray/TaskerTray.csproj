@@ -11,6 +11,15 @@
     <!-- macOS bundle settings -->
     <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
     <UseAppHost>true</UseAppHost>
+    <SelfContained>true</SelfContained>
+
+    <!-- macOS app bundle configuration -->
+    <CFBundleName>Tasker</CFBundleName>
+    <CFBundleDisplayName>Tasker</CFBundleDisplayName>
+    <CFBundleIdentifier>com.cli-tasker.tray</CFBundleIdentifier>
+    <CFBundleVersion>1.0.0</CFBundleVersion>
+    <CFBundleShortVersionString>1.0.0</CFBundleShortVersionString>
+    <NSHighResolutionCapable>true</NSHighResolutionCapable>
 
     <!-- Native AOT preparation (can enable later) -->
     <!-- <PublishAot>true</PublishAot> -->
@@ -28,6 +37,16 @@
 
   <ItemGroup>
     <ProjectReference Include="../TaskerCore/TaskerCore.csproj" />
+  </ItemGroup>
+
+  <!-- Include assets as Avalonia resources -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- Include Info.plist for macOS app bundle -->
+  <ItemGroup>
+    <Content Include="Info.plist" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
