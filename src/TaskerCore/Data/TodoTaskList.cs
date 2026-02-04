@@ -132,22 +132,39 @@ public class TodoTaskList
     public List<TodoTask> GetAllTasks() => GetFilteredTasks().ToList();
 
     /// <summary>
-    /// Gets tasks sorted for display: unchecked first, then checked. Newest first within each group.
+    /// Gets tasks sorted for display: unchecked first (by priority, then due date), then checked.
     /// </summary>
-    public List<TodoTask> GetSortedTasks(bool? filterChecked = null)
+    public List<TodoTask> GetSortedTasks(bool? filterChecked = null, Priority? filterPriority = null, bool? filterOverdue = null)
     {
         var tasks = GetFilteredTasks();
-        var filteredTasks = filterChecked switch
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        IEnumerable<TodoTask> filteredTasks = filterChecked switch
         {
             true => tasks.Where(td => td.IsChecked),
             false => tasks.Where(td => !td.IsChecked),
             null => tasks
         };
 
+        if (filterPriority.HasValue)
+            filteredTasks = filteredTasks.Where(t => t.Priority == filterPriority.Value);
+
+        if (filterOverdue == true)
+            filteredTasks = filteredTasks.Where(t => t.DueDate.HasValue && t.DueDate.Value < today);
+
         return filteredTasks
             .OrderBy(td => td.IsChecked)
+            .ThenBy(td => td.Priority.HasValue ? (int)td.Priority : 99)
+            .ThenBy(td => GetDueDateSortOrder(td.DueDate, today))
             .ThenByDescending(td => td.CreatedAt)
             .ToList();
+    }
+
+    private static int GetDueDateSortOrder(DateOnly? dueDate, DateOnly today)
+    {
+        if (!dueDate.HasValue) return 99;
+        var days = dueDate.Value.DayNumber - today.DayNumber;
+        return days < 0 ? 0 : days;
     }
 
     public void AddTodoTask(TodoTask todoTask, bool recordUndo = true)
@@ -539,6 +556,80 @@ public class TodoTaskList
         }
 
         return new TaskResult.Success($"Moved task {taskId} from '{sourceList}' to '{targetList}'");
+    }
+
+    public TaskResult SetTaskDueDate(string taskId, DateOnly? dueDate, bool recordUndo = true)
+    {
+        var todoTask = GetTodoTaskById(taskId);
+        if (todoTask == null)
+        {
+            return new TaskResult.NotFound(taskId);
+        }
+
+        if (recordUndo)
+        {
+            var cmd = new TaskMetadataChangedCommand
+            {
+                TaskId = taskId,
+                OldDueDate = todoTask.DueDate,
+                NewDueDate = dueDate,
+                OldPriority = todoTask.Priority,
+                NewPriority = todoTask.Priority
+            };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
+        RemoveTaskFromTaskLists(taskId);
+        var updatedTask = dueDate.HasValue ? todoTask.SetDueDate(dueDate.Value) : todoTask.ClearDueDate();
+        AddTaskToList(updatedTask);
+        Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
+
+        var message = dueDate.HasValue
+            ? $"Set due date for {taskId}: {dueDate:MMM d}"
+            : $"Cleared due date for {taskId}";
+        return new TaskResult.Success(message);
+    }
+
+    public TaskResult SetTaskPriority(string taskId, Priority? priority, bool recordUndo = true)
+    {
+        var todoTask = GetTodoTaskById(taskId);
+        if (todoTask == null)
+        {
+            return new TaskResult.NotFound(taskId);
+        }
+
+        if (recordUndo)
+        {
+            var cmd = new TaskMetadataChangedCommand
+            {
+                TaskId = taskId,
+                OldDueDate = todoTask.DueDate,
+                NewDueDate = todoTask.DueDate,
+                OldPriority = todoTask.Priority,
+                NewPriority = priority
+            };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
+        RemoveTaskFromTaskLists(taskId);
+        var updatedTask = priority.HasValue ? todoTask.SetPriority(priority.Value) : todoTask.ClearPriority();
+        AddTaskToList(updatedTask);
+        Save();
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
+        }
+
+        var message = priority.HasValue
+            ? $"Set priority for {taskId}: {priority}"
+            : $"Cleared priority for {taskId}";
+        return new TaskResult.Success(message);
     }
 
     // Trash methods

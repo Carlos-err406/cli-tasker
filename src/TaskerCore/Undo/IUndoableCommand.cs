@@ -12,6 +12,7 @@ using TaskerCore.Undo.Commands;
 [JsonDerivedType(typeof(MoveTaskCommand), "move")]
 [JsonDerivedType(typeof(ClearTasksCommand), "clear")]
 [JsonDerivedType(typeof(CompositeCommand), "batch")]
+[JsonDerivedType(typeof(TaskMetadataChangedCommand), "metadata")]
 public interface IUndoableCommand
 {
     string Description { get; }

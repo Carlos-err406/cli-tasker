@@ -3,6 +3,7 @@ namespace cli_tasker.Tui;
 using Spectre.Console;
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskerCore.Parsing;
 using TaskerCore.Undo;
 
 public class TuiKeyHandler
@@ -23,6 +24,7 @@ public class TuiKeyHandler
             TuiMode.MultiSelect => HandleMultiSelectMode(key, state, tasks),
             TuiMode.InputAdd => HandleInputMode(key, state, isRename: false),
             TuiMode.InputRename => HandleInputMode(key, state, isRename: true),
+            TuiMode.InputDueDate => HandleDueDateInputMode(key, state, tasks),
             TuiMode.SelectMoveTarget => HandleSelectMoveMode(key, state),
             TuiMode.SelectList => HandleSelectListMode(key, state),
             _ => state
@@ -87,6 +89,24 @@ public class TuiKeyHandler
             case ConsoleKey.V:
                 return state with { Mode = TuiMode.MultiSelect, SelectedTaskIds = new HashSet<string>() };
 
+            // Priority shortcuts (1=high, 2=medium, 3=low, 0=clear)
+            case ConsoleKey.D1:
+                return SetTaskPriority(state, tasks, Priority.High);
+            case ConsoleKey.D2:
+                return SetTaskPriority(state, tasks, Priority.Medium);
+            case ConsoleKey.D3:
+                return SetTaskPriority(state, tasks, Priority.Low);
+            case ConsoleKey.D0:
+                return SetTaskPriority(state, tasks, null);
+
+            // Due date shortcuts
+            case ConsoleKey.D when (key.Modifiers & ConsoleModifiers.Shift) != 0:
+                // Shift+D = clear due date
+                return ClearTaskDueDate(state, tasks);
+            case ConsoleKey.D:
+                // d = set due date (enter input mode)
+                return StartDueDateInput(state, tasks);
+
             // Redo (Shift+Z)
             case ConsoleKey.Z when (key.Modifiers & ConsoleModifiers.Shift) != 0:
                 return PerformRedo(state);
@@ -104,6 +124,42 @@ public class TuiKeyHandler
             default:
                 return state;
         }
+    }
+
+    private static TuiState SetTaskPriority(TuiState state, IReadOnlyList<TodoTask> tasks, Priority? priority)
+    {
+        if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
+            return state;
+
+        var task = tasks[state.CursorIndex];
+        var taskList = new TodoTaskList(state.CurrentList);
+        taskList.SetTaskPriority(task.Id, priority);
+
+        var message = priority.HasValue
+            ? $"Set priority: {priority}"
+            : "Cleared priority";
+        return state.WithStatusMessage(message);
+    }
+
+    private static TuiState StartDueDateInput(TuiState state, IReadOnlyList<TodoTask> tasks)
+    {
+        if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
+            return state;
+
+        var task = tasks[state.CursorIndex];
+        return state.StartInputDueDate(task.Id);
+    }
+
+    private static TuiState ClearTaskDueDate(TuiState state, IReadOnlyList<TodoTask> tasks)
+    {
+        if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
+            return state;
+
+        var task = tasks[state.CursorIndex];
+        var taskList = new TodoTaskList(state.CurrentList);
+        taskList.SetTaskDueDate(task.Id, null);
+
+        return state.WithStatusMessage("Cleared due date");
     }
 
     private static TuiState PerformUndo(TuiState state)
@@ -568,5 +624,66 @@ public class TuiKeyHandler
             SelectedTaskIds = new HashSet<string>(),
             CursorIndex = 0
         };
+    }
+
+    private TuiState HandleDueDateInputMode(ConsoleKeyInfo key, TuiState state, IReadOnlyList<TodoTask> tasks)
+    {
+        switch (key.Key)
+        {
+            case ConsoleKey.Escape:
+                return state.CancelInput();
+
+            case ConsoleKey.Enter:
+                return ConfirmDueDateInput(state);
+
+            case ConsoleKey.Backspace:
+                if (state.InputCursor > 0)
+                {
+                    var buffer = state.InputBuffer.Remove(state.InputCursor - 1, 1);
+                    return state with { InputBuffer = buffer, InputCursor = state.InputCursor - 1 };
+                }
+                return state;
+
+            case ConsoleKey.LeftArrow:
+                return state with { InputCursor = Math.Max(0, state.InputCursor - 1) };
+
+            case ConsoleKey.RightArrow:
+                return state with { InputCursor = Math.Min(state.InputBuffer.Length, state.InputCursor + 1) };
+
+            default:
+                if (!char.IsControl(key.KeyChar))
+                {
+                    var buffer = state.InputBuffer.Insert(state.InputCursor, key.KeyChar.ToString());
+                    return state with { InputBuffer = buffer, InputCursor = state.InputCursor + 1 };
+                }
+                return state;
+        }
+    }
+
+    private static TuiState ConfirmDueDateInput(TuiState state)
+    {
+        var text = state.InputBuffer.Trim();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return state.CancelInput();
+        }
+
+        var dueDate = DateParser.Parse(text);
+        if (dueDate == null)
+        {
+            return state with { StatusMessage = $"Could not parse date: {text}" };
+        }
+
+        var taskList = new TodoTaskList();
+        taskList.SetTaskDueDate(state.InputTargetTaskId!, dueDate);
+
+        return (state with
+        {
+            Mode = TuiMode.Normal,
+            InputBuffer = "",
+            InputCursor = 0,
+            InputTargetTaskId = null
+        }).WithStatusMessage($"Set due date: {dueDate:MMM d}");
     }
 }

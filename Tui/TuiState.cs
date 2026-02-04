@@ -7,6 +7,7 @@ public enum TuiMode
     MultiSelect,
     InputAdd,
     InputRename,
+    InputDueDate,
     SelectMoveTarget,
     SelectList
 }
@@ -73,6 +74,15 @@ public record TuiState
         InputCursor = 0,
         InputTargetTaskId = null,
         StatusMessage = "Cancelled"
+    };
+
+    public TuiState StartInputDueDate(string taskId) => this with
+    {
+        Mode = TuiMode.InputDueDate,
+        InputBuffer = "",
+        InputCursor = 0,
+        InputTargetTaskId = taskId,
+        StatusMessage = "Enter date (today, tomorrow, friday, jan15, +3d) or Esc to cancel"
     };
 
     public TuiState StartSelectMoveTarget(string taskId, string currentList, string[] options) => this with

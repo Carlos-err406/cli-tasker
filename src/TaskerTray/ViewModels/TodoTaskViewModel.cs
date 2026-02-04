@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TaskerCore;
@@ -17,6 +18,12 @@ public partial class TodoTaskViewModel : ObservableObject
     public string Description => _task.Description;
     public string ListName => _task.ListName;
     public DateTime CreatedAt => _task.CreatedAt;
+    public Priority? Priority => _task.Priority;
+    public DateOnly? DueDate => _task.DueDate;
+    public bool IsOverdue => _task.IsOverdue;
+    public bool IsDueToday => _task.IsDueToday;
+    public bool HasDueDate => _task.DueDate.HasValue;
+    public bool HasPriority => _task.Priority.HasValue;
 
     [ObservableProperty]
     private bool _isChecked;
@@ -45,6 +52,55 @@ public partial class TodoTaskViewModel : ObservableObject
     /// Menu item text with checkbox indicator.
     /// </summary>
     public string MenuText => IsChecked ? $"[x] {DisplayText}" : $"[ ] {DisplayText}";
+
+    /// <summary>
+    /// Priority display text.
+    /// </summary>
+    public string PriorityDisplay => Priority switch
+    {
+        TaskerCore.Models.Priority.High => "!",
+        TaskerCore.Models.Priority.Medium => "·",
+        TaskerCore.Models.Priority.Low => "·",
+        _ => ""
+    };
+
+    /// <summary>
+    /// Priority color for display.
+    /// </summary>
+    public IBrush PriorityColor => Priority switch
+    {
+        TaskerCore.Models.Priority.High => Brushes.Red,
+        TaskerCore.Models.Priority.Medium => Brushes.Orange,
+        TaskerCore.Models.Priority.Low => Brushes.DodgerBlue,
+        _ => Brushes.Transparent
+    };
+
+    /// <summary>
+    /// Due date display text.
+    /// </summary>
+    public string DueDateDisplay
+    {
+        get
+        {
+            if (!DueDate.HasValue) return "";
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var diff = DueDate.Value.DayNumber - today.DayNumber;
+
+            return diff switch
+            {
+                < 0 => $"OVERDUE ({-diff}d)",
+                0 => "Due: Today",
+                1 => "Due: Tomorrow",
+                < 7 => $"Due: {DueDate.Value:dddd}",
+                _ => $"Due: {DueDate.Value:MMM d}"
+            };
+        }
+    }
+
+    /// <summary>
+    /// Due date color for display.
+    /// </summary>
+    public IBrush DueDateColor => IsOverdue ? Brushes.Red : (IsDueToday ? Brushes.Orange : Brushes.Gray);
 
     public TodoTaskViewModel(TodoTask task, Action<TodoTaskViewModel>? onChanged = null)
     {

@@ -771,12 +771,33 @@ public partial class TaskListPopup : Window
         checkbox.Click += (_, _) => OnCheckboxClicked(task, checkbox);
         grid.Children.Add(checkbox);
 
-        // Task content (title + description)
+        // Task content (title + description + metadata)
         var contentPanel = new StackPanel
         {
             Spacing = 2
         };
         Grid.SetColumn(contentPanel, 1);
+
+        // Title row with priority indicator
+        var titleRow = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 6
+        };
+
+        // Priority indicator
+        if (task.HasPriority)
+        {
+            var priorityIndicator = new TextBlock
+            {
+                Text = task.PriorityDisplay,
+                FontWeight = FontWeight.Bold,
+                FontSize = 13,
+                Foreground = task.PriorityColor,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+            titleRow.Children.Add(priorityIndicator);
+        }
 
         var titleColor = task.IsChecked ? "#666" : "#FFF";
         var title = new TextBlock
@@ -785,9 +806,11 @@ public partial class TaskListPopup : Window
             FontWeight = FontWeight.SemiBold,
             FontSize = 13,
             Foreground = new SolidColorBrush(Color.Parse(titleColor)),
-            TextWrapping = TextWrapping.Wrap
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
         };
-        contentPanel.Children.Add(title);
+        titleRow.Children.Add(title);
+        contentPanel.Children.Add(titleRow);
 
         if (task.HasDescription)
         {
@@ -799,6 +822,19 @@ public partial class TaskListPopup : Window
                 TextWrapping = TextWrapping.Wrap
             };
             contentPanel.Children.Add(desc);
+        }
+
+        // Due date display
+        if (task.HasDueDate)
+        {
+            var dueDate = new TextBlock
+            {
+                Text = task.DueDateDisplay,
+                FontSize = 10,
+                Foreground = task.DueDateColor,
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            contentPanel.Children.Add(dueDate);
         }
 
         grid.Children.Add(contentPanel);

@@ -37,7 +37,8 @@ public class TuiRenderer
     {
         var terminalHeight = Console.WindowHeight;
         // Reserve extra space for multiline input (3 lines + hint) or selection (title + 5 options + hint)
-        var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 4 : 0;
+        var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 4 :
+                                   state.Mode == TuiMode.InputDueDate ? 2 : 0;
         var selectModeExtraSpace = (state.Mode == TuiMode.SelectMoveTarget || state.Mode == TuiMode.SelectList) ? 7 : 0;
         var availableLines = terminalHeight - 6 - inputModeExtraSpace - selectModeExtraSpace;
 
@@ -91,8 +92,10 @@ public class TuiRenderer
         var cursor = isSelected ? "[bold blue]>[/]" : " ";
         var checkbox = task.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
         var taskId = $"[dim]({task.Id})[/]";
+        var priority = FormatPriority(task.Priority);
+        var dueDate = FormatDueDate(task.DueDate);
 
-        var prefixLength = 1 + (mode == TuiMode.MultiSelect ? 3 : 0) + 5 + 1 + 3 + 1;
+        var prefixLength = 1 + (mode == TuiMode.MultiSelect ? 3 : 0) + 5 + 1 + 3 + 3 + 1; // +3 for priority indicator
         var indent = new string(' ', prefixLength);
 
         var lines = task.Description.Split('\n');
@@ -103,7 +106,7 @@ public class TuiRenderer
             ? $"[bold]{firstLine}[/]"
             : (task.IsChecked ? $"[dim strikethrough]{firstLine}[/]" : firstLine);
 
-        WriteLineCleared($"{cursor}{selectionIndicator}{taskId} {checkbox} {description}");
+        WriteLineCleared($"{cursor}{selectionIndicator}{taskId} {priority} {checkbox} {description}{dueDate}");
         linesRendered++;
 
         if (lines.Length > 1)
@@ -129,6 +132,30 @@ public class TuiRenderer
         }
 
         return linesRendered;
+    }
+
+    private static string FormatPriority(Priority? priority) => priority switch
+    {
+        Priority.High => "[red]![/]",
+        Priority.Medium => "[yellow]·[/]",
+        Priority.Low => "[blue]·[/]",
+        _ => "[dim]·[/]"
+    };
+
+    private static string FormatDueDate(DateOnly? dueDate)
+    {
+        if (!dueDate.HasValue) return "";
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var diff = dueDate.Value.DayNumber - today.DayNumber;
+
+        return diff switch
+        {
+            < 0 => $"  [red]OVERDUE ({-diff}d)[/]",
+            0 => "  [yellow]Due: Today[/]",
+            1 => "  [dim]Due: Tomorrow[/]",
+            < 7 => $"  [dim]Due: {dueDate.Value:dddd}[/]",
+            _ => $"  [dim]Due: {dueDate.Value:MMM d}[/]"
+        };
     }
 
     private static string HighlightSearch(string text, string? searchQuery)
@@ -160,6 +187,12 @@ public class TuiRenderer
             return;
         }
 
+        if (state.Mode == TuiMode.InputDueDate)
+        {
+            RenderDueDateInputField(state);
+            return;
+        }
+
         if (state.Mode == TuiMode.SelectMoveTarget || state.Mode == TuiMode.SelectList)
         {
             RenderSelectField(state);
@@ -177,7 +210,7 @@ public class TuiRenderer
 
         var hints = state.Mode switch
         {
-            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:toggle [dim]x[/]:del [dim]z[/]:undo [dim]Z[/]:redo [dim]a[/]:add [dim]r[/]:rename [dim]q[/]:quit",
+            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:check [dim]x[/]:del [dim]1/2/3[/]:priority [dim]d[/]:due [dim]z[/]:undo [dim]a[/]:add [dim]q[/]:quit",
             TuiMode.Search => "[dim]type[/]:filter [dim]enter[/]:done [dim]esc[/]:clear",
             TuiMode.MultiSelect => "[dim]space[/]:toggle [dim]x[/]:del [dim]c[/]:check [dim]u[/]:uncheck [dim]esc[/]:exit",
             _ => ""
@@ -254,6 +287,32 @@ public class TuiRenderer
             ClearLine();
 
         WriteLineCleared("[dim]^S[/]:save [dim]enter[/]:newline [dim]esc[/]:cancel [dim]⌥←→[/]:word");
+    }
+
+    private void RenderDueDateInputField(TuiState state)
+    {
+        if (!string.IsNullOrEmpty(state.StatusMessage))
+        {
+            WriteLineCleared($"[dim]{Markup.Escape(state.StatusMessage)}[/]");
+        }
+        else
+        {
+            ClearLine();
+        }
+
+        var buffer = state.InputBuffer;
+        var cursorPos = state.InputCursor;
+
+        var cursorInLine = Math.Min(cursorPos, buffer.Length);
+        var beforeCursor = buffer[..cursorInLine];
+        var atCursor = cursorInLine < buffer.Length ? buffer[cursorInLine].ToString() : " ";
+        var afterCursor = cursorInLine < buffer.Length - 1 ? buffer[(cursorInLine + 1)..] : "";
+
+        Console.Write(ClearToEndOfLine);
+        AnsiConsole.Markup($"[bold]>[/] {Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
+        Console.WriteLine();
+
+        WriteLineCleared("[dim]enter[/]:save [dim]esc[/]:cancel");
     }
 
     private void RenderSelectField(TuiState state)
