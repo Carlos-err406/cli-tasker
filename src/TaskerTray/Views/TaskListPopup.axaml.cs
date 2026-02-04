@@ -22,6 +22,7 @@ public partial class TaskListPopup : Window
     private TextBox? _activeInlineEditor;
     private string? _editingTaskId;
     private string? _addingToList;
+    private int _showCount; // Incremented each time window is shown, used to ignore stale LostFocus events
 
     public TaskListPopup()
     {
@@ -30,6 +31,8 @@ public partial class TaskListPopup : Window
         // Close when clicking outside or pressing Escape
         Deactivated += (_, _) =>
         {
+            // Save any pending inline add before closing (don't wait for LostFocus which may fire late)
+            SavePendingInlineAdd();
             CancelInlineEdit();
             Hide();
             // Hide from Dock when popup closes
@@ -169,6 +172,7 @@ public partial class TaskListPopup : Window
                 }
             }
         }
+
     }
 
     private void AddListHeader(string listName)
@@ -244,8 +248,14 @@ public partial class TaskListPopup : Window
             }
         };
 
+        // Capture current show count to detect stale events
+        var capturedShowCount = _showCount;
         textBox.LostFocus += (_, _) =>
         {
+            // Ignore if this event is from a previous show (popup was closed and reopened)
+            if (capturedShowCount != _showCount)
+                return;
+
             if (!string.IsNullOrWhiteSpace(textBox.Text))
             {
                 SubmitInlineAdd(textBox.Text, listName);
@@ -388,6 +398,30 @@ public partial class TaskListPopup : Window
         _activeInlineEditor = null;
         _editingTaskId = null;
         _addingToList = null;
+    }
+
+    /// <summary>
+    /// Saves any pending inline add without refreshing UI (called before window hides).
+    /// </summary>
+    private void SavePendingInlineAdd()
+    {
+        if (_addingToList == null || _activeInlineEditor == null)
+            return;
+
+        var text = _activeInlineEditor.Text;
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        try
+        {
+            var task = TodoTask.CreateTodoTask(text.Trim(), _addingToList);
+            var taskList = new TodoTaskList(_addingToList);
+            taskList.AddTodoTask(task);
+        }
+        catch
+        {
+            // Silently fail - task will be lost but UI won't crash
+        }
     }
 
     private Border CreateTaskItem(TodoTaskViewModel task)
@@ -617,6 +651,7 @@ public partial class TaskListPopup : Window
 
     public void ShowAtPosition(PixelPoint position)
     {
+        _showCount++; // Increment to invalidate any pending LostFocus handlers from previous show
         Position = position;
         CancelInlineEdit();
         RefreshTasks();
