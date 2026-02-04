@@ -2,6 +2,7 @@ namespace cli_tasker.Tui;
 
 using Spectre.Console;
 using TaskerCore.Models;
+using TaskerCore.Parsing;
 
 public class TuiRenderer
 {
@@ -99,7 +100,8 @@ public class TuiRenderer
         var prefixLength = 1 + (mode == TuiMode.MultiSelect ? 3 : 0) + 5 + 1 + 3 + 3 + 1; // +3 for priority indicator
         var indent = new string(' ', prefixLength);
 
-        var lines = task.Description.Split('\n');
+        var displayDesc = TaskDescriptionParser.GetDisplayDescription(task.Description);
+        var lines = displayDesc.Split('\n');
         var linesRendered = 0;
 
         var firstLine = HighlightSearch(lines[0], searchQuery);

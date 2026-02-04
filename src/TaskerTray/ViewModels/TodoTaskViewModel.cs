@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskerCore.Parsing;
 using TaskerCore.Results;
 
 namespace TaskerTray.ViewModels;
@@ -46,9 +47,9 @@ public partial class TodoTaskViewModel : ObservableObject
     public string DescriptionPreview => GetDescriptionPreview();
 
     /// <summary>
-    /// Whether task has additional description beyond title.
+    /// Whether task has additional description beyond title (using display description).
     /// </summary>
-    public bool HasDescription => _task.Description.Contains('\n');
+    public bool HasDescription => TaskDescriptionParser.GetDisplayDescription(_task.Description).Contains('\n');
 
     /// <summary>
     /// Menu item text with checkbox indicator.
@@ -175,13 +176,15 @@ public partial class TodoTaskViewModel : ObservableObject
 
     private string GetDisplayText()
     {
-        // Get first line only - no truncation, let UI wrap
-        return Description.Split('\n')[0];
+        // Get first line only (from display description, which hides metadata-only last line)
+        var displayDesc = TaskDescriptionParser.GetDisplayDescription(Description);
+        return displayDesc.Split('\n')[0];
     }
 
     private string GetDescriptionPreview()
     {
-        var lines = Description.Split('\n');
+        var displayDesc = TaskDescriptionParser.GetDisplayDescription(Description);
+        var lines = displayDesc.Split('\n');
         if (lines.Length <= 1) return string.Empty;
 
         // Join remaining lines - no truncation, let UI wrap

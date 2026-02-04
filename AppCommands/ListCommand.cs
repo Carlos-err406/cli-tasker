@@ -5,6 +5,7 @@ using Spectre.Console;
 using TaskerCore.Config;
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskerCore.Parsing;
 
 static class ListCommand
 {
@@ -105,7 +106,8 @@ static class ListCommand
         foreach (var td in tasks)
         {
             var indent = new string(' ', AppConfig.TaskPrefixLength + 4); // +4 for priority indicator
-            var lines = td.Description.Split('\n');
+            var displayDesc = TaskDescriptionParser.GetDisplayDescription(td.Description);
+            var lines = displayDesc.Split('\n');
             var firstLine = $"[bold]{Markup.Escape(lines[0])}[/]";
             var restLines = lines.Length > 1
                 ? "\n" + indent + "[dim]" + string.Join("\n" + indent, lines.Skip(1).Select(Markup.Escape)) + "[/]"
