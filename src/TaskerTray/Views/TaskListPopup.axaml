@@ -17,7 +17,7 @@
         Focusable="True">
 
     <Border CornerRadius="14"
-            Background="#E8202020"
+            Background="#202020"
             BorderBrush="#404040"
             BorderThickness="1"
             Padding="0">
