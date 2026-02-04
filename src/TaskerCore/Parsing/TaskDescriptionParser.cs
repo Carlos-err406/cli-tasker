@@ -7,7 +7,7 @@ using TaskerCore.Models;
 /// Parses inline metadata from task descriptions.
 /// Only parses the LAST LINE for metadata markers.
 /// Keeps original text intact (does not strip markers).
-/// Supports: !! (high), ! (medium), @date (due date), #tag (tags - future)
+/// Supports: p1/p2/p3 (priority), @date (due date), #tag (tags - future)
 /// </summary>
 public static partial class TaskDescriptionParser
 {
@@ -30,11 +30,17 @@ public static partial class TaskDescriptionParser
         DateOnly? dueDate = null;
         var tags = new List<string>();
 
-        // Extract priority: !! (high) or ! (medium) - must be standalone token
+        // Extract priority: p1 (high), p2 (medium), p3 (low)
         var priorityMatch = PriorityRegex().Match(lastLine);
         if (priorityMatch.Success)
         {
-            priority = priorityMatch.Groups[1].Value == "!!" ? Models.Priority.High : Models.Priority.Medium;
+            priority = priorityMatch.Groups[1].Value switch
+            {
+                "1" => Models.Priority.High,
+                "2" => Models.Priority.Medium,
+                "3" => Models.Priority.Low,
+                _ => null
+            };
         }
 
         // Extract due date: @today, @tomorrow, @friday, @jan15, @+3d, etc.
@@ -56,8 +62,8 @@ public static partial class TaskDescriptionParser
         return new ParsedTask(input, priority, dueDate, tags.ToArray());
     }
 
-    // Match !! or ! as standalone tokens (word boundary or whitespace around)
-    [GeneratedRegex(@"(?:^|\s)(!{1,2})(?:\s|$)")]
+    // Match p1, p2, p3 for priority (must be standalone token)
+    [GeneratedRegex(@"(?:^|\s)p([123])(?:\s|$)", RegexOptions.IgnoreCase)]
     private static partial Regex PriorityRegex();
 
     // Match @word for due dates

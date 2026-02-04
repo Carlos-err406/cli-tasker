@@ -14,7 +14,7 @@ static class AddCommand
         addCommand.Options.Add(listOption);
         var descriptionArg = new Argument<string>("description")
         {
-            Description = "The task description (supports: !! or ! for priority, @date for due date)"
+            Description = "The task description (supports: p1/p2/p3 for priority, @date for due date)"
         };
         addCommand.Arguments.Add(descriptionArg);
         addCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
