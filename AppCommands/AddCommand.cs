@@ -28,7 +28,7 @@ static class AddCommand
                 return;
             }
 
-            // Parse inline metadata from description
+            // Parse inline metadata from description (last line only, text kept intact)
             var parsed = TaskDescriptionParser.Parse(description);
 
             var task = TodoTask.CreateTodoTask(parsed.Description, listName);
@@ -42,15 +42,7 @@ static class AddCommand
             var taskList = new TodoTaskList();
             taskList.AddTodoTask(task);
 
-            // Build feedback message
-            var extras = new List<string>();
-            if (parsed.Priority.HasValue)
-                extras.Add($"priority: {parsed.Priority.Value}");
-            if (parsed.DueDate.HasValue)
-                extras.Add($"due: {parsed.DueDate.Value:MMM d}");
-
-            var extraInfo = extras.Count > 0 ? $" ({string.Join(", ", extras)})" : "";
-            Output.Success($"Task saved to '{listName}'{extraInfo}");
+            Output.Success($"Task saved to '{listName}'. Use the list command to see your tasks");
         }));
         return addCommand;
     }

@@ -436,7 +436,7 @@ public class TuiKeyHandler
         {
             var listName = state.CurrentList ?? ListManager.DefaultListName;
 
-            // Parse inline metadata from description
+            // Parse inline metadata from description (last line only, text kept intact)
             var parsed = TaskDescriptionParser.Parse(text);
             var task = TodoTask.CreateTodoTask(parsed.Description, listName);
             if (parsed.Priority.HasValue)
@@ -447,18 +447,13 @@ public class TuiKeyHandler
             var taskList = new TodoTaskList(state.CurrentList);
             taskList.AddTodoTask(task);
 
-            var extras = new List<string>();
-            if (parsed.Priority.HasValue) extras.Add(parsed.Priority.Value.ToString().ToLower());
-            if (parsed.DueDate.HasValue) extras.Add($"due {parsed.DueDate.Value:MMM d}");
-            var statusMsg = extras.Count > 0 ? $"Added ({string.Join(", ", extras)})" : "Added";
-
             return (state with
             {
                 Mode = TuiMode.Normal,
                 InputBuffer = "",
                 InputCursor = 0,
                 CursorIndex = 0
-            }).WithStatusMessage(statusMsg);
+            }).WithStatusMessage("Added");
         }
 
         return state.CancelInput();
