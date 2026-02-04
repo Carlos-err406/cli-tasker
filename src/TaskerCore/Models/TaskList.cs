@@ -2,10 +2,11 @@ namespace TaskerCore.Models;
 
 /// <summary>
 /// Represents a named list containing tasks. Lists are first-class entities that can exist even when empty.
+/// The IsCollapsed property is used by TaskerTray for UI state; CLI versions ignore it.
 /// </summary>
-public record TaskList(string ListName, TodoTask[] Tasks)
+public record TaskList(string ListName, TodoTask[] Tasks, bool IsCollapsed = false)
 {
-    public static TaskList Create(string listName) => new(listName, []);
+    public static TaskList Create(string listName) => new(listName, [], false);
 
     public TaskList AddTask(TodoTask task) => this with { Tasks = [task, ..Tasks] };
 
@@ -20,4 +21,6 @@ public record TaskList(string ListName, TodoTask[] Tasks)
     };
 
     public TaskList ReplaceTasks(TodoTask[] newTasks) => this with { Tasks = newTasks };
+
+    public TaskList SetCollapsed(bool collapsed) => this with { IsCollapsed = collapsed };
 }

@@ -765,6 +765,54 @@ public class TodoTaskList
         }
     }
 
+    /// <summary>
+    /// Gets the collapse state for a list. Returns false if list doesn't exist.
+    /// Used by TaskerTray for UI state; CLI versions ignore this.
+    /// </summary>
+    public static bool IsListCollapsed(string listName)
+    {
+        if (!File.Exists(StoragePaths.AllTasksPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var taskLists = DeserializeWithMigration(raw);
+            var list = taskLists.FirstOrDefault(l => l.ListName == listName);
+            return list?.IsCollapsed ?? false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Sets the collapse state for a list.
+    /// Used by TaskerTray for UI state; CLI versions ignore this.
+    /// </summary>
+    public static void SetListCollapsed(string listName, bool collapsed)
+    {
+        StoragePaths.EnsureDirectory();
+        if (!File.Exists(StoragePaths.AllTasksPath))
+        {
+            return;
+        }
+
+        var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+        var taskLists = DeserializeWithMigration(raw);
+        var updatedLists = taskLists.Select(l =>
+            l.ListName == listName ? l.SetCollapsed(collapsed) : l
+        ).ToArray();
+
+        lock (SaveLock)
+        {
+            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(updatedLists));
+        }
+    }
+
     private void Save()
     {
         StoragePaths.EnsureDirectory();

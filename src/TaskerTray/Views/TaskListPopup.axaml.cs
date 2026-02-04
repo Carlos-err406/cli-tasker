@@ -132,41 +132,46 @@ public partial class TaskListPopup : Window
 
             foreach (var listName in allListNames)
             {
-                AddListHeader(listName);
+                var isCollapsed = TodoTaskList.IsListCollapsed(listName);
+                AddListHeader(listName, isCollapsed);
 
-                // Show inline add if adding to this list
-                if (_addingToList == listName)
+                // Only show tasks if list is not collapsed
+                if (!isCollapsed)
                 {
-                    TaskListPanel.Children.Add(CreateInlineAddField(listName));
-                }
-
-                // Get tasks for this list (empty list if none)
-                var tasksInList = tasksByList.GetValueOrDefault(listName, new List<TodoTaskViewModel>());
-
-                if (tasksInList.Count == 0 && _addingToList != listName)
-                {
-                    // Show "empty" indicator for empty lists
-                    var emptyIndicator = new TextBlock
+                    // Show inline add if adding to this list
+                    if (_addingToList == listName)
                     {
-                        Text = "No tasks in this list",
-                        Foreground = new SolidColorBrush(Color.Parse("#555")),
-                        FontSize = 12,
-                        FontStyle = Avalonia.Media.FontStyle.Italic,
-                        Margin = new Thickness(4, 4, 4, 8)
-                    };
-                    TaskListPanel.Children.Add(emptyIndicator);
-                }
-                else
-                {
-                    foreach (var task in tasksInList)
+                        TaskListPanel.Children.Add(CreateInlineAddField(listName));
+                    }
+
+                    // Get tasks for this list (empty list if none)
+                    var tasksInList = tasksByList.GetValueOrDefault(listName, new List<TodoTaskViewModel>());
+
+                    if (tasksInList.Count == 0 && _addingToList != listName)
                     {
-                        if (_editingTaskId == task.Id)
+                        // Show "empty" indicator for empty lists
+                        var emptyIndicator = new TextBlock
                         {
-                            TaskListPanel.Children.Add(CreateInlineEditField(task));
-                        }
-                        else
+                            Text = "No tasks in this list",
+                            Foreground = new SolidColorBrush(Color.Parse("#555")),
+                            FontSize = 12,
+                            FontStyle = Avalonia.Media.FontStyle.Italic,
+                            Margin = new Thickness(4, 4, 4, 8)
+                        };
+                        TaskListPanel.Children.Add(emptyIndicator);
+                    }
+                    else
+                    {
+                        foreach (var task in tasksInList)
                         {
-                            TaskListPanel.Children.Add(CreateTaskItem(task));
+                            if (_editingTaskId == task.Id)
+                            {
+                                TaskListPanel.Children.Add(CreateInlineEditField(task));
+                            }
+                            else
+                            {
+                                TaskListPanel.Children.Add(CreateTaskItem(task));
+                            }
                         }
                     }
                 }
@@ -175,14 +180,14 @@ public partial class TaskListPopup : Window
             // If adding to a list that doesn't exist yet (new list being created)
             if (_addingToList != null && !allListNames.Contains(_addingToList))
             {
-                AddListHeader(_addingToList);
+                AddListHeader(_addingToList, false);
                 TaskListPanel.Children.Add(CreateInlineAddField(_addingToList));
             }
         }
         else
         {
-            // Single list view
-            AddListHeader(_currentListFilter);
+            // Single list view - ignore collapse state, always show tasks
+            AddListHeader(_currentListFilter, false);
 
             if (_addingToList == _currentListFilter)
             {
@@ -204,14 +209,45 @@ public partial class TaskListPopup : Window
 
     }
 
-    private void AddListHeader(string listName)
+    private void AddListHeader(string listName, bool isCollapsed = false)
     {
         var isDefaultList = listName == ListManager.DefaultListName;
 
+        // Get task counts for summary display when collapsed
+        var tasksInList = _tasks.Where(t => t.ListName == listName).ToList();
+        var totalCount = tasksInList.Count;
+        var pendingCount = tasksInList.Count(t => !t.IsChecked);
+
         var headerPanel = new Grid
         {
-            ColumnDefinitions = ColumnDefinitions.Parse(isDefaultList ? "*,Auto" : "*,Auto,Auto"),
+            ColumnDefinitions = ColumnDefinitions.Parse(isDefaultList ? "Auto,*,Auto" : "Auto,*,Auto,Auto"),
             Margin = new Thickness(4, 8, 4, 4)
+        };
+
+        // Collapse chevron button (column 0)
+        var chevronBtn = new Button
+        {
+            Content = isCollapsed ? "▶" : "▼",
+            Width = 18,
+            Height = 18,
+            FontSize = 10,
+            Padding = new Thickness(0),
+            Background = Brushes.Transparent,
+            Foreground = new SolidColorBrush(Color.Parse("#666")),
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        ToolTip.SetTip(chevronBtn, isCollapsed ? "Expand list" : "Collapse list");
+        chevronBtn.Click += (_, _) => OnToggleListCollapsed(listName, !isCollapsed);
+        Grid.SetColumn(chevronBtn, 0);
+        headerPanel.Children.Add(chevronBtn);
+
+        // List name + summary (column 1)
+        var headerStack = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
         };
 
         var header = new TextBlock
@@ -222,9 +258,25 @@ public partial class TaskListPopup : Window
             Foreground = new SolidColorBrush(Color.Parse("#888")),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
         };
-        Grid.SetColumn(header, 0);
-        headerPanel.Children.Add(header);
+        headerStack.Children.Add(header);
 
+        // Show summary when collapsed
+        if (isCollapsed)
+        {
+            var summary = new TextBlock
+            {
+                Text = $"{totalCount} tasks, {pendingCount} pending",
+                FontSize = 10,
+                Foreground = new SolidColorBrush(Color.Parse("#555")),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+            headerStack.Children.Add(summary);
+        }
+
+        Grid.SetColumn(headerStack, 1);
+        headerPanel.Children.Add(headerStack);
+
+        // Add button (column 2)
         var addBtn = new Button
         {
             Content = "+",
@@ -239,7 +291,7 @@ public partial class TaskListPopup : Window
         };
         ToolTip.SetTip(addBtn, $"Add task to {listName}");
         addBtn.Click += (_, _) => StartInlineAdd(listName);
-        Grid.SetColumn(addBtn, 1);
+        Grid.SetColumn(addBtn, 2);
         headerPanel.Children.Add(addBtn);
 
         // Add menu button for non-default lists (allows delete)
@@ -269,11 +321,17 @@ public partial class TaskListPopup : Window
 
             menuBtn.ContextMenu = contextMenu;
             menuBtn.Click += (_, _) => contextMenu.Open(menuBtn);
-            Grid.SetColumn(menuBtn, 2);
+            Grid.SetColumn(menuBtn, 3);
             headerPanel.Children.Add(menuBtn);
         }
 
         TaskListPanel.Children.Add(headerPanel);
+    }
+
+    private void OnToggleListCollapsed(string listName, bool collapsed)
+    {
+        TodoTaskList.SetListCollapsed(listName, collapsed);
+        BuildTaskList();
     }
 
     private void OnDeleteListClicked(string listName)
@@ -414,6 +472,13 @@ public partial class TaskListPopup : Window
     {
         CancelInlineEdit();
         _addingToList = listName;
+
+        // Auto-expand the list if it's collapsed (so user can see the add field)
+        if (TodoTaskList.IsListCollapsed(listName))
+        {
+            TodoTaskList.SetListCollapsed(listName, false);
+        }
+
         BuildTaskList();
     }
 
