@@ -30,6 +30,13 @@ static class Output
         };
     }
 
+    public static string FormatTags(string[]? tags)
+    {
+        if (tags is not { Length: > 0 }) return "";
+        var tagStr = string.Join(" ", tags.Select(t => $"#{t}"));
+        return $"  [cyan]{Spectre.Console.Markup.Escape(tagStr)}[/]";
+    }
+
     public static void Success(string message)
     {
         AnsiConsole.MarkupLine($"[green]{Spectre.Console.Markup.Escape(message)}[/]");

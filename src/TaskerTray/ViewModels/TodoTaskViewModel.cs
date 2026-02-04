@@ -20,10 +20,12 @@ public partial class TodoTaskViewModel : ObservableObject
     public DateTime CreatedAt => _task.CreatedAt;
     public Priority? Priority => _task.Priority;
     public DateOnly? DueDate => _task.DueDate;
+    public string[]? Tags => _task.Tags;
     public bool IsOverdue => _task.IsOverdue;
     public bool IsDueToday => _task.IsDueToday;
     public bool HasDueDate => _task.DueDate.HasValue;
     public bool HasPriority => _task.Priority.HasValue;
+    public bool HasTags => _task.HasTags;
 
     [ObservableProperty]
     private bool _isChecked;
@@ -101,6 +103,11 @@ public partial class TodoTaskViewModel : ObservableObject
     /// Due date color for display.
     /// </summary>
     public IBrush DueDateColor => IsOverdue ? Brushes.Red : (IsDueToday ? Brushes.Orange : Brushes.Gray);
+
+    /// <summary>
+    /// Tags display text.
+    /// </summary>
+    public string TagsDisplay => HasTags ? string.Join(" ", Tags!.Select(t => $"#{t}")) : "";
 
     public TodoTaskViewModel(TodoTask task, Action<TodoTaskViewModel>? onChanged = null)
     {

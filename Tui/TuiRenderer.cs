@@ -94,6 +94,7 @@ public class TuiRenderer
         var taskId = $"[dim]({task.Id})[/]";
         var priority = FormatPriority(task.Priority);
         var dueDate = FormatDueDate(task.DueDate);
+        var tags = FormatTags(task.Tags);
 
         var prefixLength = 1 + (mode == TuiMode.MultiSelect ? 3 : 0) + 5 + 1 + 3 + 3 + 1; // +3 for priority indicator
         var indent = new string(' ', prefixLength);
@@ -106,7 +107,7 @@ public class TuiRenderer
             ? $"[bold]{firstLine}[/]"
             : (task.IsChecked ? $"[dim strikethrough]{firstLine}[/]" : firstLine);
 
-        WriteLineCleared($"{cursor}{selectionIndicator}{taskId} {priority} {checkbox} {description}{dueDate}");
+        WriteLineCleared($"{cursor}{selectionIndicator}{taskId} {priority} {checkbox} {description}{dueDate}{tags}");
         linesRendered++;
 
         if (lines.Length > 1)
@@ -156,6 +157,13 @@ public class TuiRenderer
             < 7 => $"  [dim]Due: {dueDate.Value:dddd}[/]",
             _ => $"  [dim]Due: {dueDate.Value:MMM d}[/]"
         };
+    }
+
+    private static string FormatTags(string[]? tags)
+    {
+        if (tags is not { Length: > 0 }) return "";
+        var tagStr = string.Join(" ", tags.Select(t => $"#{t}"));
+        return $"  [cyan]{Markup.Escape(tagStr)}[/]";
     }
 
     private static string HighlightSearch(string text, string? searchQuery)

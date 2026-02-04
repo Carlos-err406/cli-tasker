@@ -14,7 +14,7 @@ static class AddCommand
         addCommand.Options.Add(listOption);
         var descriptionArg = new Argument<string>("description")
         {
-            Description = "The task description (supports: p1/p2/p3 for priority, @date for due date)"
+            Description = "The task description (supports: p1/p2/p3 for priority, @date for due date, #tag for tags)"
         };
         addCommand.Arguments.Add(descriptionArg);
         addCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
@@ -38,6 +38,8 @@ static class AddCommand
                 task = task.SetPriority(parsed.Priority.Value);
             if (parsed.DueDate.HasValue)
                 task = task.SetDueDate(parsed.DueDate.Value);
+            if (parsed.Tags.Length > 0)
+                task = task.SetTags(parsed.Tags);
 
             var taskList = new TodoTaskList();
             taskList.AddTodoTask(task);

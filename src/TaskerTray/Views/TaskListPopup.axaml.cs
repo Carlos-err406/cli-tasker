@@ -646,6 +646,8 @@ public partial class TaskListPopup : Window
                 task = task.SetPriority(parsed.Priority.Value);
             if (parsed.DueDate.HasValue)
                 task = task.SetDueDate(parsed.DueDate.Value);
+            if (parsed.Tags.Length > 0)
+                task = task.SetTags(parsed.Tags);
 
             _newlyAddedTaskId = task.Id; // Track for entrance animation
             var taskList = new TodoTaskList(listName);
@@ -729,6 +731,8 @@ public partial class TaskListPopup : Window
                 task = task.SetPriority(parsed.Priority.Value);
             if (parsed.DueDate.HasValue)
                 task = task.SetDueDate(parsed.DueDate.Value);
+            if (parsed.Tags.Length > 0)
+                task = task.SetTags(parsed.Tags);
 
             var taskList = new TodoTaskList(_addingToList);
             taskList.AddTodoTask(task);
@@ -850,6 +854,19 @@ public partial class TaskListPopup : Window
                 Margin = new Thickness(0, 2, 0, 0)
             };
             contentPanel.Children.Add(dueDate);
+        }
+
+        // Tags display
+        if (task.HasTags)
+        {
+            var tagsText = new TextBlock
+            {
+                Text = task.TagsDisplay,
+                FontSize = 10,
+                Foreground = new SolidColorBrush(Color.Parse("#00CED1")), // Cyan
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            contentPanel.Children.Add(tagsText);
         }
 
         grid.Children.Add(contentPanel);

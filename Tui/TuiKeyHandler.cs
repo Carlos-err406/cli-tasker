@@ -443,6 +443,8 @@ public class TuiKeyHandler
                 task = task.SetPriority(parsed.Priority.Value);
             if (parsed.DueDate.HasValue)
                 task = task.SetDueDate(parsed.DueDate.Value);
+            if (parsed.Tags.Length > 0)
+                task = task.SetTags(parsed.Tags);
 
             var taskList = new TodoTaskList(state.CurrentList);
             taskList.AddTodoTask(task);
