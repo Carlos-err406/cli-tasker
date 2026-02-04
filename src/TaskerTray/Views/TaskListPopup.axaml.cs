@@ -119,32 +119,54 @@ public partial class TaskListPopup : Window
         // Group by list if viewing all lists
         if (_currentListFilter == null)
         {
-            var grouped = _tasks.GroupBy(t => t.ListName).OrderBy(g => g.Key);
-            foreach (var group in grouped)
+            // Get all list names (including empty lists) and group tasks
+            var allListNames = TodoTaskList.GetAllListNames();
+            var tasksByList = _tasks.GroupBy(t => t.ListName).ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var listName in allListNames)
             {
-                AddListHeader(group.Key);
+                AddListHeader(listName);
 
                 // Show inline add if adding to this list
-                if (_addingToList == group.Key)
+                if (_addingToList == listName)
                 {
-                    TaskListPanel.Children.Add(CreateInlineAddField(group.Key));
+                    TaskListPanel.Children.Add(CreateInlineAddField(listName));
                 }
 
-                foreach (var task in group)
+                // Get tasks for this list (empty list if none)
+                var tasksInList = tasksByList.GetValueOrDefault(listName, new List<TodoTaskViewModel>());
+
+                if (tasksInList.Count == 0 && _addingToList != listName)
                 {
-                    if (_editingTaskId == task.Id)
+                    // Show "empty" indicator for empty lists
+                    var emptyIndicator = new TextBlock
                     {
-                        TaskListPanel.Children.Add(CreateInlineEditField(task));
-                    }
-                    else
+                        Text = "No tasks in this list",
+                        Foreground = new SolidColorBrush(Color.Parse("#555")),
+                        FontSize = 12,
+                        FontStyle = Avalonia.Media.FontStyle.Italic,
+                        Margin = new Thickness(4, 4, 4, 8)
+                    };
+                    TaskListPanel.Children.Add(emptyIndicator);
+                }
+                else
+                {
+                    foreach (var task in tasksInList)
                     {
-                        TaskListPanel.Children.Add(CreateTaskItem(task));
+                        if (_editingTaskId == task.Id)
+                        {
+                            TaskListPanel.Children.Add(CreateInlineEditField(task));
+                        }
+                        else
+                        {
+                            TaskListPanel.Children.Add(CreateTaskItem(task));
+                        }
                     }
                 }
             }
 
-            // If adding to a list that has no tasks yet
-            if (_addingToList != null && !grouped.Any(g => g.Key == _addingToList))
+            // If adding to a list that doesn't exist yet (new list being created)
+            if (_addingToList != null && !allListNames.Contains(_addingToList))
             {
                 AddListHeader(_addingToList);
                 TaskListPanel.Children.Add(CreateInlineAddField(_addingToList));

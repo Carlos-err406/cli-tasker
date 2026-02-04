@@ -29,13 +29,26 @@ Before updating the global tool, increment the version in `cli-tasker.csproj`:
 <Version>2.2.0</Version>  <!-- Bump this -->
 ```
 
-## Architecture (v2.2)
+## Architecture (v2.3)
 
-### Single-File Storage
-All tasks are stored in a single unified file with a `ListName` property on each task:
-- `~/Library/Application Support/cli-tasker/all-tasks.json` - all tasks
-- `~/Library/Application Support/cli-tasker/all-tasks.trash.json` - soft-deleted tasks
+### List-First Storage
+All tasks are stored in a list-first structure where lists are first-class entities:
+- `~/Library/Application Support/cli-tasker/all-tasks.json` - lists with their tasks
+- `~/Library/Application Support/cli-tasker/all-tasks.trash.json` - soft-deleted tasks (same format)
 - `~/Library/Application Support/cli-tasker/config.json` - default list setting
+
+**JSON Structure:**
+```json
+[
+  {"ListName": "tasks", "Tasks": [...]},
+  {"ListName": "work", "Tasks": []}
+]
+```
+
+This structure allows:
+- Empty lists (lists can exist without tasks)
+- Pre-creating lists before adding tasks
+- Lists persist even after all tasks are deleted
 
 ### Command Flow
 ```
@@ -60,6 +73,7 @@ Persistent Storage (JSON files)
 - `tasker add "task" -l work` - adds to "work" list
 - `tasker delete/check/rename/move <id>` - works globally by task ID (no list filter needed)
 - `tasker system status` - shows statistics across all lists
+- `tasker lists create <name>` - creates a new empty list
 
 ### Command Pattern
 The app uses System.CommandLine for CLI parsing. Each command lives in `AppCommands/` and exposes a static factory method that returns a `Command` instance:
@@ -79,6 +93,19 @@ Commands are registered in `Program.Main()`. Some commands return tuples when th
 All command actions are wrapped with `CommandHelper.WithErrorHandling()` which catches `TaskerException` subclasses and displays formatted error messages. This provides consistent error UX across commands.
 
 ## Data Layer
+
+### TaskList (List Container)
+```csharp
+record TaskList(string ListName, TodoTask[] Tasks)
+```
+
+**Factory method**: `TaskList.Create(string listName)` creates an empty list.
+
+**Methods** (all return new instances - functional style):
+- `AddTask(task)` - add task to list
+- `RemoveTask(taskId)` - remove task from list
+- `UpdateTask(task)` - update a task in place
+- `ReplaceTasks(tasks)` - replace all tasks
 
 ### TodoTask (Immutable Record)
 ```csharp
@@ -118,11 +145,15 @@ Manages all tasks with optional list filtering:
 **Static Methods** (for list management):
 - `GetAllListNames()` - returns distinct list names (default first, then alphabetical)
 - `ListHasTasks(listName)` - checks if list has any tasks
-- `DeleteList(listName)` - removes all tasks/trash from list
-- `RenameList(oldName, newName)` - updates ListName on all tasks
+- `ListExists(listName)` - checks if list exists (with or without tasks)
+- `CreateList(listName)` - creates a new empty list
+- `DeleteList(listName)` - removes list and all tasks/trash
+- `RenameList(oldName, newName)` - updates ListName on list object
+
+**Migration**: When loading old format (flat TodoTask array), automatically migrates to new list-first format on save.
 
 **Persistence**:
-- `Save()` - serializes both active and trash arrays to JSON
+- `Save()` - serializes TaskList[] to JSON
 - Uses `SaveLock` for thread-safe file writes
 - `EnsureDirectory()` - creates config directory if missing
 
@@ -132,9 +163,10 @@ Manages all tasks with optional list filtering:
 
 **Validation**:
 - `IsValidListName(name)` - regex: `^[a-zA-Z0-9_-]+$`
-- `ListExists(name)` - returns true if list has tasks (default always exists)
+- `ListExists(name)` - returns true if list exists in storage (default always exists)
 
 **Operations**:
+- `CreateList(name)` - creates empty list, validates name, throws if exists
 - `DeleteList(name)` - prevents deletion of default, updates config if needed
 - `RenameList(oldName, newName)` - validates, prevents default rename, updates config if needed
 
@@ -191,7 +223,7 @@ All exceptions caught by `CommandHelper.WithErrorHandling()` and displayed via `
 | `DeleteCommand.cs` | `delete`, `clear` | Returns tuple, supports multiple IDs |
 | `RenameCommand.cs` | `rename` | Single task by ID |
 | `MoveCommand.cs` | `move` | Single task, validates target list |
-| `ListsCommand.cs` | `lists`, `lists delete`, `lists rename`, `lists set-default` | Complex with subcommands |
+| `ListsCommand.cs` | `lists`, `lists create`, `lists delete`, `lists rename`, `lists set-default` | Complex with subcommands |
 | `TrashCommand.cs` | `trash list`, `trash restore`, `trash clear` | Complex with subcommands |
 | `SystemCommand.cs` | `system status` | Shows per-list statistics |
 

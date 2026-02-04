@@ -39,11 +39,36 @@ static class ListsCommand
         });
 
         // Subcommands
+        listsCommand.Add(CreateCreateCommand());
         listsCommand.Add(CreateDeleteCommand());
         listsCommand.Add(CreateRenameCommand());
         listsCommand.Add(CreateSetDefaultCommand());
 
         return listsCommand;
+    }
+
+    private static Command CreateCreateCommand()
+    {
+        var createCommand = new Command("create", "Create a new empty list");
+        var nameArg = new Argument<string>("name")
+        {
+            Description = "The name of the list to create"
+        };
+        createCommand.Arguments.Add(nameArg);
+
+        createCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
+        {
+            var name = parseResult.GetValue(nameArg);
+            if (name == null)
+            {
+                Output.Error("List name is required");
+                return;
+            }
+
+            Output.Result(ListManager.CreateList(name));
+        }));
+
+        return createCommand;
     }
 
     private static Command CreateDeleteCommand()

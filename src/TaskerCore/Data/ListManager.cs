@@ -23,8 +23,8 @@ public static partial class ListManager
     {
         // Default list always exists
         if (name == DefaultListName) return true;
-        // Other lists exist if they have tasks
-        return TodoTaskList.ListHasTasks(name);
+        // Check if list exists in storage (with or without tasks)
+        return TodoTaskList.ListExists(name);
     }
 
     // Discovery
@@ -37,7 +37,7 @@ public static partial class ListManager
     // CRUD - These return TaskResult instead of using Output directly
 
     /// <summary>
-    /// Creates a new list. Lists are created implicitly when tasks are added.
+    /// Creates a new empty list.
     /// </summary>
     /// <returns>TaskResult indicating success or error.</returns>
     public static TaskResult CreateList(string name)
@@ -52,8 +52,8 @@ public static partial class ListManager
             throw new ListAlreadyExistsException(name);
         }
 
-        // Lists are created implicitly when tasks are added
-        return new TaskResult.Success($"List '{name}' will be created when you add tasks to it with: tasker add \"task\" -l {name}");
+        TodoTaskList.CreateList(name);
+        return new TaskResult.Success($"Created list '{name}'");
     }
 
     /// <summary>
