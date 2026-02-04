@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
 using TaskerCore.Config;
 using TaskerCore.Data;
 using TaskerCore.Models;
@@ -24,23 +26,20 @@ public partial class TaskListPopup : Window
     private string? _addingToList;
     private bool _creatingNewList;
     private int _showCount; // Incremented each time window is shown, used to ignore stale LostFocus events
+    private string? _newlyAddedTaskId; // Track newly added task for entrance animation
+    private Dictionary<string, Border> _taskBorders = new(); // Track task borders for animations
 
     public TaskListPopup()
     {
         InitializeComponent();
 
         // Close when clicking outside or pressing Escape
-        Deactivated += (_, _) =>
+        Deactivated += async (_, _) =>
         {
             // Save any pending inline add before closing (don't wait for LostFocus which may fire late)
             SavePendingInlineAdd();
             CancelInlineEdit();
-            Hide();
-            // Hide from Dock when popup closes
-            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX))
-            {
-                HideFromDock();
-            }
+            await HideWithAnimation();
         };
         KeyDown += OnKeyDown;
 
@@ -59,13 +58,13 @@ public partial class TaskListPopup : Window
             }
             else
             {
-                Hide();
+                _ = HideWithAnimation();
             }
         }
         else if (e.Key == Key.W && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
         {
             // Cmd+W closes the popup
-            Hide();
+            _ = HideWithAnimation();
             e.Handled = true;
         }
         else if (e.Key == Key.R && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
@@ -103,6 +102,7 @@ public partial class TaskListPopup : Window
     private void BuildTaskList()
     {
         TaskListPanel.Children.Clear();
+        _taskBorders.Clear();
 
         // Show create list input at top if active
         if (_creatingNewList)
@@ -135,53 +135,64 @@ public partial class TaskListPopup : Window
                 var isCollapsed = TodoTaskList.IsListCollapsed(listName);
                 AddListHeader(listName, isCollapsed);
 
-                // Only show tasks if list is not collapsed
-                if (!isCollapsed)
+                // Create container panel for this list's tasks (for collapse animation)
+                var tasksPanel = new StackPanel
                 {
-                    // Show inline add if adding to this list
-                    if (_addingToList == listName)
-                    {
-                        TaskListPanel.Children.Add(CreateInlineAddField(listName));
-                    }
+                    Classes = { "listTasks" },
+                    ClipToBounds = true
+                };
+                if (isCollapsed)
+                {
+                    tasksPanel.Classes.Add("collapsed");
+                }
 
-                    // Get tasks for this list (empty list if none)
-                    var tasksInList = tasksByList.GetValueOrDefault(listName, new List<TodoTaskViewModel>());
+                // Show inline add if adding to this list
+                if (_addingToList == listName)
+                {
+                    tasksPanel.Children.Add(CreateInlineAddField(listName));
+                }
 
-                    if (tasksInList.Count == 0 && _addingToList != listName)
+                // Get tasks for this list (empty list if none)
+                var tasksInList = tasksByList.GetValueOrDefault(listName, new List<TodoTaskViewModel>());
+
+                if (tasksInList.Count == 0 && _addingToList != listName)
+                {
+                    // Show "empty" indicator for empty lists
+                    var emptyIndicator = new TextBlock
                     {
-                        // Show "empty" indicator for empty lists
-                        var emptyIndicator = new TextBlock
-                        {
-                            Text = "No tasks in this list",
-                            Foreground = new SolidColorBrush(Color.Parse("#555")),
-                            FontSize = 12,
-                            FontStyle = Avalonia.Media.FontStyle.Italic,
-                            Margin = new Thickness(4, 4, 4, 8)
-                        };
-                        TaskListPanel.Children.Add(emptyIndicator);
-                    }
-                    else
+                        Text = "No tasks in this list",
+                        Foreground = new SolidColorBrush(Color.Parse("#555")),
+                        FontSize = 12,
+                        FontStyle = Avalonia.Media.FontStyle.Italic,
+                        Margin = new Thickness(4, 4, 4, 8)
+                    };
+                    tasksPanel.Children.Add(emptyIndicator);
+                }
+                else
+                {
+                    foreach (var task in tasksInList)
                     {
-                        foreach (var task in tasksInList)
+                        if (_editingTaskId == task.Id)
                         {
-                            if (_editingTaskId == task.Id)
-                            {
-                                TaskListPanel.Children.Add(CreateInlineEditField(task));
-                            }
-                            else
-                            {
-                                TaskListPanel.Children.Add(CreateTaskItem(task));
-                            }
+                            tasksPanel.Children.Add(CreateInlineEditField(task));
+                        }
+                        else
+                        {
+                            tasksPanel.Children.Add(CreateTaskItem(task));
                         }
                     }
                 }
+
+                TaskListPanel.Children.Add(tasksPanel);
             }
 
             // If adding to a list that doesn't exist yet (new list being created)
             if (_addingToList != null && !allListNames.Contains(_addingToList))
             {
                 AddListHeader(_addingToList, false);
-                TaskListPanel.Children.Add(CreateInlineAddField(_addingToList));
+                var newListPanel = new StackPanel { Classes = { "listTasks" }, ClipToBounds = true };
+                newListPanel.Children.Add(CreateInlineAddField(_addingToList));
+                TaskListPanel.Children.Add(newListPanel);
             }
         }
         else
@@ -224,10 +235,10 @@ public partial class TaskListPopup : Window
             Margin = new Thickness(4, 8, 4, 4)
         };
 
-        // Collapse chevron button (column 0)
+        // Collapse chevron button (column 0) - uses rotation animation
         var chevronBtn = new Button
         {
-            Content = isCollapsed ? "▶" : "▼",
+            Content = "▼",
             Width = 18,
             Height = 18,
             FontSize = 10,
@@ -235,8 +246,13 @@ public partial class TaskListPopup : Window
             Background = Brushes.Transparent,
             Foreground = new SolidColorBrush(Color.Parse("#666")),
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Classes = { "chevron" }
         };
+        if (isCollapsed)
+        {
+            chevronBtn.Classes.Add("collapsed");
+        }
         ToolTip.SetTip(chevronBtn, isCollapsed ? "Expand list" : "Collapse list");
         chevronBtn.Click += (_, _) => OnToggleListCollapsed(listName, !isCollapsed);
         Grid.SetColumn(chevronBtn, 0);
@@ -355,8 +371,15 @@ public partial class TaskListPopup : Window
             Background = new SolidColorBrush(Color.Parse("#3A3A3A")),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(10, 8),
-            Margin = new Thickness(0, 2)
+            Margin = new Thickness(0, 2),
+            Classes = { "inlineInput", "entering" }
         };
+
+        // Trigger entrance animation after render
+        Dispatcher.UIThread.Post(() =>
+        {
+            border.Classes.Remove("entering");
+        }, DispatcherPriority.Render);
 
         var textBox = new TextBox
         {
@@ -416,8 +439,15 @@ public partial class TaskListPopup : Window
             Background = new SolidColorBrush(Color.Parse("#3A3A3A")),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(10, 8),
-            Margin = new Thickness(0, 2)
+            Margin = new Thickness(0, 2),
+            Classes = { "inlineInput", "entering" }
         };
+
+        // Trigger entrance animation after render
+        Dispatcher.UIThread.Post(() =>
+        {
+            border.Classes.Remove("entering");
+        }, DispatcherPriority.Render);
 
         var textBox = new TextBox
         {
@@ -506,8 +536,15 @@ public partial class TaskListPopup : Window
             Background = new SolidColorBrush(Color.Parse("#3A3A3A")),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(10, 8),
-            Margin = new Thickness(4, 4, 4, 8)
+            Margin = new Thickness(4, 4, 4, 8),
+            Classes = { "inlineInput", "entering" }
         };
+
+        // Trigger entrance animation after render
+        Dispatcher.UIThread.Post(() =>
+        {
+            border.Classes.Remove("entering");
+        }, DispatcherPriority.Render);
 
         var textBox = new TextBox
         {
@@ -602,6 +639,7 @@ public partial class TaskListPopup : Window
         try
         {
             var task = TodoTask.CreateTodoTask(text.Trim(), listName);
+            _newlyAddedTaskId = task.Id; // Track for entrance animation
             var taskList = new TodoTaskList(listName);
             taskList.AddTodoTask(task);
             CancelInlineEdit();
@@ -693,8 +731,29 @@ public partial class TaskListPopup : Window
             Background = new SolidColorBrush(Color.Parse("#2A2A2A")),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(10, 8),
-            Margin = new Thickness(0, 2)
+            Margin = new Thickness(0, 2),
+            Classes = { "taskItem" }
         };
+
+        // Track border for animations
+        _taskBorders[task.Id] = border;
+
+        // Add checked class if task is checked
+        if (task.IsChecked)
+        {
+            border.Classes.Add("checked");
+        }
+
+        // Animate entrance for newly added task
+        if (task.Id == _newlyAddedTaskId)
+        {
+            border.Classes.Add("entering");
+            Dispatcher.UIThread.Post(() =>
+            {
+                border.Classes.Remove("entering");
+            }, DispatcherPriority.Render);
+            _newlyAddedTaskId = null;
+        }
 
         var grid = new Grid
         {
@@ -795,8 +854,21 @@ public partial class TaskListPopup : Window
         return border;
     }
 
-    private void OnCheckboxClicked(TodoTaskViewModel task, CheckBox checkbox)
+    private async void OnCheckboxClicked(TodoTaskViewModel task, CheckBox checkbox)
     {
+        // Visual feedback on the task border
+        if (_taskBorders.TryGetValue(task.Id, out var border))
+        {
+            if (checkbox.IsChecked == true)
+            {
+                border.Classes.Add("checked");
+            }
+            else
+            {
+                border.Classes.Remove("checked");
+            }
+        }
+
         try
         {
             var taskList = new TodoTaskList();
@@ -809,10 +881,9 @@ public partial class TaskListPopup : Window
                 taskList.UncheckTask(task.Id);
             }
 
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                RefreshTasks();
-            }, Avalonia.Threading.DispatcherPriority.Background);
+            // Delayed refresh to allow animation to complete
+            await Task.Delay(150);
+            Dispatcher.UIThread.Post(() => RefreshTasks(), DispatcherPriority.Background);
         }
         catch (Exception ex)
         {
@@ -834,8 +905,15 @@ public partial class TaskListPopup : Window
         }
     }
 
-    private void OnDeleteTaskClicked(TodoTaskViewModel task)
+    private async void OnDeleteTaskClicked(TodoTaskViewModel task)
     {
+        // Animate out before deleting
+        if (_taskBorders.TryGetValue(task.Id, out var border))
+        {
+            border.Classes.Add("exiting");
+            await Task.Delay(150); // Wait for animation
+        }
+
         try
         {
             var taskList = new TodoTaskList();
@@ -917,21 +995,48 @@ public partial class TaskListPopup : Window
         Position = position;
         CancelInlineEdit();
         RefreshTasks();
+
+        // Reset to hidden state before showing
+        PopupContent.Classes.Remove("visible");
+
         Show();
+
+        // Trigger fade-in animation after render
+        Dispatcher.UIThread.Post(() =>
+        {
+            PopupContent.Classes.Add("visible");
+        }, DispatcherPriority.Render);
 
         // Activate app and window on macOS - temporarily become regular app to get focus
         if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX))
         {
             SetActivationPolicy(0); // Regular - shows in Dock but can focus
             ActivateApp();
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            Dispatcher.UIThread.Post(() =>
             {
                 MakeKeyWindow(this);
-            }, Avalonia.Threading.DispatcherPriority.Render);
+            }, DispatcherPriority.Render);
         }
         else
         {
             Activate();
+        }
+    }
+
+    private async Task HideWithAnimation()
+    {
+        // Trigger fade-out animation
+        PopupContent.Classes.Remove("visible");
+
+        // Wait for animation to complete
+        await Task.Delay(150);
+
+        Hide();
+
+        // Hide from Dock when popup closes
+        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX))
+        {
+            HideFromDock();
         }
     }
 

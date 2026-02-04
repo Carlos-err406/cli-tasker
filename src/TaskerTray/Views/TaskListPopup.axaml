@@ -16,7 +16,99 @@
         Topmost="True"
         Focusable="True">
 
-    <Border CornerRadius="14"
+    <Window.Styles>
+        <!-- Popup content fade + slide animation -->
+        <Style Selector="Border.popupContent">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="RenderTransform" Value="translateY(-8px)"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.popupContent.visible">
+            <Setter Property="Opacity" Value="1"/>
+            <Setter Property="RenderTransform" Value="translateY(0)"/>
+        </Style>
+
+        <!-- Task item animations -->
+        <Style Selector="Border.taskItem">
+            <Setter Property="Opacity" Value="1"/>
+            <Setter Property="RenderTransform" Value="translateX(0)"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.taskItem.checked">
+            <Setter Property="Opacity" Value="0.6"/>
+        </Style>
+        <Style Selector="Border.taskItem.entering">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="RenderTransform" Value="translateY(-10px)"/>
+        </Style>
+        <Style Selector="Border.taskItem.exiting">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="RenderTransform" Value="translateX(20px)"/>
+        </Style>
+        <Style Selector="Border.taskItem:pointerover">
+            <Setter Property="Background" Value="#333333"/>
+        </Style>
+
+        <!-- List section collapse/expand -->
+        <Style Selector="StackPanel.listTasks">
+            <Setter Property="MaxHeight" Value="2000"/>
+            <Setter Property="Opacity" Value="1"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="MaxHeight" Duration="0:0:0.2" Easing="CubicEaseInOut"/>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="StackPanel.listTasks.collapsed">
+            <Setter Property="MaxHeight" Value="0"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+
+        <!-- Chevron rotation animation -->
+        <Style Selector="Button.chevron">
+            <Setter Property="RenderTransform" Value="rotate(0deg)"/>
+            <Setter Property="RenderTransformOrigin" Value="50%, 50%"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="CubicEaseInOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.chevron.collapsed">
+            <Setter Property="RenderTransform" Value="rotate(-90deg)"/>
+        </Style>
+
+        <!-- Inline input field fade-in -->
+        <Style Selector="Border.inlineInput">
+            <Setter Property="Opacity" Value="1"/>
+            <Setter Property="RenderTransform" Value="translateY(0)"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.inlineInput.entering">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="RenderTransform" Value="translateY(-8px)"/>
+        </Style>
+    </Window.Styles>
+
+    <Border x:Name="PopupContent"
+            Classes="popupContent"
+            CornerRadius="14"
             Background="#202020"
             BorderBrush="#404040"
             BorderThickness="1"
