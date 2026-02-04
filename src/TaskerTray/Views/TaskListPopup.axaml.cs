@@ -22,6 +22,7 @@ public partial class TaskListPopup : Window
     private TextBox? _activeInlineEditor;
     private string? _editingTaskId;
     private string? _addingToList;
+    private bool _creatingNewList;
     private int _showCount; // Incremented each time window is shown, used to ignore stale LostFocus events
 
     public TaskListPopup()
@@ -103,7 +104,13 @@ public partial class TaskListPopup : Window
     {
         TaskListPanel.Children.Clear();
 
-        if (_tasks.Count == 0 && _addingToList == null)
+        // Show create list input at top if active
+        if (_creatingNewList)
+        {
+            TaskListPanel.Children.Add(CreateInlineListNameField());
+        }
+
+        if (_tasks.Count == 0 && _addingToList == null && !_creatingNewList)
         {
             var emptyText = new TextBlock
             {
@@ -199,9 +206,11 @@ public partial class TaskListPopup : Window
 
     private void AddListHeader(string listName)
     {
+        var isDefaultList = listName == ListManager.DefaultListName;
+
         var headerPanel = new Grid
         {
-            ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"),
+            ColumnDefinitions = ColumnDefinitions.Parse(isDefaultList ? "*,Auto" : "*,Auto,Auto"),
             Margin = new Thickness(4, 8, 4, 4)
         };
 
@@ -233,7 +242,52 @@ public partial class TaskListPopup : Window
         Grid.SetColumn(addBtn, 1);
         headerPanel.Children.Add(addBtn);
 
+        // Add menu button for non-default lists (allows delete)
+        if (!isDefaultList)
+        {
+            var menuBtn = new Button
+            {
+                Content = "•••",
+                Width = 22,
+                Height = 22,
+                FontSize = 9,
+                Padding = new Thickness(0),
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.Parse("#666")),
+                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+
+            var contextMenu = new ContextMenu();
+            var deleteItem = new MenuItem
+            {
+                Header = "Delete list",
+                Foreground = new SolidColorBrush(Color.Parse("#FF6B6B"))
+            };
+            deleteItem.Click += (_, _) => OnDeleteListClicked(listName);
+            contextMenu.Items.Add(deleteItem);
+
+            menuBtn.ContextMenu = contextMenu;
+            menuBtn.Click += (_, _) => contextMenu.Open(menuBtn);
+            Grid.SetColumn(menuBtn, 2);
+            headerPanel.Children.Add(menuBtn);
+        }
+
         TaskListPanel.Children.Add(headerPanel);
+    }
+
+    private void OnDeleteListClicked(string listName)
+    {
+        try
+        {
+            ListManager.DeleteList(listName);
+            RefreshTasks();
+            StatusText.Text = $"Deleted list '{listName}'";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Error: {ex.Message}";
+        }
     }
 
     private Border CreateInlineAddField(string listName)
@@ -370,6 +424,108 @@ public partial class TaskListPopup : Window
         BuildTaskList();
     }
 
+    private void OnCreateListClick(object? sender, RoutedEventArgs e)
+    {
+        // No-op if already in create mode (handles double-click)
+        if (_creatingNewList) return;
+
+        CancelInlineEdit();  // Discards any pending task add/edit
+        _creatingNewList = true;
+        BuildTaskList();
+    }
+
+    private Border CreateInlineListNameField()
+    {
+        var border = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#3A3A3A")),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8),
+            Margin = new Thickness(4, 4, 4, 8)
+        };
+
+        var textBox = new TextBox
+        {
+            Watermark = "New list name...",
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            FontSize = 13,
+            Foreground = Brushes.White,
+            AcceptsReturn = false,
+            MaxLength = 50
+        };
+
+        var submitted = false;  // Local flag to prevent double submission
+
+        textBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                if (!submitted)
+                {
+                    submitted = true;
+                    SubmitNewListName(textBox.Text);
+                }
+            }
+            else if (e.Key == Key.Escape)
+            {
+                submitted = true;  // Mark as handled to prevent LostFocus submission
+                CancelInlineEdit();
+                BuildTaskList();
+            }
+        };
+
+        // CRITICAL: Apply show count pattern to prevent race condition
+        var capturedShowCount = _showCount;
+        textBox.LostFocus += (_, _) =>
+        {
+            if (capturedShowCount != _showCount)
+                return;
+
+            // Guard against double submission (Enter/Escape already processed)
+            if (submitted)
+                return;
+
+            submitted = true;
+            if (!string.IsNullOrWhiteSpace(textBox.Text))
+                SubmitNewListName(textBox.Text);
+            else
+                CancelInlineEdit();
+        };
+
+        _activeInlineEditor = textBox;
+        border.Child = textBox;
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => textBox.Focus(),
+            Avalonia.Threading.DispatcherPriority.Background);
+
+        return border;
+    }
+
+    private void SubmitNewListName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            CancelInlineEdit();
+            return;
+        }
+
+        try
+        {
+            ListManager.CreateList(name.Trim());
+            CancelInlineEdit();
+            RefreshTasks();
+            StatusText.Text = $"Created list '{name.Trim()}'";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Error: {ex.Message}";
+            CancelInlineEdit();
+            BuildTaskList();
+        }
+    }
+
     private void SubmitInlineAdd(string? text, string listName)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -420,6 +576,7 @@ public partial class TaskListPopup : Window
         _activeInlineEditor = null;
         _editingTaskId = null;
         _addingToList = null;
+        _creatingNewList = false;
     }
 
     /// <summary>
@@ -427,11 +584,29 @@ public partial class TaskListPopup : Window
     /// </summary>
     private void SavePendingInlineAdd()
     {
-        if (_addingToList == null || _activeInlineEditor == null)
+        if (_activeInlineEditor == null)
             return;
 
         var text = _activeInlineEditor.Text;
         if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        // Handle pending list creation
+        if (_creatingNewList)
+        {
+            try
+            {
+                ListManager.CreateList(text.Trim());
+            }
+            catch
+            {
+                // Silently fail - list won't be created but UI won't crash
+            }
+            return;
+        }
+
+        // Handle pending task add
+        if (_addingToList == null)
             return;
 
         try
