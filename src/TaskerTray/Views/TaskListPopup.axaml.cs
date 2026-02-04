@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using TaskerCore.Config;
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskerCore.Parsing;
 using TaskerTray.ViewModels;
 
 namespace TaskerTray.Views;
@@ -638,7 +639,14 @@ public partial class TaskListPopup : Window
 
         try
         {
-            var task = TodoTask.CreateTodoTask(text.Trim(), listName);
+            // Parse inline metadata from description
+            var parsed = TaskDescriptionParser.Parse(text.Trim());
+            var task = TodoTask.CreateTodoTask(parsed.Description, listName);
+            if (parsed.Priority.HasValue)
+                task = task.SetPriority(parsed.Priority.Value);
+            if (parsed.DueDate.HasValue)
+                task = task.SetDueDate(parsed.DueDate.Value);
+
             _newlyAddedTaskId = task.Id; // Track for entrance animation
             var taskList = new TodoTaskList(listName);
             taskList.AddTodoTask(task);
@@ -714,7 +722,14 @@ public partial class TaskListPopup : Window
 
         try
         {
-            var task = TodoTask.CreateTodoTask(text.Trim(), _addingToList);
+            // Parse inline metadata from description
+            var parsed = TaskDescriptionParser.Parse(text.Trim());
+            var task = TodoTask.CreateTodoTask(parsed.Description, _addingToList);
+            if (parsed.Priority.HasValue)
+                task = task.SetPriority(parsed.Priority.Value);
+            if (parsed.DueDate.HasValue)
+                task = task.SetDueDate(parsed.DueDate.Value);
+
             var taskList = new TodoTaskList(_addingToList);
             taskList.AddTodoTask(task);
         }

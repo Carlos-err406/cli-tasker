@@ -29,6 +29,13 @@ Before updating the global tool, increment the version in `cli-tasker.csproj`:
 <Version>2.2.0</Version>  <!-- Bump this -->
 ```
 
+### Updating TaskerTray
+To update the menu bar app after making changes:
+```bash
+src/TaskerTray/update-app.sh
+```
+This script stops the running app, builds, installs to /Applications, and relaunches.
+
 ## Architecture (v2.3)
 
 ### List-First Storage
