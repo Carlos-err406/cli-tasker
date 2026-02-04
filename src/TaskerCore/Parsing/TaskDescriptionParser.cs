@@ -102,11 +102,72 @@ public static partial class TaskDescriptionParser
 
         if (string.IsNullOrWhiteSpace(stripped))
         {
-            // Last line is metadata-only, exclude it from display
-            return string.Join("\n", lines.Take(lines.Length - 1));
+            // Last line is metadata-only, exclude it from display and trim trailing whitespace
+            return string.Join("\n", lines.Take(lines.Length - 1)).TrimEnd();
         }
 
-        return description;
+        return description.TrimEnd();
+    }
+
+    /// <summary>
+    /// Updates the description to sync metadata changes. Updates existing metadata line or appends new one.
+    /// </summary>
+    public static string SyncMetadataToDescription(string description, Priority? priority, DateOnly? dueDate, string[]? tags)
+    {
+        var lines = description.Split('\n').ToList();
+        var lastLine = lines[^1];
+
+        // Check if last line is metadata-only
+        var stripped = lastLine;
+        stripped = PriorityRegex().Replace(stripped, " ");
+        stripped = DueDateRegex().Replace(stripped, " ");
+        stripped = TagRegex().Replace(stripped, " ");
+        var hasMetadataLine = string.IsNullOrWhiteSpace(stripped);
+
+        // Build the new metadata line
+        var metaParts = new List<string>();
+        if (priority.HasValue)
+        {
+            var p = priority.Value switch
+            {
+                Models.Priority.High => "p1",
+                Models.Priority.Medium => "p2",
+                Models.Priority.Low => "p3",
+                _ => ""
+            };
+            if (!string.IsNullOrEmpty(p)) metaParts.Add(p);
+        }
+        if (dueDate.HasValue)
+        {
+            metaParts.Add($"@{dueDate.Value:yyyy-MM-dd}");
+        }
+        if (tags is { Length: > 0 })
+        {
+            metaParts.AddRange(tags.Select(t => $"#{t}"));
+        }
+
+        var newMetaLine = string.Join(" ", metaParts);
+
+        if (hasMetadataLine)
+        {
+            // Replace the existing metadata line
+            if (string.IsNullOrEmpty(newMetaLine))
+            {
+                // Remove the metadata line entirely
+                lines.RemoveAt(lines.Count - 1);
+            }
+            else
+            {
+                lines[^1] = newMetaLine;
+            }
+        }
+        else if (!string.IsNullOrEmpty(newMetaLine))
+        {
+            // Append new metadata line
+            lines.Add(newMetaLine);
+        }
+
+        return string.Join("\n", lines);
     }
 
     // Match p1, p2, p3 for priority (must be standalone token)

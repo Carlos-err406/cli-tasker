@@ -8,10 +8,10 @@ static class Output
 {
     public static string FormatPriority(Priority? priority) => priority switch
     {
-        Priority.High => "[red]![/]",
-        Priority.Medium => "[yellow]·[/]",
-        Priority.Low => "[blue]·[/]",
-        _ => "[dim]·[/]"
+        Priority.High => "[red bold]>>>[/]",
+        Priority.Medium => "[yellow]>> [/]",
+        Priority.Low => "[blue]>  [/]",
+        _ => "[dim]·  [/]"
     };
 
     public static string FormatDueDate(DateOnly? dueDate)

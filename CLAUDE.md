@@ -24,17 +24,21 @@ dotnet tool update -g cli-tasker --add-source ./nupkg
 ```
 
 ### Version bumping
-Before updating the global tool, increment the version in `cli-tasker.csproj`:
+Before updating, increment the version in `cli-tasker.csproj`:
 ```xml
-<Version>2.2.0</Version>  <!-- Bump this -->
+<Version>2.14.0</Version>  <!-- Bump this -->
 ```
 
-### Updating TaskerTray
-To update the menu bar app after making changes:
+### Updating CLI and TaskerTray
+To update both the global CLI tool and the menu bar app after making changes:
 ```bash
-src/TaskerTray/update-app.sh
+./update.sh
 ```
-This script stops the running app, builds, installs to /Applications, and relaunches.
+This script:
+1. Packs and updates the global `tasker` CLI tool
+2. Stops the running TaskerTray app
+3. Builds and installs TaskerTray to /Applications
+4. Relaunches TaskerTray
 
 ## Architecture (v2.3)
 

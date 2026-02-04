@@ -107,10 +107,10 @@ static class ListCommand
         {
             var indent = new string(' ', AppConfig.TaskPrefixLength + 4); // +4 for priority indicator
             var displayDesc = TaskDescriptionParser.GetDisplayDescription(td.Description);
-            var lines = displayDesc.Split('\n');
+            var lines = displayDesc.Split('\n').Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
             var firstLine = $"[bold]{Markup.Escape(lines[0])}[/]";
             var restLines = lines.Length > 1
-                ? "\n" + indent + "[dim]" + string.Join("\n" + indent, lines.Skip(1).Select(Markup.Escape)) + "[/]"
+                ? string.Concat(lines.Skip(1).Select(l => $"\n{indent}[dim]{Markup.Escape(l)}[/]"))
                 : "";
 
             var checkbox = td.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";

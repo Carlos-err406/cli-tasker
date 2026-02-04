@@ -856,17 +856,38 @@ public partial class TaskListPopup : Window
             contentPanel.Children.Add(dueDate);
         }
 
-        // Tags display
+        // Tags display - pill badges
         if (task.HasTags)
         {
-            var tagsText = new TextBlock
+            var tagsPanel = new WrapPanel
             {
-                Text = task.TagsDisplay,
-                FontSize = 10,
-                Foreground = new SolidColorBrush(Color.Parse("#00CED1")), // Cyan
-                Margin = new Thickness(0, 2, 0, 0)
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Margin = new Thickness(0, 4, 0, 0)
             };
-            contentPanel.Children.Add(tagsText);
+
+            foreach (var tag in task.Tags!)
+            {
+                var tagPill = new Border
+                {
+                    Background = new SolidColorBrush(GetTagColor(tag)),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(6, 2),
+                    Margin = new Thickness(0, 0, 4, 2)
+                };
+
+                var tagText = new TextBlock
+                {
+                    Text = $"#{tag}",
+                    FontSize = 10,
+                    FontWeight = FontWeight.Medium,
+                    Foreground = new SolidColorBrush(Color.Parse("#FFF"))
+                };
+
+                tagPill.Child = tagText;
+                tagsPanel.Children.Add(tagPill);
+            }
+
+            contentPanel.Children.Add(tagsPanel);
         }
 
         grid.Children.Add(contentPanel);
@@ -1173,6 +1194,30 @@ public partial class TaskListPopup : Window
             }
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Returns a consistent color for a tag based on its hash.
+    /// </summary>
+    private static Color GetTagColor(string tag)
+    {
+        // Palette of nice tag colors (muted but visible)
+        var colors = new[]
+        {
+            "#3B82F6", // Blue
+            "#10B981", // Emerald
+            "#F59E0B", // Amber
+            "#EF4444", // Red
+            "#8B5CF6", // Violet
+            "#EC4899", // Pink
+            "#06B6D4", // Cyan
+            "#84CC16", // Lime
+            "#F97316", // Orange
+            "#6366F1", // Indigo
+        };
+
+        var index = Math.Abs(tag.GetHashCode()) % colors.Length;
+        return Color.Parse(colors[index]);
     }
 
     [System.Runtime.InteropServices.DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]

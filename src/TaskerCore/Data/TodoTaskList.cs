@@ -2,6 +2,7 @@ namespace TaskerCore.Data;
 
 using System.Text.Json;
 using TaskerCore.Models;
+using TaskerCore.Parsing;
 using TaskerCore.Results;
 using TaskerCore.Undo;
 using TaskerCore.Undo.Commands;
@@ -581,6 +582,12 @@ public class TodoTaskList
 
         RemoveTaskFromTaskLists(taskId);
         var updatedTask = dueDate.HasValue ? todoTask.SetDueDate(dueDate.Value) : todoTask.ClearDueDate();
+
+        // Sync the metadata back to description
+        var syncedDescription = TaskDescriptionParser.SyncMetadataToDescription(
+            updatedTask.Description, updatedTask.Priority, updatedTask.DueDate, updatedTask.Tags);
+        updatedTask = updatedTask.Rename(syncedDescription);
+
         AddTaskToList(updatedTask);
         Save();
 
@@ -618,6 +625,12 @@ public class TodoTaskList
 
         RemoveTaskFromTaskLists(taskId);
         var updatedTask = priority.HasValue ? todoTask.SetPriority(priority.Value) : todoTask.ClearPriority();
+
+        // Sync the metadata back to description
+        var syncedDescription = TaskDescriptionParser.SyncMetadataToDescription(
+            updatedTask.Description, updatedTask.Priority, updatedTask.DueDate, updatedTask.Tags);
+        updatedTask = updatedTask.Rename(syncedDescription);
+
         AddTaskToList(updatedTask);
         Save();
 

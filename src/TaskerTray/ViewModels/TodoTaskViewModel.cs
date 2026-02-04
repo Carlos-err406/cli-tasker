@@ -61,9 +61,9 @@ public partial class TodoTaskViewModel : ObservableObject
     /// </summary>
     public string PriorityDisplay => Priority switch
     {
-        TaskerCore.Models.Priority.High => "!",
-        TaskerCore.Models.Priority.Medium => "·",
-        TaskerCore.Models.Priority.Low => "·",
+        TaskerCore.Models.Priority.High => ">>>",
+        TaskerCore.Models.Priority.Medium => ">>",
+        TaskerCore.Models.Priority.Low => ">",
         _ => ""
     };
 
