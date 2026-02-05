@@ -846,7 +846,14 @@ public class TodoTaskList
         var raw = File.ReadAllText(StoragePaths.AllTasksPath);
         var taskLists = DeserializeWithMigration(raw);
         var updatedLists = taskLists.Select(l =>
-            l.ListName == oldName ? l with { ListName = newName } : l
+            l.ListName == oldName
+                ? l with
+                {
+                    ListName = newName,
+                    // Also update ListName on each task within the list
+                    Tasks = l.Tasks.Select(t => t with { ListName = newName }).ToArray()
+                }
+                : l
         ).ToArray();
 
         lock (SaveLock)
@@ -860,7 +867,13 @@ public class TodoTaskList
             var trashRaw = File.ReadAllText(StoragePaths.AllTrashPath);
             var trashLists = DeserializeWithMigration(trashRaw);
             var updatedTrash = trashLists.Select(l =>
-                l.ListName == oldName ? l with { ListName = newName } : l
+                l.ListName == oldName
+                    ? l with
+                    {
+                        ListName = newName,
+                        Tasks = l.Tasks.Select(t => t with { ListName = newName }).ToArray()
+                    }
+                    : l
             ).ToArray();
             lock (SaveLock)
             {
