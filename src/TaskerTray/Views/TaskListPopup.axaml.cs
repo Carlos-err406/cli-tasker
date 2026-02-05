@@ -797,14 +797,13 @@ public partial class TaskListPopup : Window
         };
         Grid.SetColumn(contentPanel, 1);
 
-        // Title row with priority indicator
-        var titleRow = new StackPanel
+        // Title row with priority indicator - use Grid to constrain width and enable wrapping
+        var titleRow = new Grid
         {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 6
+            ColumnDefinitions = ColumnDefinitions.Parse("Auto,*")
         };
 
-        // Priority indicator
+        // Priority indicator (column 0)
         if (task.HasPriority)
         {
             var priorityIndicator = new TextBlock
@@ -813,8 +812,10 @@ public partial class TaskListPopup : Window
                 FontWeight = FontWeight.Bold,
                 FontSize = 13,
                 Foreground = task.PriorityColor,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new Thickness(0, 0, 6, 0)
             };
+            Grid.SetColumn(priorityIndicator, 0);
             titleRow.Children.Add(priorityIndicator);
         }
 
@@ -826,8 +827,11 @@ public partial class TaskListPopup : Window
             FontSize = 13,
             Foreground = new SolidColorBrush(Color.Parse(titleColor)),
             TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top
         };
+        Grid.SetColumn(title, task.HasPriority ? 1 : 0);
+        if (!task.HasPriority)
+            Grid.SetColumnSpan(title, 2);
         titleRow.Children.Add(title);
         contentPanel.Children.Add(titleRow);
 
