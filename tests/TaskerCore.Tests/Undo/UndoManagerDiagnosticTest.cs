@@ -20,7 +20,7 @@ public class UndoManagerDiagnosticTest : IDisposable
     public void Dispose()
     {
         UndoManager.Instance.ClearHistory();
-        StoragePaths.SetDirectory(null);
+        // Don't reset to null - test mode stays active to prevent accidental production writes
         if (Directory.Exists(_testDir))
         {
             Directory.Delete(_testDir, recursive: true);
