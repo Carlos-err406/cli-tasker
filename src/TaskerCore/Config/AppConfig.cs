@@ -14,14 +14,14 @@ public static class AppConfig
     /// <summary>Gets the default list name for adding new tasks.</summary>
     public static string GetDefaultList()
     {
-        if (!File.Exists(StoragePaths.ConfigPath))
+        if (!File.Exists(StoragePaths.Current.ConfigPath))
         {
             return ListManager.DefaultListName;
         }
 
         try
         {
-            var json = File.ReadAllText(StoragePaths.ConfigPath);
+            var json = File.ReadAllText(StoragePaths.Current.ConfigPath);
             var config = JsonSerializer.Deserialize<ConfigData>(json);
             return config?.DefaultList ?? ListManager.DefaultListName;
         }
@@ -34,10 +34,10 @@ public static class AppConfig
     /// <summary>Sets the default list name for adding new tasks.</summary>
     public static void SetDefaultList(string name)
     {
-        StoragePaths.EnsureDirectory();
+        StoragePaths.Current.EnsureDirectory();
         var config = new ConfigData { DefaultList = name };
         var json = JsonSerializer.Serialize(config);
-        File.WriteAllText(StoragePaths.ConfigPath, json);
+        File.WriteAllText(StoragePaths.Current.ConfigPath, json);
     }
 
     private sealed class ConfigData

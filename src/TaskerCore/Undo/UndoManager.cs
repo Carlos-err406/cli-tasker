@@ -174,7 +174,7 @@ public sealed class UndoManager
 
     private void Save()
     {
-        StoragePaths.EnsureDirectory();
+        StoragePaths.Current.EnsureDirectory();
 
         var history = new UndoHistory
         {

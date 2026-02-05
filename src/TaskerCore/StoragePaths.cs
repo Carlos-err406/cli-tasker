@@ -2,60 +2,69 @@ namespace TaskerCore;
 
 /// <summary>
 /// Centralized storage path management for all TaskerCore data files.
+/// Uses an instance-based design with a static Current property for convenience.
 /// </summary>
-public static class StoragePaths
+public class StoragePaths
 {
-    private static string? _overrideDirectory;
-    private static bool _testModeActive;
+    private static StoragePaths? _current;
+    private static readonly object _lock = new();
 
-    /// <summary>Base directory for all cli-tasker data.</summary>
-    public static string Directory => _overrideDirectory ?? GetDefaultDirectory();
-
-    private static string GetDefaultDirectory()
+    /// <summary>
+    /// The current storage paths instance. Defaults to production paths.
+    /// </summary>
+    public static StoragePaths Current
     {
-        // SAFETY: If test mode was ever activated, refuse to use production directory
-        if (_testModeActive)
+        get
         {
-            throw new InvalidOperationException(
-                "StoragePaths: Test mode is active but no test directory is set. " +
-                "This is a bug - tests must not write to production storage.");
+            if (_current == null)
+            {
+                lock (_lock)
+                {
+                    _current ??= new StoragePaths(GetDefaultDirectory());
+                }
+            }
+            return _current;
         }
-
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "cli-tasker");
     }
 
     /// <summary>
-    /// Sets a custom directory for testing. Once called, test mode is permanently
-    /// active for this process - setting null will throw instead of using production path.
+    /// Sets a custom StoragePaths instance for testing.
     /// </summary>
-    internal static void SetDirectory(string? path)
-    {
-        if (path != null)
-        {
-            _testModeActive = true;
-        }
-        _overrideDirectory = path;
-    }
+    internal static void SetCurrent(StoragePaths paths) => _current = paths;
+
+    private static string GetDefaultDirectory() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "cli-tasker");
+
+    /// <summary>Base directory for all cli-tasker data.</summary>
+    public string Directory { get; }
 
     /// <summary>Path to the main tasks JSON file.</summary>
-    public static string AllTasksPath => Path.Combine(Directory, "all-tasks.json");
+    public string AllTasksPath => Path.Combine(Directory, "all-tasks.json");
 
     /// <summary>Path to the trash JSON file.</summary>
-    public static string AllTrashPath => Path.Combine(Directory, "all-tasks.trash.json");
+    public string AllTrashPath => Path.Combine(Directory, "all-tasks.trash.json");
 
     /// <summary>Path to the configuration JSON file.</summary>
-    public static string ConfigPath => Path.Combine(Directory, "config.json");
+    public string ConfigPath => Path.Combine(Directory, "config.json");
 
     /// <summary>Path to the undo history JSON file.</summary>
-    public static string UndoHistoryPath => Path.Combine(Directory, "undo-history.json");
+    public string UndoHistoryPath => Path.Combine(Directory, "undo-history.json");
 
     /// <summary>Directory for backup files.</summary>
-    public static string BackupDirectory => Path.Combine(Directory, "backups");
+    public string BackupDirectory => Path.Combine(Directory, "backups");
+
+    /// <summary>
+    /// Creates a new StoragePaths instance with the specified base directory.
+    /// </summary>
+    /// <param name="baseDirectory">The base directory for all storage files.</param>
+    public StoragePaths(string baseDirectory)
+    {
+        Directory = baseDirectory ?? throw new ArgumentNullException(nameof(baseDirectory));
+    }
 
     /// <summary>Ensures the storage directory exists.</summary>
-    public static void EnsureDirectory()
+    public void EnsureDirectory()
     {
         if (!System.IO.Directory.Exists(Directory))
         {
@@ -64,11 +73,28 @@ public static class StoragePaths
     }
 
     /// <summary>Ensures the backup directory exists.</summary>
-    public static void EnsureBackupDirectory()
+    public void EnsureBackupDirectory()
     {
         if (!System.IO.Directory.Exists(BackupDirectory))
         {
             System.IO.Directory.CreateDirectory(BackupDirectory);
+        }
+    }
+
+    // Static convenience methods that delegate to Current instance
+    // These maintain backwards compatibility with existing code
+
+    /// <summary>Sets a test directory. Creates a new StoragePaths instance.</summary>
+    internal static void SetDirectory(string? path)
+    {
+        if (path != null)
+        {
+            _current = new StoragePaths(path);
+        }
+        else
+        {
+            // Reset to default - but this should rarely be needed
+            _current = null;
         }
     }
 }

@@ -7,6 +7,6 @@ public static class UndoConfig
     public const int HistoryRetentionDays = 30;
     public const bool PersistAcrossSessions = true;
 
-    public static string HistoryPath => StoragePaths.UndoHistoryPath;
-    public static string TasksPath => StoragePaths.AllTasksPath;
+    public static string HistoryPath => StoragePaths.Current.UndoHistoryPath;
+    public static string TasksPath => StoragePaths.Current.AllTasksPath;
 }

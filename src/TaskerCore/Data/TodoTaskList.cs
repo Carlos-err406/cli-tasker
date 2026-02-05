@@ -23,14 +23,14 @@ public class TodoTaskList
 
     private void Load()
     {
-        StoragePaths.EnsureDirectory();
+        StoragePaths.Current.EnsureDirectory();
 
         // Load all tasks
-        if (File.Exists(StoragePaths.AllTasksPath))
+        if (File.Exists(StoragePaths.Current.AllTasksPath))
         {
             try
             {
-                var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+                var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
                 TaskLists = DeserializeWithMigration(raw);
             }
             catch (JsonException)
@@ -40,11 +40,11 @@ public class TodoTaskList
         }
 
         // Load all trash
-        if (File.Exists(StoragePaths.AllTrashPath))
+        if (File.Exists(StoragePaths.Current.AllTrashPath))
         {
             try
             {
-                var trashRaw = File.ReadAllText(StoragePaths.AllTrashPath);
+                var trashRaw = File.ReadAllText(StoragePaths.Current.AllTrashPath);
                 TrashLists = DeserializeWithMigration(trashRaw);
             }
             catch (JsonException)
@@ -701,15 +701,15 @@ public class TodoTaskList
 
     public static string[] GetAllListNames()
     {
-        StoragePaths.EnsureDirectory();
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        StoragePaths.Current.EnsureDirectory();
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
         {
             return [ListManager.DefaultListName];
         }
 
         try
         {
-            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
             var taskLists = DeserializeWithMigration(raw);
 
             // Preserve array order (supports manual reordering in TaskerTray)
@@ -734,14 +734,14 @@ public class TodoTaskList
 
     public static bool ListHasTasks(string listName)
     {
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
         {
             return false;
         }
 
         try
         {
-            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
             var taskLists = DeserializeWithMigration(raw);
             return taskLists.Any(l => l.ListName == listName && l.Tasks.Length > 0);
         }
@@ -761,14 +761,14 @@ public class TodoTaskList
             return true;
         }
 
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
         {
             return false;
         }
 
         try
         {
-            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
             var taskLists = DeserializeWithMigration(raw);
             return taskLists.Any(l => l.ListName == listName);
         }
@@ -783,12 +783,12 @@ public class TodoTaskList
     /// </summary>
     public static void CreateList(string listName)
     {
-        StoragePaths.EnsureDirectory();
+        StoragePaths.Current.EnsureDirectory();
 
         TaskList[] taskLists;
-        if (File.Exists(StoragePaths.AllTasksPath))
+        if (File.Exists(StoragePaths.Current.AllTasksPath))
         {
-            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
             taskLists = DeserializeWithMigration(raw);
         }
         else
@@ -801,49 +801,49 @@ public class TodoTaskList
 
         lock (SaveLock)
         {
-            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(taskLists));
+            File.WriteAllText(StoragePaths.Current.AllTasksPath, JsonSerializer.Serialize(taskLists));
         }
     }
 
     public static void DeleteList(string listName)
     {
-        StoragePaths.EnsureDirectory();
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        StoragePaths.Current.EnsureDirectory();
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
         {
             return;
         }
 
-        var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+        var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
         var taskLists = DeserializeWithMigration(raw);
         var remainingLists = taskLists.Where(l => l.ListName != listName).ToArray();
 
         lock (SaveLock)
         {
-            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(remainingLists));
+            File.WriteAllText(StoragePaths.Current.AllTasksPath, JsonSerializer.Serialize(remainingLists));
         }
 
         // Also remove from trash
-        if (File.Exists(StoragePaths.AllTrashPath))
+        if (File.Exists(StoragePaths.Current.AllTrashPath))
         {
-            var trashRaw = File.ReadAllText(StoragePaths.AllTrashPath);
+            var trashRaw = File.ReadAllText(StoragePaths.Current.AllTrashPath);
             var trashLists = DeserializeWithMigration(trashRaw);
             var remainingTrash = trashLists.Where(l => l.ListName != listName).ToArray();
             lock (SaveLock)
             {
-                File.WriteAllText(StoragePaths.AllTrashPath, JsonSerializer.Serialize(remainingTrash));
+                File.WriteAllText(StoragePaths.Current.AllTrashPath, JsonSerializer.Serialize(remainingTrash));
             }
         }
     }
 
     public static void RenameList(string oldName, string newName)
     {
-        StoragePaths.EnsureDirectory();
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        StoragePaths.Current.EnsureDirectory();
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
         {
             return;
         }
 
-        var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+        var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
         var taskLists = DeserializeWithMigration(raw);
         var updatedLists = taskLists.Select(l =>
             l.ListName == oldName
@@ -858,13 +858,13 @@ public class TodoTaskList
 
         lock (SaveLock)
         {
-            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(updatedLists));
+            File.WriteAllText(StoragePaths.Current.AllTasksPath, JsonSerializer.Serialize(updatedLists));
         }
 
         // Also update in trash
-        if (File.Exists(StoragePaths.AllTrashPath))
+        if (File.Exists(StoragePaths.Current.AllTrashPath))
         {
-            var trashRaw = File.ReadAllText(StoragePaths.AllTrashPath);
+            var trashRaw = File.ReadAllText(StoragePaths.Current.AllTrashPath);
             var trashLists = DeserializeWithMigration(trashRaw);
             var updatedTrash = trashLists.Select(l =>
                 l.ListName == oldName
@@ -877,7 +877,7 @@ public class TodoTaskList
             ).ToArray();
             lock (SaveLock)
             {
-                File.WriteAllText(StoragePaths.AllTrashPath, JsonSerializer.Serialize(updatedTrash));
+                File.WriteAllText(StoragePaths.Current.AllTrashPath, JsonSerializer.Serialize(updatedTrash));
             }
         }
     }
@@ -888,14 +888,14 @@ public class TodoTaskList
     /// </summary>
     public static bool IsListCollapsed(string listName)
     {
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
         {
             return false;
         }
 
         try
         {
-            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
             var taskLists = DeserializeWithMigration(raw);
             var list = taskLists.FirstOrDefault(l => l.ListName == listName);
             return list?.IsCollapsed ?? false;
@@ -912,13 +912,13 @@ public class TodoTaskList
     /// </summary>
     public static void SetListCollapsed(string listName, bool collapsed)
     {
-        StoragePaths.EnsureDirectory();
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        StoragePaths.Current.EnsureDirectory();
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
         {
             return;
         }
 
-        var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+        var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
         var taskLists = DeserializeWithMigration(raw);
         var updatedLists = taskLists.Select(l =>
             l.ListName == listName ? l.SetCollapsed(collapsed) : l
@@ -926,20 +926,20 @@ public class TodoTaskList
 
         lock (SaveLock)
         {
-            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(updatedLists));
+            File.WriteAllText(StoragePaths.Current.AllTasksPath, JsonSerializer.Serialize(updatedLists));
         }
     }
 
     private void Save()
     {
-        StoragePaths.EnsureDirectory();
+        StoragePaths.Current.EnsureDirectory();
         lock (SaveLock)
         {
             var tasksJson = JsonSerializer.Serialize(TaskLists);
-            File.WriteAllText(StoragePaths.AllTasksPath, tasksJson);
+            File.WriteAllText(StoragePaths.Current.AllTasksPath, tasksJson);
 
             var trashJson = JsonSerializer.Serialize(TrashLists);
-            File.WriteAllText(StoragePaths.AllTrashPath, trashJson);
+            File.WriteAllText(StoragePaths.Current.AllTrashPath, trashJson);
         }
     }
 
@@ -948,13 +948,13 @@ public class TodoTaskList
     /// </summary>
     public static void ReorderTask(string taskId, int newIndex)
     {
-        StoragePaths.EnsureDirectory();
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        StoragePaths.Current.EnsureDirectory();
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
             return;
 
         lock (SaveLock)
         {
-            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
             var taskLists = DeserializeWithMigration(raw);
 
             // Find the list containing this task
@@ -990,7 +990,7 @@ public class TodoTaskList
 
             taskLists[listIndex] = list.ReplaceTasks(tasks.ToArray());
 
-            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(taskLists));
+            File.WriteAllText(StoragePaths.Current.AllTasksPath, JsonSerializer.Serialize(taskLists));
         }
     }
 
@@ -999,13 +999,13 @@ public class TodoTaskList
     /// </summary>
     public static void ReorderList(string listName, int newIndex)
     {
-        StoragePaths.EnsureDirectory();
-        if (!File.Exists(StoragePaths.AllTasksPath))
+        StoragePaths.Current.EnsureDirectory();
+        if (!File.Exists(StoragePaths.Current.AllTasksPath))
             return;
 
         lock (SaveLock)
         {
-            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var raw = File.ReadAllText(StoragePaths.Current.AllTasksPath);
             var taskLists = DeserializeWithMigration(raw).ToList();
 
             var currentIndex = taskLists.FindIndex(l => l.ListName == listName);
@@ -1023,7 +1023,7 @@ public class TodoTaskList
             taskLists.RemoveAt(currentIndex);
             taskLists.Insert(newIndex, list);
 
-            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(taskLists.ToArray()));
+            File.WriteAllText(StoragePaths.Current.AllTasksPath, JsonSerializer.Serialize(taskLists.ToArray()));
         }
     }
 }
