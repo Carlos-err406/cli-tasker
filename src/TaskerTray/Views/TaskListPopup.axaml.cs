@@ -33,6 +33,7 @@ public partial class TaskListPopup : Window
     private string? _addingToList;
     private bool _creatingNewList;
     private int _showCount; // Incremented each time window is shown, used to ignore stale LostFocus events
+    private bool _inlineAddSubmitted; // Prevents double submission between Deactivated and LostFocus
     private string? _newlyAddedTaskId; // Track newly added task for entrance animation
     private Dictionary<string, Border> _taskBorders = new(); // Track task borders for animations
 
@@ -579,10 +580,11 @@ public partial class TaskListPopup : Window
                 return;
 
             // Guard against double submission (Enter/Escape already processed, or Deactivated already saved)
-            if (submitted)
+            if (submitted || _inlineAddSubmitted)
                 return;
 
             submitted = true;
+            _inlineAddSubmitted = true;
             if (!string.IsNullOrWhiteSpace(textBox.Text))
             {
                 SubmitInlineAdd(textBox.Text, listName);
@@ -672,6 +674,7 @@ public partial class TaskListPopup : Window
     {
         CancelInlineEdit();
         _addingToList = listName;
+        _inlineAddSubmitted = false; // Reset for new inline add
 
         // Auto-expand the list if it's collapsed (so user can see the add field)
         if (TodoTaskList.IsListCollapsed(listName))
@@ -863,6 +866,7 @@ public partial class TaskListPopup : Window
 
     /// <summary>
     /// Saves any pending inline add without refreshing UI (called before window hides).
+    /// Sets _inlineAddSubmitted to prevent LostFocus from double-submitting.
     /// </summary>
     private void SavePendingInlineAdd()
     {
@@ -872,6 +876,9 @@ public partial class TaskListPopup : Window
         var text = _activeInlineEditor.Text;
         if (string.IsNullOrWhiteSpace(text))
             return;
+
+        // Mark as submitted to prevent LostFocus from creating duplicate
+        _inlineAddSubmitted = true;
 
         // Handle pending list creation
         if (_creatingNewList)
