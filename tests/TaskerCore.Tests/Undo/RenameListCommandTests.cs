@@ -5,6 +5,7 @@ using TaskerCore.Data;
 using TaskerCore.Undo;
 using TaskerCore.Undo.Commands;
 
+[Collection("UndoTests")]
 public class RenameListCommandTests : IDisposable
 {
     private readonly string _testDir;

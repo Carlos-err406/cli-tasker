@@ -1685,12 +1685,6 @@ public partial class TaskListPopup : Window
 
     private void StartTaskDrag(Border border, TodoTaskViewModel task, PointerEventArgs e)
     {
-        // Suspend file watcher during drag
-        if (Application.Current is App app)
-        {
-            app.SuspendFileWatcher();
-        }
-
         _state = PopupState.Dragging;
         _isDragging = true;
         _draggedBorder = border;
@@ -1930,12 +1924,6 @@ public partial class TaskListPopup : Window
 
     private void StartListDrag(Border border, string listName, PointerEventArgs e)
     {
-        // Suspend file watcher
-        if (Application.Current is App app)
-        {
-            app.SuspendFileWatcher();
-        }
-
         _state = PopupState.Dragging;
         _isDragging = true;
         _draggedBorder = border;
@@ -2204,12 +2192,6 @@ public partial class TaskListPopup : Window
         // Update popup state
         var hadPendingRefresh = _state == PopupState.RefreshPending;
         _state = PopupState.Idle;
-
-        // Resume file watcher
-        if (Application.Current is App app)
-        {
-            app.ResumeFileWatcher();
-        }
 
         // Handle pending refresh
         if (hadPendingRefresh)

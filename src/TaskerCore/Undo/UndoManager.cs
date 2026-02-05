@@ -116,6 +116,17 @@ public sealed class UndoManager
         Save();
     }
 
+    /// <summary>
+    /// Reloads history from disk. Use this when external changes are detected
+    /// to sync with history saved by another process (e.g., CLI).
+    /// </summary>
+    public void ReloadHistory()
+    {
+        _undoStack.Clear();
+        _redoStack.Clear();
+        LoadHistory();
+    }
+
     private void EnforceSizeLimit()
     {
         while (_undoStack.Count > UndoConfig.MaxUndoStackSize)

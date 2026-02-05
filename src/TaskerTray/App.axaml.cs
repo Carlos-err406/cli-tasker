@@ -6,7 +6,6 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using TaskerTray.Services;
 using TaskerTray.Views;
 
 namespace TaskerTray;
@@ -16,7 +15,6 @@ public class App : Application
     private TrayIcon? _trayIcon;
     private TaskListPopup? _popup;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
-    private FileWatcherService? _fileWatcher;
 
     static App()
     {
@@ -51,10 +49,6 @@ public class App : Application
 
             // No main window - tray only
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-
-            // Set up file watcher for external changes
-            _fileWatcher = new FileWatcherService();
-            _fileWatcher.ExternalChangeDetected += OnExternalFileChange;
 
             // Popup is created lazily on first use
             SetupTrayIcon();
@@ -242,25 +236,4 @@ public class App : Application
         }
     }
 
-    private void OnExternalFileChange()
-    {
-        // Refresh the popup if it's visible
-        _popup?.RefreshTasks();
-    }
-
-    /// <summary>
-    /// Suspends file watcher notifications during drag operations.
-    /// </summary>
-    public void SuspendFileWatcher()
-    {
-        _fileWatcher?.SuspendNotifications();
-    }
-
-    /// <summary>
-    /// Resumes file watcher notifications after drag operations complete.
-    /// </summary>
-    public void ResumeFileWatcher()
-    {
-        _fileWatcher?.ResumeNotifications();
-    }
 }
