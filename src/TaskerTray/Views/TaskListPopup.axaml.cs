@@ -774,6 +774,27 @@ public partial class TaskListPopup : Window
             _newlyAddedTaskId = null;
         }
 
+        // Click on task content area copies ID to clipboard
+        border.PointerPressed += async (sender, e) =>
+        {
+            // Only handle left click, and not if it originated from checkbox or menu button
+            var point = e.GetCurrentPoint(border);
+            if (point.Properties.IsLeftButtonPressed)
+            {
+                // Check if click is in the content area (column 1), not checkbox (0) or menu (2)
+                var pos = e.GetPosition(border);
+                var checkboxWidth = 40; // approximate checkbox + margin width
+                var menuWidth = 40; // approximate menu button width
+                var borderWidth = border.Bounds.Width;
+
+                if (pos.X > checkboxWidth && pos.X < borderWidth - menuWidth)
+                {
+                    await CopyTaskIdToClipboard(task.Id);
+                    e.Handled = true;
+                }
+            }
+        };
+
         var grid = new Grid
         {
             ColumnDefinitions = ColumnDefinitions.Parse("Auto,*,Auto")
@@ -1024,6 +1045,16 @@ public partial class TaskListPopup : Window
         var total = _tasks.Count;
         var pending = _tasks.Count(t => !t.IsChecked);
         StatusText.Text = $"{pending} pending / {total} total";
+    }
+
+    private async Task CopyTaskIdToClipboard(string taskId)
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard != null)
+        {
+            await clipboard.SetTextAsync(taskId);
+            StatusText.Text = $"Copied: {taskId}";
+        }
     }
 
     private void OnListFilterClick(object? sender, RoutedEventArgs e)
