@@ -32,6 +32,7 @@ public partial class TaskListPopup : Window
     private string? _editingTaskId;
     private string? _addingToList;
     private bool _creatingNewList;
+    private string? _renamingList; // Track which list is being renamed
     private int _showCount; // Incremented each time window is shown, used to ignore stale LostFocus events
     private bool _inlineAddSubmitted; // Prevents double submission between Deactivated and LostFocus
     private string? _newlyAddedTaskId; // Track newly added task for entrance animation
@@ -356,6 +357,13 @@ public partial class TaskListPopup : Window
 
     private void AddListHeader(string listName, bool isCollapsed = false)
     {
+        // Show inline rename field instead of normal header when renaming this list
+        if (_renamingList == listName)
+        {
+            TaskListPanel.Children.Add(CreateInlineListRenameField(listName));
+            return;
+        }
+
         var isDefaultList = listName == ListManager.DefaultListName;
         var allListNames = TodoTaskList.GetAllListNames().ToList();
         var canReorder = allListNames.Count > 1;
@@ -485,6 +493,13 @@ public partial class TaskListPopup : Window
             };
 
             var contextMenu = new ContextMenu();
+
+            var renameItem = new MenuItem { Header = "Rename list" };
+            renameItem.Click += (_, _) => StartListRename(listName);
+            contextMenu.Items.Add(renameItem);
+
+            contextMenu.Items.Add(new Separator());
+
             var deleteItem = new MenuItem
             {
                 Header = "Delete list",
@@ -521,6 +536,111 @@ public partial class TaskListPopup : Window
         {
             StatusText.Text = $"Error: {ex.Message}";
         }
+    }
+
+    private void StartListRename(string listName)
+    {
+        CancelInlineEdit();
+        _renamingList = listName;
+        BuildTaskList();
+    }
+
+    private void SubmitListRename(string oldName, string? newName)
+    {
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            CancelInlineEdit();
+            BuildTaskList();
+            return;
+        }
+
+        try
+        {
+            ListManager.RenameList(oldName, newName.Trim());
+            CancelInlineEdit();
+            RefreshTasks();
+            StatusText.Text = $"Renamed list '{oldName}' to '{newName.Trim()}'";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Error: {ex.Message}";
+            CancelInlineEdit();
+            BuildTaskList();
+        }
+    }
+
+    private Border CreateInlineListRenameField(string listName)
+    {
+        var border = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#3A3A3A")),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8, 6),
+            Margin = new Thickness(4, 8, 4, 4),
+            Classes = { "inlineInput", "entering" }
+        };
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            border.Classes.Remove("entering");
+        }, DispatcherPriority.Render);
+
+        var textBox = new TextBox
+        {
+            Text = listName,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(Color.Parse("#888")),
+            AcceptsReturn = false,
+            MaxLength = 50
+        };
+
+        var submitted = false;
+
+        textBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                if (!submitted)
+                {
+                    submitted = true;
+                    SubmitListRename(listName, textBox.Text);
+                }
+            }
+            else if (e.Key == Key.Escape)
+            {
+                submitted = true;
+                CancelInlineEdit();
+                BuildTaskList();
+            }
+        };
+
+        var capturedShowCount = _showCount;
+        textBox.LostFocus += (_, _) =>
+        {
+            if (capturedShowCount != _showCount)
+                return;
+
+            if (submitted)
+                return;
+
+            submitted = true;
+            SubmitListRename(listName, textBox.Text);
+        };
+
+        _activeInlineEditor = textBox;
+        border.Child = textBox;
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            textBox.Focus();
+            textBox.SelectAll();
+        }, Avalonia.Threading.DispatcherPriority.Background);
+
+        return border;
     }
 
     private Border CreateInlineAddField(string listName)
@@ -862,6 +982,7 @@ public partial class TaskListPopup : Window
         _editingTaskId = null;
         _addingToList = null;
         _creatingNewList = false;
+        _renamingList = null;
     }
 
     /// <summary>
