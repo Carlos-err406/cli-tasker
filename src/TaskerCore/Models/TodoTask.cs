@@ -1,5 +1,7 @@
 namespace TaskerCore.Models;
 
+using TaskerCore.Parsing;
+
 public record TodoTask(
     string Id,
     string Description,
@@ -23,7 +25,19 @@ public record TodoTask(
 
     public TodoTask UnCheck() => this with { IsChecked = false };
 
-    public TodoTask Rename(string newDescription) => this with { Description = newDescription.Trim() };
+    public TodoTask Rename(string newDescription)
+    {
+        var trimmed = newDescription.Trim();
+        var parsed = TaskDescriptionParser.Parse(trimmed);
+
+        return this with
+        {
+            Description = trimmed,
+            Priority = parsed.Priority,
+            DueDate = parsed.DueDate,
+            Tags = parsed.Tags.Length > 0 ? parsed.Tags : null
+        };
+    }
 
     public TodoTask MoveToList(string listName) => this with { ListName = listName };
 
