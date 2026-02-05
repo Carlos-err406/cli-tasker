@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using TaskerCore.Config;
 using TaskerCore.Data;
 using TaskerCore.Models;
@@ -45,12 +46,111 @@ public partial class TaskListPopup : Window
             // Save any pending inline add before closing (don't wait for LostFocus which may fire late)
             SavePendingInlineAdd();
             CancelInlineEdit();
+            CancelDrag(); // Cancel any in-progress drag
             await HideWithAnimation();
         };
         KeyDown += OnKeyDown;
 
+        // Window-level pointer handlers for smooth drag tracking
+        PointerMoved += OnWindowPointerMoved;
+        PointerReleased += OnWindowPointerReleased;
+
         LoadLists();
         RefreshTasks();
+    }
+
+    private void OnWindowPointerMoved(object? sender, PointerEventArgs e)
+    {
+        // Check if we're in pending drag state (waiting to cross threshold)
+        if (_dragStartPoint.HasValue && !_isDragging)
+        {
+            var currentPoint = e.GetPosition(this);
+            var distance = Math.Sqrt(
+                Math.Pow(currentPoint.X - _dragStartPoint.Value.X, 2) +
+                Math.Pow(currentPoint.Y - _dragStartPoint.Value.Y, 2));
+
+            // Start drag after 5 pixel threshold
+            if (distance > 5)
+            {
+                if (_pendingDragTask != null && _pendingDragBorder != null)
+                {
+                    StartTaskDrag(_pendingDragBorder, _pendingDragTask, e);
+                }
+                else if (_pendingDragListName != null && _pendingDragBorder != null)
+                {
+                    StartListDrag(_pendingDragBorder, _pendingDragListName, e);
+                }
+                ClearPendingDrag();
+            }
+            return;
+        }
+
+        // Handle active drag
+        if (!_isDragging || _dragGhost == null) return;
+
+        var pos = e.GetPosition(this);
+
+        // Update ghost position
+        Canvas.SetLeft(_dragGhost, pos.X - _dragOffset.X);
+        Canvas.SetTop(_dragGhost, pos.Y - _dragOffset.Y);
+
+        // Update drop indicator based on drag type
+        if (_draggedTask != null)
+        {
+            UpdateTaskDropTarget(e.GetPosition(TaskListPanel));
+        }
+        else if (_draggedListName != null)
+        {
+            UpdateListDropTarget(e.GetPosition(TaskListPanel));
+        }
+    }
+
+    private void OnWindowPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        // Clear pending drag if threshold wasn't crossed
+        ClearPendingDrag();
+
+        if (!_isDragging) return;
+
+        // Complete the drag before cleanup
+        if (_draggedTask != null && _dropTargetIndex >= 0)
+        {
+            CompleteTaskDrag(_draggedTask);
+        }
+        else if (_draggedListName != null && _listDropTargetIndex >= 0)
+        {
+            CompleteListDrag(_draggedListName);
+        }
+
+        // Cleanup (handles pending refresh if reorder wasn't completed)
+        CleanupDrag();
+    }
+
+    private void ClearPendingDrag()
+    {
+        var hadPendingDrag = _dragStartPoint.HasValue;
+
+        // Reset grip handle color if we have one
+        if (_pendingGripHandle != null)
+        {
+            foreach (var dot in _pendingGripHandle.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("gripDot")))
+            {
+                dot.Background = new SolidColorBrush(Color.Parse("#666"));
+            }
+        }
+
+        _dragStartPoint = null;
+        _pendingDragBorder = null;
+        _pendingDragTask = null;
+        _pendingDragListName = null;
+        _pendingGripHandle = null;
+
+        // If we had a pending drag and there's a queued refresh, do it now
+        if (hadPendingDrag && _state == PopupState.RefreshPending && !_isDragging)
+        {
+            _state = PopupState.Idle;
+            DoRefreshTasks();
+        }
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
@@ -92,8 +192,8 @@ public partial class TaskListPopup : Window
 
     public void RefreshTasks()
     {
-        // Queue refresh if drag operation is in progress
-        if (_state == PopupState.Dragging || _state == PopupState.DroppingInProgress)
+        // Queue refresh if drag operation is in progress OR pending (user pressed but hasn't moved threshold)
+        if (_state == PopupState.Dragging || _state == PopupState.DroppingInProgress || _dragStartPoint.HasValue)
         {
             _state = PopupState.RefreshPending;
             return;
@@ -122,6 +222,7 @@ public partial class TaskListPopup : Window
         _generationId++; // Invalidate all handlers from previous builds
         TaskListPanel.Children.Clear();
         _taskBorders.Clear();
+        _listTaskPanels.Clear();
 
         // Show create list input at top if active
         if (_creatingNewList)
@@ -164,6 +265,9 @@ public partial class TaskListPopup : Window
                 {
                     tasksPanel.Classes.Add("collapsed");
                 }
+
+                // Set up as drop target for task reordering
+                SetupTaskPanelDropTarget(tasksPanel, listName);
 
                 // Show inline add if adding to this list
                 if (_addingToList == listName)
@@ -210,31 +314,41 @@ public partial class TaskListPopup : Window
             {
                 AddListHeader(_addingToList, false);
                 var newListPanel = new StackPanel { Classes = { "listTasks" }, ClipToBounds = true };
+                SetupTaskPanelDropTarget(newListPanel, _addingToList);
                 newListPanel.Children.Add(CreateInlineAddField(_addingToList));
                 TaskListPanel.Children.Add(newListPanel);
             }
         }
         else
         {
-            // Single list view - ignore collapse state, always show tasks
+            // Single list view - use container panel for drop target support
             AddListHeader(_currentListFilter, false);
+
+            var singleListPanel = new StackPanel
+            {
+                Classes = { "listTasks" },
+                ClipToBounds = true
+            };
+            SetupTaskPanelDropTarget(singleListPanel, _currentListFilter);
 
             if (_addingToList == _currentListFilter)
             {
-                TaskListPanel.Children.Add(CreateInlineAddField(_currentListFilter));
+                singleListPanel.Children.Add(CreateInlineAddField(_currentListFilter));
             }
 
             foreach (var task in _tasks)
             {
                 if (_editingTaskId == task.Id)
                 {
-                    TaskListPanel.Children.Add(CreateInlineEditField(task));
+                    singleListPanel.Children.Add(CreateInlineEditField(task));
                 }
                 else
                 {
-                    TaskListPanel.Children.Add(CreateTaskItem(task));
+                    singleListPanel.Children.Add(CreateTaskItem(task));
                 }
             }
+
+            TaskListPanel.Children.Add(singleListPanel);
         }
 
     }
@@ -1311,35 +1425,63 @@ public partial class TaskListPopup : Window
     [System.Runtime.InteropServices.DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
     private static extern void objc_msgSend_SetPtr(IntPtr receiver, IntPtr selector, IntPtr arg);
 
-    #region Drag-and-Drop Implementation
+    #region Drag-and-Drop Implementation (Custom Smooth Drag)
 
-    // Task drag state
-    private Border? _draggedTaskBorder;
-    private TodoTaskViewModel? _draggedTask;
-    private Point _dragStartPoint;
-    private bool _isDragging;
+    // Drop indicator for visual feedback
     private Border? _dropIndicator;
     private int _dropTargetIndex = -1;
-
-    // List drag state
-    private Border? _draggedListBorder;
-    private string? _draggedListName;
-    private bool _isDraggingList;
     private int _listDropTargetIndex = -1;
+
+    // Ghost element that follows cursor during drag
+    private Border? _dragGhost;
+    private Point _dragOffset; // Offset from cursor to ghost origin
+
+    // Drag start tracking (before threshold is crossed)
+    private Point? _dragStartPoint;
+    private Border? _pendingDragBorder;
+    private TodoTaskViewModel? _pendingDragTask;
+    private string? _pendingDragListName;
+    private Panel? _pendingGripHandle;
+
+    // Active drag state (after threshold is crossed)
+    private Border? _draggedBorder;
+    private TodoTaskViewModel? _draggedTask;
+    private string? _draggedListName;
+    private bool _isDragging;
+    private IPointer? _capturedPointer;
+
+    // Track collapsed lists during list drag
+    private List<(StackPanel panel, Button chevron)>? _collapsedDuringDrag;
+
+    // Map list names to their task panels for drop targeting
+    private Dictionary<string, StackPanel> _listTaskPanels = new();
+
+    // Canvas overlay for drag ghost (stored reference since FindControl doesn't work for dynamic controls)
+    private Canvas? _dragCanvas;
 
     /// <summary>
     /// Creates a 6-dot grip handle for drag-and-drop reordering.
+    /// The handle has an expanded hit area for easier targeting.
     /// </summary>
     private Panel CreateGripHandle()
     {
-        var panel = new StackPanel
+        // Outer container with expanded hit area
+        var outerPanel = new Panel
+        {
+            Width = 20, // Larger hit area
+            MinHeight = 24,
+            Background = Brushes.Transparent, // Transparent but still captures input
+            Margin = new Thickness(0, 0, 4, 0),
+            Classes = { "gripHandle" }
+        };
+
+        // Inner panel with the visual dots
+        var dotsPanel = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Vertical,
             Spacing = 2,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 6, 0),
-            Width = 12,
-            Classes = { "gripHandle" }
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
         };
 
         // Create 3 rows of 2 dots each
@@ -1359,19 +1501,21 @@ public partial class TaskListPopup : Window
                     Width = 3,
                     Height = 3,
                     CornerRadius = new CornerRadius(1.5),
-                    Background = new SolidColorBrush(Color.Parse("#666"))
+                    Background = new SolidColorBrush(Color.Parse("#666")),
+                    Classes = { "gripDot" }
                 };
                 dotRow.Children.Add(dot);
             }
 
-            panel.Children.Add(dotRow);
+            dotsPanel.Children.Add(dotRow);
         }
 
-        return panel;
+        outerPanel.Children.Add(dotsPanel);
+        return outerPanel;
     }
 
     /// <summary>
-    /// Sets up drag event handlers for a task item.
+    /// Sets up smooth drag handlers for a task item using pointer capture and ghost element.
     /// </summary>
     private void SetupTaskDragHandlers(Border border, Panel gripHandle, TodoTaskViewModel task)
     {
@@ -1379,139 +1523,152 @@ public partial class TaskListPopup : Window
 
         gripHandle.PointerPressed += (sender, e) =>
         {
-            // Stale handler check
             if (capturedGeneration != _generationId) return;
+            if (_isDragging) return; // Already dragging
+            if (!e.GetCurrentPoint(gripHandle).Properties.IsLeftButtonPressed) return;
 
-            if (e.GetCurrentPoint(gripHandle).Properties.IsLeftButtonPressed)
+            // Visual feedback - highlight the grip dots while pressed
+            foreach (var dot in gripHandle.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("gripDot")))
             {
-                _draggedTaskBorder = border;
-                _draggedTask = task;
-                _dragStartPoint = e.GetPosition(TaskListPanel);
-                e.Handled = true;
-            }
-        };
-
-        gripHandle.PointerMoved += (sender, e) =>
-        {
-            // Stale handler check
-            if (capturedGeneration != _generationId) return;
-
-            if (_draggedTaskBorder != border || _draggedTask == null) return;
-
-            var currentPoint = e.GetPosition(TaskListPanel);
-            var distance = Math.Abs(currentPoint.Y - _dragStartPoint.Y);
-
-            // Start dragging after moving 5 pixels
-            if (!_isDragging && distance > 5)
-            {
-                StartDrag();
+                dot.Background = new SolidColorBrush(Color.Parse("#0A84FF"));
             }
 
-            if (_isDragging)
-            {
-                UpdateDragPosition(currentPoint);
-            }
-        };
-
-        gripHandle.PointerReleased += (sender, e) =>
-        {
-            // Stale handler check
-            if (capturedGeneration != _generationId) return;
-
-            if (_draggedTaskBorder == border && _isDragging)
-            {
-                CompleteDrag();
-            }
-            else
-            {
-                CancelDrag();
-            }
-        };
-
-        // Also handle pointer capture lost (e.g., if user drags outside window)
-        gripHandle.PointerCaptureLost += (sender, e) =>
-        {
-            if (capturedGeneration != _generationId) return;
-
-            if (_draggedTaskBorder == border && _isDragging)
-            {
-                CancelDrag();
-            }
+            // Set up pending drag - window handlers will detect threshold and start
+            _dragStartPoint = e.GetPosition(this);
+            _pendingDragBorder = border;
+            _pendingDragTask = task;
+            _pendingDragListName = null;
+            _pendingGripHandle = gripHandle;
+            e.Handled = true;
         };
     }
 
-    private void StartDrag()
+    private void StartTaskDrag(Border border, TodoTaskViewModel task, PointerEventArgs e)
     {
-        if (_draggedTaskBorder == null || _draggedTask == null) return;
-
-        _isDragging = true;
-        _state = PopupState.Dragging;
-
-        // Notify file watcher to suspend external change notifications
-        // (The FileWatcherService is accessed through the App)
+        // Suspend file watcher during drag
         if (Application.Current is App app)
         {
             app.SuspendFileWatcher();
         }
 
-        // Add dragging class for visual feedback
-        _draggedTaskBorder.Classes.Add("dragging");
+        _state = PopupState.Dragging;
+        _isDragging = true;
+        _draggedBorder = border;
+        _draggedTask = task;
 
-        // Create drop indicator if not exists
-        if (_dropIndicator == null)
-        {
-            _dropIndicator = new Border
-            {
-                Classes = { "dropIndicator" }
-            };
-        }
+        // Capture pointer at window level for reliable tracking
+        e.Pointer.Capture(this);
+        _capturedPointer = e.Pointer;
+
+        // Calculate offset from cursor to border origin
+        var borderPos = border.TranslatePoint(new Point(0, 0), this) ?? new Point(0, 0);
+        var cursorPos = e.GetPosition(this);
+        _dragOffset = new Point(cursorPos.X - borderPos.X, cursorPos.Y - borderPos.Y);
+
+        // Create ghost element
+        CreateDragGhost(border, task);
+
+        // Dim the original
+        border.Opacity = 0.3;
+
+        // Create drop indicator
+        EnsureDropIndicator();
     }
 
-    private void UpdateDragPosition(Point currentPoint)
+    private void CreateDragGhost(Border original, TodoTaskViewModel task)
+    {
+        // Create a simple ghost representation
+        _dragGhost = new Border
+        {
+            Width = original.Bounds.Width,
+            Background = new SolidColorBrush(Color.Parse("#3A3A3A")),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8),
+            Opacity = 0.9,
+            BoxShadow = new BoxShadows(new BoxShadow { Blur = 16, OffsetY = 4, Color = Color.Parse("#60000000") }),
+            Child = new TextBlock
+            {
+                Text = task.DisplayText,
+                Foreground = Brushes.White,
+                FontWeight = FontWeight.SemiBold,
+                FontSize = 13,
+                MaxWidth = original.Bounds.Width - 20,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            }
+        };
+
+        // Add to a canvas overlay
+        var canvas = GetOrCreateDragCanvas();
+        canvas.Children.Add(_dragGhost);
+
+        // Position at original location initially
+        var pos = original.TranslatePoint(new Point(0, 0), this) ?? new Point(0, 0);
+        Canvas.SetLeft(_dragGhost, pos.X);
+        Canvas.SetTop(_dragGhost, pos.Y);
+    }
+
+    private Canvas GetOrCreateDragCanvas()
+    {
+        // Return existing canvas if we have one
+        if (_dragCanvas != null) return _dragCanvas;
+
+        // Create overlay canvas for drag ghost
+        _dragCanvas = new Canvas
+        {
+            IsHitTestVisible = false // Don't interfere with pointer events
+        };
+
+        // Add to popup content as overlay
+        if (PopupContent.Child is Grid grid)
+        {
+            grid.Children.Add(_dragCanvas);
+        }
+        else
+        {
+            // Wrap existing content in grid
+            var existingChild = PopupContent.Child;
+            PopupContent.Child = null;
+            var newGrid = new Grid();
+            if (existingChild != null)
+                newGrid.Children.Add(existingChild);
+            newGrid.Children.Add(_dragCanvas);
+            PopupContent.Child = newGrid;
+        }
+
+        return _dragCanvas;
+    }
+
+    private void UpdateTaskDropTarget(Point panelPoint)
     {
         if (_draggedTask == null) return;
 
-        // Find all task items in the same list
-        var tasksInList = _tasks.Where(t => t.ListName == _draggedTask.ListName).ToList();
-        var taskIndex = tasksInList.IndexOf(_draggedTask);
+        // Find the task panel for this list
+        if (!_listTaskPanels.TryGetValue(_draggedTask.ListName, out var tasksPanel))
+            return;
 
-        // Calculate which position the user is hovering over
-        var newIndex = CalculateDropIndex(currentPoint, _draggedTask.ListName);
+        var localPoint = TaskListPanel.TranslatePoint(panelPoint, tasksPanel);
+        if (!localPoint.HasValue) return;
 
-        if (newIndex != _dropTargetIndex && newIndex >= 0)
+        var newIndex = CalculateTaskDropIndex(tasksPanel, localPoint.Value);
+
+        if (newIndex != _dropTargetIndex)
         {
             _dropTargetIndex = newIndex;
-            UpdateDropIndicator(newIndex, _draggedTask.ListName);
+            UpdateTaskDropIndicator(tasksPanel, newIndex);
         }
     }
 
-    private int CalculateDropIndex(Point point, string listName)
+    /// <summary>
+    /// Registers a task panel for drop targeting (used by custom drag implementation).
+    /// </summary>
+    private void SetupTaskPanelDropTarget(StackPanel tasksPanel, string listName)
     {
-        // Find the StackPanel containing tasks for this list
-        StackPanel? tasksPanel = null;
-        foreach (var child in TaskListPanel.Children)
-        {
-            if (child is StackPanel sp && sp.Classes.Contains("listTasks"))
-            {
-                // Check if this panel contains tasks from the target list
-                var firstTask = sp.Children.OfType<Border>()
-                    .FirstOrDefault(b => b.Classes.Contains("taskItem"));
-                if (firstTask != null && _taskBorders.Values.Contains(firstTask))
-                {
-                    var taskId = _taskBorders.FirstOrDefault(kvp => kvp.Value == firstTask).Key;
-                    var task = _tasks.FirstOrDefault(t => t.Id == taskId);
-                    if (task?.ListName == listName)
-                    {
-                        tasksPanel = sp;
-                        break;
-                    }
-                }
-            }
-        }
+        // Store reference for drop calculations
+        _listTaskPanels[listName] = tasksPanel;
+    }
 
-        if (tasksPanel == null) return -1;
-
-        // Get task borders in this panel
+    private int CalculateTaskDropIndex(StackPanel tasksPanel, Point point)
+    {
         var taskBorders = tasksPanel.Children
             .OfType<Border>()
             .Where(b => b.Classes.Contains("taskItem"))
@@ -1519,11 +1676,7 @@ public partial class TaskListPopup : Window
 
         if (taskBorders.Count == 0) return 0;
 
-        // Calculate drop index based on Y position relative to task items
-        var panelPoint = TaskListPanel.TranslatePoint(point, tasksPanel);
-        if (!panelPoint.HasValue) return 0;
-
-        var y = panelPoint.Value.Y;
+        var y = point.Y;
 
         for (var i = 0; i < taskBorders.Count; i++)
         {
@@ -1539,8 +1692,9 @@ public partial class TaskListPopup : Window
         return taskBorders.Count;
     }
 
-    private void UpdateDropIndicator(int index, string listName)
+    private void UpdateTaskDropIndicator(StackPanel tasksPanel, int index)
     {
+        EnsureDropIndicator();
         if (_dropIndicator == null) return;
 
         // Remove from previous location
@@ -1549,37 +1703,13 @@ public partial class TaskListPopup : Window
             oldParent.Children.Remove(_dropIndicator);
         }
 
-        // Find the StackPanel for this list
-        StackPanel? tasksPanel = null;
-        foreach (var child in TaskListPanel.Children)
-        {
-            if (child is StackPanel sp && sp.Classes.Contains("listTasks"))
-            {
-                var firstTask = sp.Children.OfType<Border>()
-                    .FirstOrDefault(b => b.Classes.Contains("taskItem"));
-                if (firstTask != null && _taskBorders.Values.Contains(firstTask))
-                {
-                    var taskId = _taskBorders.FirstOrDefault(kvp => kvp.Value == firstTask).Key;
-                    var task = _tasks.FirstOrDefault(t => t.Id == taskId);
-                    if (task?.ListName == listName)
-                    {
-                        tasksPanel = sp;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (tasksPanel == null) return;
-
-        // Find insertion point among task items only
         var taskBorders = tasksPanel.Children
             .OfType<Border>()
             .Where(b => b.Classes.Contains("taskItem"))
             .ToList();
 
-        // Calculate actual child index in the panel
-        var insertIndex = 0;
+        // Calculate insertion index in panel
+        int insertIndex;
         if (index < taskBorders.Count)
         {
             var targetBorder = taskBorders[index];
@@ -1590,116 +1720,47 @@ public partial class TaskListPopup : Window
             var lastBorder = taskBorders[^1];
             insertIndex = tasksPanel.Children.IndexOf(lastBorder) + 1;
         }
+        else
+        {
+            insertIndex = tasksPanel.Children.Count;
+        }
 
         tasksPanel.Children.Insert(insertIndex, _dropIndicator);
         _dropIndicator.Classes.Add("visible");
     }
 
-    private void CompleteDrag()
+    private void CompleteTaskDrag(TodoTaskViewModel task)
     {
-        if (_draggedTask == null || _dropTargetIndex < 0)
-        {
-            CancelDrag();
-            return;
-        }
-
-        _state = PopupState.DroppingInProgress;
+        if (_dropTargetIndex < 0) return;
 
         try
         {
             // Get tasks in the same list
-            var tasksInList = _tasks.Where(t => t.ListName == _draggedTask.ListName).ToList();
-            var currentIndex = tasksInList.IndexOf(_draggedTask);
+            var tasksInList = _tasks.Where(t => t.ListName == task.ListName).ToList();
+            var currentIndex = tasksInList.FindIndex(t => t.Id == task.Id);
 
             // Only reorder if position actually changed
             if (currentIndex != _dropTargetIndex && _dropTargetIndex != currentIndex + 1)
             {
-                // Adjust target index if dragging down (since we're removing the item first)
+                // Adjust target index if dragging down
                 var adjustedIndex = _dropTargetIndex;
                 if (_dropTargetIndex > currentIndex)
                 {
                     adjustedIndex--;
                 }
 
-                TodoTaskList.ReorderTask(_draggedTask.Id, adjustedIndex);
+                TodoTaskList.ReorderTask(task.Id, adjustedIndex);
+                RefreshTasks();
             }
         }
         catch (Exception ex)
         {
             StatusText.Text = $"Error: {ex.Message}";
         }
-        finally
-        {
-            CleanupDrag();
-
-            // Resume file watcher
-            if (Application.Current is App app)
-            {
-                app.ResumeFileWatcher();
-            }
-
-            // Check if refresh was pending
-            if (_state == PopupState.RefreshPending)
-            {
-                _state = PopupState.Idle;
-                DoRefreshTasks();
-            }
-            else
-            {
-                _state = PopupState.Idle;
-                RefreshTasks();
-            }
-        }
-    }
-
-    private void CancelDrag()
-    {
-        CleanupDrag();
-
-        // Resume file watcher
-        if (Application.Current is App app)
-        {
-            app.ResumeFileWatcher();
-        }
-
-        if (_state == PopupState.RefreshPending)
-        {
-            _state = PopupState.Idle;
-            DoRefreshTasks();
-        }
-        else
-        {
-            _state = PopupState.Idle;
-        }
-    }
-
-    private void CleanupDrag()
-    {
-        // Remove dragging class
-        _draggedTaskBorder?.Classes.Remove("dragging");
-
-        // Remove drop indicator
-        if (_dropIndicator?.Parent is Panel parent)
-        {
-            parent.Children.Remove(_dropIndicator);
-        }
-        _dropIndicator?.Classes.Remove("visible");
-
-        // Reset state
-        _draggedTaskBorder = null;
-        _draggedTask = null;
-        _isDragging = false;
-        _dropTargetIndex = -1;
-
-        // Reset list drag state
-        _draggedListBorder = null;
-        _draggedListName = null;
-        _isDraggingList = false;
-        _listDropTargetIndex = -1;
     }
 
     /// <summary>
-    /// Sets up drag event handlers for a list header.
+    /// Sets up smooth drag handlers for a list header using pointer capture and ghost element.
     /// </summary>
     private void SetupListDragHandlers(Border border, Panel gripHandle, string listName)
     {
@@ -1707,99 +1768,95 @@ public partial class TaskListPopup : Window
 
         gripHandle.PointerPressed += (sender, e) =>
         {
-            // Stale handler check
             if (capturedGeneration != _generationId) return;
+            if (_isDragging) return;
+            if (!e.GetCurrentPoint(gripHandle).Properties.IsLeftButtonPressed) return;
 
-            if (e.GetCurrentPoint(gripHandle).Properties.IsLeftButtonPressed)
+            // Visual feedback - highlight the grip dots while pressed
+            foreach (var dot in gripHandle.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("gripDot")))
             {
-                _draggedListBorder = border;
-                _draggedListName = listName;
-                _dragStartPoint = e.GetPosition(TaskListPanel);
-                e.Handled = true;
-            }
-        };
-
-        gripHandle.PointerMoved += (sender, e) =>
-        {
-            // Stale handler check
-            if (capturedGeneration != _generationId) return;
-
-            if (_draggedListBorder != border || _draggedListName == null) return;
-
-            var currentPoint = e.GetPosition(TaskListPanel);
-            var distance = Math.Abs(currentPoint.Y - _dragStartPoint.Y);
-
-            // Start dragging after moving 5 pixels
-            if (!_isDraggingList && distance > 5)
-            {
-                StartListDrag();
+                dot.Background = new SolidColorBrush(Color.Parse("#0A84FF"));
             }
 
-            if (_isDraggingList)
-            {
-                UpdateListDragPosition(currentPoint);
-            }
-        };
-
-        gripHandle.PointerReleased += (sender, e) =>
-        {
-            // Stale handler check
-            if (capturedGeneration != _generationId) return;
-
-            if (_draggedListBorder == border && _isDraggingList)
-            {
-                CompleteListDrag();
-            }
-            else
-            {
-                CancelDrag();
-            }
-        };
-
-        gripHandle.PointerCaptureLost += (sender, e) =>
-        {
-            if (capturedGeneration != _generationId) return;
-
-            if (_draggedListBorder == border && _isDraggingList)
-            {
-                CancelDrag();
-            }
+            // Set up pending drag - window handlers will detect threshold and start
+            _dragStartPoint = e.GetPosition(this);
+            _pendingDragBorder = border;
+            _pendingDragTask = null;
+            _pendingDragListName = listName;
+            _pendingGripHandle = gripHandle;
+            e.Handled = true;
         };
     }
 
-    private void StartListDrag()
+    private void StartListDrag(Border border, string listName, PointerEventArgs e)
     {
-        if (_draggedListBorder == null || _draggedListName == null) return;
-
-        _isDraggingList = true;
-        _state = PopupState.Dragging;
-
         // Suspend file watcher
         if (Application.Current is App app)
         {
             app.SuspendFileWatcher();
         }
 
-        // Add dragging class for visual feedback
-        _draggedListBorder.Classes.Add("dragging");
+        _state = PopupState.Dragging;
+        _isDragging = true;
+        _draggedBorder = border;
+        _draggedListName = listName;
 
-        // Create drop indicator if not exists
-        if (_dropIndicator == null)
-        {
-            _dropIndicator = new Border
-            {
-                Classes = { "dropIndicator" }
-            };
-        }
+        // Capture pointer
+        e.Pointer.Capture(this);
+        _capturedPointer = e.Pointer;
+
+        // Calculate offset
+        var borderPos = border.TranslatePoint(new Point(0, 0), this) ?? new Point(0, 0);
+        var cursorPos = e.GetPosition(this);
+        _dragOffset = new Point(cursorPos.X - borderPos.X, cursorPos.Y - borderPos.Y);
+
+        // Collapse all lists visually for easier reordering
+        CollapseAllListsForDrag();
+
+        // Create ghost for list header
+        CreateListDragGhost(border, listName);
+
+        // Dim the original
+        border.Opacity = 0.3;
+
+        // Create drop indicator
+        EnsureDropIndicator();
     }
 
-    private void UpdateListDragPosition(Point currentPoint)
+    private void CreateListDragGhost(Border original, string listName)
+    {
+        _dragGhost = new Border
+        {
+            Width = original.Bounds.Width,
+            Background = new SolidColorBrush(Color.Parse("#3A3A3A")),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8, 6),
+            Opacity = 0.9,
+            BoxShadow = new BoxShadows(new BoxShadow { Blur = 16, OffsetY = 4, Color = Color.Parse("#60000000") }),
+            Child = new TextBlock
+            {
+                Text = listName,
+                Foreground = new SolidColorBrush(Color.Parse("#888")),
+                FontWeight = FontWeight.SemiBold,
+                FontSize = 11
+            }
+        };
+
+        var canvas = GetOrCreateDragCanvas();
+        canvas.Children.Add(_dragGhost);
+
+        var pos = original.TranslatePoint(new Point(0, 0), this) ?? new Point(0, 0);
+        Canvas.SetLeft(_dragGhost, pos.X);
+        Canvas.SetTop(_dragGhost, pos.Y);
+    }
+
+    private void UpdateListDropTarget(Point panelPoint)
     {
         if (_draggedListName == null) return;
 
-        var newIndex = CalculateListDropIndex(currentPoint);
+        var newIndex = CalculateListDropIndex(panelPoint);
 
-        if (newIndex != _listDropTargetIndex && newIndex >= 0)
+        if (newIndex != _listDropTargetIndex)
         {
             _listDropTargetIndex = newIndex;
             UpdateListDropIndicator(newIndex);
@@ -1808,7 +1865,6 @@ public partial class TaskListPopup : Window
 
     private int CalculateListDropIndex(Point point)
     {
-        // Get all list header borders
         var listHeaders = TaskListPanel.Children
             .OfType<Border>()
             .Where(b => b.Classes.Contains("listHeader"))
@@ -1834,6 +1890,7 @@ public partial class TaskListPopup : Window
 
     private void UpdateListDropIndicator(int index)
     {
+        EnsureDropIndicator();
         if (_dropIndicator == null) return;
 
         // Remove from previous location
@@ -1842,7 +1899,6 @@ public partial class TaskListPopup : Window
             oldParent.Children.Remove(_dropIndicator);
         }
 
-        // Find list header borders in the panel
         var listHeaders = TaskListPanel.Children
             .OfType<Border>()
             .Where(b => b.Classes.Contains("listHeader"))
@@ -1850,7 +1906,6 @@ public partial class TaskListPopup : Window
 
         if (listHeaders.Count == 0) return;
 
-        // Calculate actual child index in TaskListPanel
         int insertIndex;
         if (index < listHeaders.Count)
         {
@@ -1859,17 +1914,16 @@ public partial class TaskListPopup : Window
         }
         else
         {
-            // After the last list - find the last list's tasks panel and insert after it
+            // After last list
             var lastHeader = listHeaders[^1];
             var lastHeaderIndex = TaskListPanel.Children.IndexOf(lastHeader);
 
-            // Look for the tasks panel after this header
             insertIndex = lastHeaderIndex + 1;
             if (insertIndex < TaskListPanel.Children.Count &&
                 TaskListPanel.Children[insertIndex] is StackPanel sp &&
                 sp.Classes.Contains("listTasks"))
             {
-                insertIndex++; // Insert after the tasks panel
+                insertIndex++;
             }
         }
 
@@ -1877,61 +1931,156 @@ public partial class TaskListPopup : Window
         _dropIndicator.Classes.Add("visible");
     }
 
-    private void CompleteListDrag()
+    private void CompleteListDrag(string listName)
     {
-        if (_draggedListName == null || _listDropTargetIndex < 0)
-        {
-            CancelDrag();
-            return;
-        }
-
-        _state = PopupState.DroppingInProgress;
+        if (_listDropTargetIndex < 0) return;
 
         try
         {
-            // Get current list order
             var allLists = TodoTaskList.GetAllListNames().ToList();
-            var currentIndex = allLists.IndexOf(_draggedListName);
+            var currentIndex = allLists.IndexOf(listName);
 
-            // Only reorder if position actually changed
             if (currentIndex >= 0 && currentIndex != _listDropTargetIndex && _listDropTargetIndex != currentIndex + 1)
             {
-                // Adjust target index if dragging down
                 var adjustedIndex = _listDropTargetIndex;
                 if (_listDropTargetIndex > currentIndex)
                 {
                     adjustedIndex--;
                 }
 
-                TodoTaskList.ReorderList(_draggedListName, adjustedIndex);
+                TodoTaskList.ReorderList(listName, adjustedIndex);
+                RefreshTasks();
             }
         }
         catch (Exception ex)
         {
             StatusText.Text = $"Error: {ex.Message}";
         }
-        finally
+    }
+
+    private void CollapseAllListsForDrag()
+    {
+        _collapsedDuringDrag = new List<(StackPanel, Button)>();
+        Border? currentHeader = null;
+
+        foreach (var child in TaskListPanel.Children)
         {
-            CleanupDrag();
-
-            // Resume file watcher
-            if (Application.Current is App app)
+            if (child is Border b && b.Classes.Contains("listHeader"))
             {
-                app.ResumeFileWatcher();
+                currentHeader = b;
             }
+            else if (child is StackPanel sp && sp.Classes.Contains("listTasks"))
+            {
+                if (!sp.Classes.Contains("collapsed"))
+                {
+                    sp.Classes.Add("collapsed");
 
-            // Check if refresh was pending
-            if (_state == PopupState.RefreshPending)
-            {
-                _state = PopupState.Idle;
-                DoRefreshTasks();
-            }
-            else
-            {
-                _state = PopupState.Idle;
-                RefreshTasks();
+                    Button? chevron = null;
+                    if (currentHeader?.Child is Grid grid)
+                    {
+                        chevron = grid.Children.OfType<Button>()
+                            .FirstOrDefault(btn => btn.Classes.Contains("chevron"));
+                        chevron?.Classes.Add("collapsed");
+                    }
+
+                    _collapsedDuringDrag.Add((sp, chevron!));
+                }
+                currentHeader = null;
             }
         }
+    }
+
+    private void RestoreCollapsedLists()
+    {
+        if (_collapsedDuringDrag == null) return;
+
+        foreach (var (panel, chevron) in _collapsedDuringDrag)
+        {
+            panel.Classes.Remove("collapsed");
+            chevron?.Classes.Remove("collapsed");
+        }
+        _collapsedDuringDrag = null;
+    }
+
+    private void EnsureDropIndicator()
+    {
+        if (_dropIndicator == null)
+        {
+            _dropIndicator = new Border
+            {
+                Classes = { "dropIndicator" }
+            };
+        }
+    }
+
+    private void RemoveDropIndicator()
+    {
+        if (_dropIndicator?.Parent is Panel parent)
+        {
+            parent.Children.Remove(_dropIndicator);
+        }
+        _dropIndicator?.Classes.Remove("visible");
+    }
+
+    private void CleanupDrag()
+    {
+        // Clear pending drag state
+        ClearPendingDrag();
+
+        // Remove ghost from canvas
+        if (_dragGhost != null)
+        {
+            _dragCanvas?.Children.Remove(_dragGhost);
+            _dragGhost = null;
+        }
+
+        // Restore original border opacity
+        if (_draggedBorder != null)
+        {
+            _draggedBorder.Opacity = 1.0;
+            _draggedBorder = null;
+        }
+
+        // Release pointer capture
+        if (_capturedPointer != null)
+        {
+            _capturedPointer.Capture(null);
+            _capturedPointer = null;
+        }
+
+        // Restore collapsed lists
+        RestoreCollapsedLists();
+
+        // Remove drop indicator
+        RemoveDropIndicator();
+
+        // Reset state
+        _draggedTask = null;
+        _draggedListName = null;
+        _dropTargetIndex = -1;
+        _listDropTargetIndex = -1;
+        _isDragging = false;
+
+        // Update popup state
+        var hadPendingRefresh = _state == PopupState.RefreshPending;
+        _state = PopupState.Idle;
+
+        // Resume file watcher
+        if (Application.Current is App app)
+        {
+            app.ResumeFileWatcher();
+        }
+
+        // Handle pending refresh
+        if (hadPendingRefresh)
+        {
+            DoRefreshTasks();
+        }
+    }
+
+    private void CancelDrag()
+    {
+        CleanupDrag();
     }
 
     #endregion

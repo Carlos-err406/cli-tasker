@@ -33,6 +33,7 @@
 
     <!-- MVVM support -->
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Xaml.Behaviors.Avalonia" Version="11.3.0.7" />
   </ItemGroup>
 
   <ItemGroup>

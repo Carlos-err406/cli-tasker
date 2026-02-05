@@ -75,29 +75,47 @@
         <Style Selector="Border.taskItem:pointerover Panel.gripHandle:pointerover">
             <Setter Property="Opacity" Value="1"/>
         </Style>
+        <!-- Accent color on grip dots when hovering directly on grip handle -->
+        <Style Selector="Panel.gripHandle:pointerover Border.gripDot">
+            <Setter Property="Background" Value="#0A84FF"/>
+        </Style>
 
         <!-- Dragging state -->
         <Style Selector="Border.taskItem.dragging">
-            <Setter Property="Opacity" Value="0.8"/>
-            <Setter Property="RenderTransform" Value="scale(1.02)"/>
+            <Setter Property="Opacity" Value="0.95"/>
+            <Setter Property="Background" Value="#3A3A3A"/>
             <Setter Property="ZIndex" Value="100"/>
+            <Setter Property="BoxShadow" Value="0 8 24 0 #40000000"/>
         </Style>
 
         <!-- Drop indicator -->
         <Style Selector="Border.dropIndicator">
-            <Setter Property="Height" Value="2"/>
+            <Setter Property="Height" Value="3"/>
             <Setter Property="Background" Value="#0A84FF"/>
-            <Setter Property="CornerRadius" Value="1"/>
-            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="CornerRadius" Value="1.5"/>
+            <Setter Property="Margin" Value="4,2"/>
             <Setter Property="Opacity" Value="0"/>
             <Setter Property="Transitions">
                 <Transitions>
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.1"/>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
                 </Transitions>
             </Setter>
         </Style>
         <Style Selector="Border.dropIndicator.visible">
             <Setter Property="Opacity" Value="1"/>
+        </Style>
+
+        <!-- List header base styles -->
+        <Style Selector="Border.listHeader">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.listHeader:pointerover">
+            <Setter Property="Background" Value="#2A2A2A"/>
         </Style>
 
         <!-- List header drag styles -->
@@ -116,10 +134,15 @@
         <Style Selector="Border.listHeader:pointerover Panel.gripHandle:pointerover">
             <Setter Property="Opacity" Value="1"/>
         </Style>
+        <!-- Accent color on grip dots when hovering directly on grip handle -->
+        <Style Selector="Border.listHeader Panel.gripHandle:pointerover Border.gripDot">
+            <Setter Property="Background" Value="#0A84FF"/>
+        </Style>
         <Style Selector="Border.listHeader.dragging">
-            <Setter Property="Opacity" Value="0.8"/>
-            <Setter Property="RenderTransform" Value="scale(1.02)"/>
+            <Setter Property="Opacity" Value="0.95"/>
+            <Setter Property="Background" Value="#3A3A3A"/>
             <Setter Property="ZIndex" Value="100"/>
+            <Setter Property="BoxShadow" Value="0 8 24 0 #40000000"/>
         </Style>
 
         <!-- List section collapse/expand -->
