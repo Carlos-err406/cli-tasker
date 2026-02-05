@@ -550,15 +550,22 @@ public partial class TaskListPopup : Window
             TextWrapping = TextWrapping.Wrap
         };
 
+        var submitted = false;  // Local flag to prevent double submission
+
         textBox.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
             {
                 e.Handled = true;
-                SubmitInlineAdd(textBox.Text, listName);
+                if (!submitted)
+                {
+                    submitted = true;
+                    SubmitInlineAdd(textBox.Text, listName);
+                }
             }
             else if (e.Key == Key.Escape)
             {
+                submitted = true;  // Mark as handled to prevent LostFocus submission
                 CancelInlineEdit();
             }
         };
@@ -571,6 +578,11 @@ public partial class TaskListPopup : Window
             if (capturedShowCount != _showCount)
                 return;
 
+            // Guard against double submission (Enter/Escape already processed, or Deactivated already saved)
+            if (submitted)
+                return;
+
+            submitted = true;
             if (!string.IsNullOrWhiteSpace(textBox.Text))
             {
                 SubmitInlineAdd(textBox.Text, listName);

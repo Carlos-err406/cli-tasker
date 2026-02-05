@@ -10,10 +10,10 @@ When creating a task via inline add and clicking outside the TaskerTray window t
 
 ## Acceptance Criteria
 
-- [ ] Tasks are created only once when clicking outside window to close
-- [ ] Tasks are created only once when pressing Enter
-- [ ] Tasks are created only once when pressing Escape (should cancel, not create)
-- [ ] Clicking inside window but outside textbox still works correctly
+- [x] Tasks are created only once when clicking outside window to close
+- [x] Tasks are created only once when pressing Enter
+- [x] Tasks are created only once when pressing Escape (should cancel, not create)
+- [x] Clicking inside window but outside textbox still works correctly
 
 ## Root Cause
 
