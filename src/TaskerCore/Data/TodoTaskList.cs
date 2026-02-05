@@ -712,13 +712,13 @@ public class TodoTaskList
             var raw = File.ReadAllText(StoragePaths.AllTasksPath);
             var taskLists = DeserializeWithMigration(raw);
 
+            // Preserve array order (supports manual reordering in TaskerTray)
             var listNames = taskLists
                 .Select(l => l.ListName)
                 .Distinct()
-                .OrderBy(name => name != ListManager.DefaultListName)
-                .ThenBy(name => name)
                 .ToArray();
 
+            // Ensure default list is present (but don't force it to first position)
             if (listNames.Length == 0 || !listNames.Contains(ListManager.DefaultListName))
             {
                 return [ListManager.DefaultListName, .. listNames.Where(n => n != ListManager.DefaultListName)];
@@ -927,6 +927,90 @@ public class TodoTaskList
 
             var trashJson = JsonSerializer.Serialize(TrashLists);
             File.WriteAllText(StoragePaths.AllTrashPath, trashJson);
+        }
+    }
+
+    /// <summary>
+    /// Reorders a task within its list by moving it to a new index.
+    /// </summary>
+    public static void ReorderTask(string taskId, int newIndex)
+    {
+        StoragePaths.EnsureDirectory();
+        if (!File.Exists(StoragePaths.AllTasksPath))
+            return;
+
+        lock (SaveLock)
+        {
+            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var taskLists = DeserializeWithMigration(raw);
+
+            // Find the list containing this task
+            var listIndex = -1;
+            var taskIndex = -1;
+            for (var i = 0; i < taskLists.Length; i++)
+            {
+                var idx = Array.FindIndex(taskLists[i].Tasks, t => t.Id == taskId);
+                if (idx >= 0)
+                {
+                    listIndex = i;
+                    taskIndex = idx;
+                    break;
+                }
+            }
+
+            if (listIndex < 0 || taskIndex < 0)
+                return;
+
+            var list = taskLists[listIndex];
+            var tasks = list.Tasks.ToList();
+
+            // Clamp newIndex to valid range
+            newIndex = Math.Max(0, Math.Min(newIndex, tasks.Count - 1));
+
+            if (taskIndex == newIndex)
+                return;
+
+            // Remove from old position and insert at new position
+            var task = tasks[taskIndex];
+            tasks.RemoveAt(taskIndex);
+            tasks.Insert(newIndex, task);
+
+            taskLists[listIndex] = list.ReplaceTasks(tasks.ToArray());
+
+            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(taskLists));
+        }
+    }
+
+    /// <summary>
+    /// Reorders a list by moving it to a new index in the TaskLists array.
+    /// </summary>
+    public static void ReorderList(string listName, int newIndex)
+    {
+        StoragePaths.EnsureDirectory();
+        if (!File.Exists(StoragePaths.AllTasksPath))
+            return;
+
+        lock (SaveLock)
+        {
+            var raw = File.ReadAllText(StoragePaths.AllTasksPath);
+            var taskLists = DeserializeWithMigration(raw).ToList();
+
+            var currentIndex = taskLists.FindIndex(l => l.ListName == listName);
+            if (currentIndex < 0)
+                return;
+
+            // Clamp newIndex to valid range
+            newIndex = Math.Max(0, Math.Min(newIndex, taskLists.Count - 1));
+
+            if (currentIndex == newIndex)
+                return;
+
+            // Remove from old position and insert at new position
+            var list = taskLists[currentIndex];
+            taskLists.RemoveAt(currentIndex);
+            taskLists.Insert(newIndex, list);
+
+            File.WriteAllText(StoragePaths.AllTasksPath, JsonSerializer.Serialize(taskLists.ToArray()));
         }
     }
 }

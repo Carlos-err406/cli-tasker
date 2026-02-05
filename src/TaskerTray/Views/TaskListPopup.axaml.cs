@@ -20,6 +20,11 @@ public partial class TaskListPopup : Window
 {
     public event Action? QuitRequested;
 
+    // Drag-drop state machine
+    private enum PopupState { Idle, Dragging, DroppingInProgress, RefreshPending }
+    private PopupState _state = PopupState.Idle;
+    private int _generationId; // Incremented on BuildTaskList to invalidate stale handlers
+
     private List<TodoTaskViewModel> _tasks = new();
     private string? _currentListFilter;
     private TextBox? _activeInlineEditor;
@@ -87,6 +92,18 @@ public partial class TaskListPopup : Window
 
     public void RefreshTasks()
     {
+        // Queue refresh if drag operation is in progress
+        if (_state == PopupState.Dragging || _state == PopupState.DroppingInProgress)
+        {
+            _state = PopupState.RefreshPending;
+            return;
+        }
+
+        DoRefreshTasks();
+    }
+
+    private void DoRefreshTasks()
+    {
         var taskList = new TodoTaskList(_currentListFilter);
         var tasks = taskList.GetAllTasks();
 
@@ -102,6 +119,7 @@ public partial class TaskListPopup : Window
 
     private void BuildTaskList()
     {
+        _generationId++; // Invalidate all handlers from previous builds
         TaskListPanel.Children.Clear();
         _taskBorders.Clear();
 
@@ -224,19 +242,43 @@ public partial class TaskListPopup : Window
     private void AddListHeader(string listName, bool isCollapsed = false)
     {
         var isDefaultList = listName == ListManager.DefaultListName;
+        var allListNames = TodoTaskList.GetAllListNames().ToList();
+        var canReorder = allListNames.Count > 1;
 
         // Get task counts for summary display when collapsed
         var tasksInList = _tasks.Where(t => t.ListName == listName).ToList();
         var totalCount = tasksInList.Count;
         var pendingCount = tasksInList.Count(t => !t.IsChecked);
 
-        var headerPanel = new Grid
+        // Wrap header in a Border for drag styling
+        var headerBorder = new Border
         {
-            ColumnDefinitions = ColumnDefinitions.Parse(isDefaultList ? "Auto,*,Auto" : "Auto,*,Auto,Auto"),
-            Margin = new Thickness(4, 8, 4, 4)
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(4, 8, 4, 4),
+            Classes = { "listHeader" }
         };
 
-        // Collapse chevron button (column 0) - uses rotation animation
+        // Column count: grip (if reorderable) + chevron + name + add + menu (if not default)
+        var columnDef = canReorder
+            ? (isDefaultList ? "Auto,Auto,*,Auto" : "Auto,Auto,*,Auto,Auto")
+            : (isDefaultList ? "Auto,*,Auto" : "Auto,*,Auto,Auto");
+        var headerPanel = new Grid
+        {
+            ColumnDefinitions = ColumnDefinitions.Parse(columnDef)
+        };
+
+        var colOffset = canReorder ? 1 : 0;
+
+        // Grip handle for list reordering (only if multiple lists)
+        if (canReorder)
+        {
+            var gripHandle = CreateGripHandle();
+            Grid.SetColumn(gripHandle, 0);
+            headerPanel.Children.Add(gripHandle);
+            SetupListDragHandlers(headerBorder, gripHandle, listName);
+        }
+
+        // Collapse chevron button - uses rotation animation
         var chevronBtn = new Button
         {
             Content = "▼",
@@ -256,10 +298,10 @@ public partial class TaskListPopup : Window
         }
         ToolTip.SetTip(chevronBtn, isCollapsed ? "Expand list" : "Collapse list");
         chevronBtn.Click += (_, _) => OnToggleListCollapsed(listName, !isCollapsed);
-        Grid.SetColumn(chevronBtn, 0);
+        Grid.SetColumn(chevronBtn, colOffset);
         headerPanel.Children.Add(chevronBtn);
 
-        // List name + summary (column 1)
+        // List name + summary
         var headerStack = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
@@ -290,10 +332,10 @@ public partial class TaskListPopup : Window
             headerStack.Children.Add(summary);
         }
 
-        Grid.SetColumn(headerStack, 1);
+        Grid.SetColumn(headerStack, colOffset + 1);
         headerPanel.Children.Add(headerStack);
 
-        // Add button (column 2)
+        // Add button
         var addBtn = new Button
         {
             Content = "+",
@@ -308,7 +350,7 @@ public partial class TaskListPopup : Window
         };
         ToolTip.SetTip(addBtn, $"Add task to {listName}");
         addBtn.Click += (_, _) => StartInlineAdd(listName);
-        Grid.SetColumn(addBtn, 2);
+        Grid.SetColumn(addBtn, colOffset + 2);
         headerPanel.Children.Add(addBtn);
 
         // Add menu button for non-default lists (allows delete)
@@ -338,11 +380,12 @@ public partial class TaskListPopup : Window
 
             menuBtn.ContextMenu = contextMenu;
             menuBtn.Click += (_, _) => contextMenu.Open(menuBtn);
-            Grid.SetColumn(menuBtn, 3);
+            Grid.SetColumn(menuBtn, colOffset + 3);
             headerPanel.Children.Add(menuBtn);
         }
 
-        TaskListPanel.Children.Add(headerPanel);
+        headerBorder.Child = headerPanel;
+        TaskListPanel.Children.Add(headerBorder);
     }
 
     private void OnToggleListCollapsed(string listName, bool collapsed)
@@ -797,8 +840,18 @@ public partial class TaskListPopup : Window
 
         var grid = new Grid
         {
-            ColumnDefinitions = ColumnDefinitions.Parse("Auto,*,Auto")
+            ColumnDefinitions = ColumnDefinitions.Parse("Auto,Auto,*,Auto")
         };
+
+        // Grip handle for drag-and-drop (only shown when > 1 task in list)
+        var tasksInSameList = _tasks.Count(t => t.ListName == task.ListName);
+        if (tasksInSameList > 1)
+        {
+            var gripHandle = CreateGripHandle();
+            Grid.SetColumn(gripHandle, 0);
+            grid.Children.Add(gripHandle);
+            SetupTaskDragHandlers(border, gripHandle, task);
+        }
 
         // Checkbox
         var checkbox = new CheckBox
@@ -807,7 +860,7 @@ public partial class TaskListPopup : Window
             Margin = new Thickness(0, 0, 10, 0),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top
         };
-        Grid.SetColumn(checkbox, 0);
+        Grid.SetColumn(checkbox, 1);
         checkbox.Click += (_, _) => OnCheckboxClicked(task, checkbox);
         grid.Children.Add(checkbox);
 
@@ -816,7 +869,7 @@ public partial class TaskListPopup : Window
         {
             Spacing = 2
         };
-        Grid.SetColumn(contentPanel, 1);
+        Grid.SetColumn(contentPanel, 2);
 
         // Title row with priority indicator - use Grid to constrain width and enable wrapping
         var titleRow = new Grid
@@ -961,7 +1014,7 @@ public partial class TaskListPopup : Window
         menuBtn.ContextMenu = contextMenu;
         menuBtn.Click += (_, _) => contextMenu.Open(menuBtn);
 
-        Grid.SetColumn(menuBtn, 2);
+        Grid.SetColumn(menuBtn, 3);
         grid.Children.Add(menuBtn);
 
         border.Child = grid;
@@ -1257,4 +1310,629 @@ public partial class TaskListPopup : Window
 
     [System.Runtime.InteropServices.DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
     private static extern void objc_msgSend_SetPtr(IntPtr receiver, IntPtr selector, IntPtr arg);
+
+    #region Drag-and-Drop Implementation
+
+    // Task drag state
+    private Border? _draggedTaskBorder;
+    private TodoTaskViewModel? _draggedTask;
+    private Point _dragStartPoint;
+    private bool _isDragging;
+    private Border? _dropIndicator;
+    private int _dropTargetIndex = -1;
+
+    // List drag state
+    private Border? _draggedListBorder;
+    private string? _draggedListName;
+    private bool _isDraggingList;
+    private int _listDropTargetIndex = -1;
+
+    /// <summary>
+    /// Creates a 6-dot grip handle for drag-and-drop reordering.
+    /// </summary>
+    private Panel CreateGripHandle()
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Vertical,
+            Spacing = 2,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0),
+            Width = 12,
+            Classes = { "gripHandle" }
+        };
+
+        // Create 3 rows of 2 dots each
+        for (var row = 0; row < 3; row++)
+        {
+            var dotRow = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Spacing = 2,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+            };
+
+            for (var col = 0; col < 2; col++)
+            {
+                var dot = new Border
+                {
+                    Width = 3,
+                    Height = 3,
+                    CornerRadius = new CornerRadius(1.5),
+                    Background = new SolidColorBrush(Color.Parse("#666"))
+                };
+                dotRow.Children.Add(dot);
+            }
+
+            panel.Children.Add(dotRow);
+        }
+
+        return panel;
+    }
+
+    /// <summary>
+    /// Sets up drag event handlers for a task item.
+    /// </summary>
+    private void SetupTaskDragHandlers(Border border, Panel gripHandle, TodoTaskViewModel task)
+    {
+        var capturedGeneration = _generationId;
+
+        gripHandle.PointerPressed += (sender, e) =>
+        {
+            // Stale handler check
+            if (capturedGeneration != _generationId) return;
+
+            if (e.GetCurrentPoint(gripHandle).Properties.IsLeftButtonPressed)
+            {
+                _draggedTaskBorder = border;
+                _draggedTask = task;
+                _dragStartPoint = e.GetPosition(TaskListPanel);
+                e.Handled = true;
+            }
+        };
+
+        gripHandle.PointerMoved += (sender, e) =>
+        {
+            // Stale handler check
+            if (capturedGeneration != _generationId) return;
+
+            if (_draggedTaskBorder != border || _draggedTask == null) return;
+
+            var currentPoint = e.GetPosition(TaskListPanel);
+            var distance = Math.Abs(currentPoint.Y - _dragStartPoint.Y);
+
+            // Start dragging after moving 5 pixels
+            if (!_isDragging && distance > 5)
+            {
+                StartDrag();
+            }
+
+            if (_isDragging)
+            {
+                UpdateDragPosition(currentPoint);
+            }
+        };
+
+        gripHandle.PointerReleased += (sender, e) =>
+        {
+            // Stale handler check
+            if (capturedGeneration != _generationId) return;
+
+            if (_draggedTaskBorder == border && _isDragging)
+            {
+                CompleteDrag();
+            }
+            else
+            {
+                CancelDrag();
+            }
+        };
+
+        // Also handle pointer capture lost (e.g., if user drags outside window)
+        gripHandle.PointerCaptureLost += (sender, e) =>
+        {
+            if (capturedGeneration != _generationId) return;
+
+            if (_draggedTaskBorder == border && _isDragging)
+            {
+                CancelDrag();
+            }
+        };
+    }
+
+    private void StartDrag()
+    {
+        if (_draggedTaskBorder == null || _draggedTask == null) return;
+
+        _isDragging = true;
+        _state = PopupState.Dragging;
+
+        // Notify file watcher to suspend external change notifications
+        // (The FileWatcherService is accessed through the App)
+        if (Application.Current is App app)
+        {
+            app.SuspendFileWatcher();
+        }
+
+        // Add dragging class for visual feedback
+        _draggedTaskBorder.Classes.Add("dragging");
+
+        // Create drop indicator if not exists
+        if (_dropIndicator == null)
+        {
+            _dropIndicator = new Border
+            {
+                Classes = { "dropIndicator" }
+            };
+        }
+    }
+
+    private void UpdateDragPosition(Point currentPoint)
+    {
+        if (_draggedTask == null) return;
+
+        // Find all task items in the same list
+        var tasksInList = _tasks.Where(t => t.ListName == _draggedTask.ListName).ToList();
+        var taskIndex = tasksInList.IndexOf(_draggedTask);
+
+        // Calculate which position the user is hovering over
+        var newIndex = CalculateDropIndex(currentPoint, _draggedTask.ListName);
+
+        if (newIndex != _dropTargetIndex && newIndex >= 0)
+        {
+            _dropTargetIndex = newIndex;
+            UpdateDropIndicator(newIndex, _draggedTask.ListName);
+        }
+    }
+
+    private int CalculateDropIndex(Point point, string listName)
+    {
+        // Find the StackPanel containing tasks for this list
+        StackPanel? tasksPanel = null;
+        foreach (var child in TaskListPanel.Children)
+        {
+            if (child is StackPanel sp && sp.Classes.Contains("listTasks"))
+            {
+                // Check if this panel contains tasks from the target list
+                var firstTask = sp.Children.OfType<Border>()
+                    .FirstOrDefault(b => b.Classes.Contains("taskItem"));
+                if (firstTask != null && _taskBorders.Values.Contains(firstTask))
+                {
+                    var taskId = _taskBorders.FirstOrDefault(kvp => kvp.Value == firstTask).Key;
+                    var task = _tasks.FirstOrDefault(t => t.Id == taskId);
+                    if (task?.ListName == listName)
+                    {
+                        tasksPanel = sp;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (tasksPanel == null) return -1;
+
+        // Get task borders in this panel
+        var taskBorders = tasksPanel.Children
+            .OfType<Border>()
+            .Where(b => b.Classes.Contains("taskItem"))
+            .ToList();
+
+        if (taskBorders.Count == 0) return 0;
+
+        // Calculate drop index based on Y position relative to task items
+        var panelPoint = TaskListPanel.TranslatePoint(point, tasksPanel);
+        if (!panelPoint.HasValue) return 0;
+
+        var y = panelPoint.Value.Y;
+
+        for (var i = 0; i < taskBorders.Count; i++)
+        {
+            var bounds = taskBorders[i].Bounds;
+            var midY = bounds.Top + bounds.Height / 2;
+
+            if (y < midY)
+            {
+                return i;
+            }
+        }
+
+        return taskBorders.Count;
+    }
+
+    private void UpdateDropIndicator(int index, string listName)
+    {
+        if (_dropIndicator == null) return;
+
+        // Remove from previous location
+        if (_dropIndicator.Parent is Panel oldParent)
+        {
+            oldParent.Children.Remove(_dropIndicator);
+        }
+
+        // Find the StackPanel for this list
+        StackPanel? tasksPanel = null;
+        foreach (var child in TaskListPanel.Children)
+        {
+            if (child is StackPanel sp && sp.Classes.Contains("listTasks"))
+            {
+                var firstTask = sp.Children.OfType<Border>()
+                    .FirstOrDefault(b => b.Classes.Contains("taskItem"));
+                if (firstTask != null && _taskBorders.Values.Contains(firstTask))
+                {
+                    var taskId = _taskBorders.FirstOrDefault(kvp => kvp.Value == firstTask).Key;
+                    var task = _tasks.FirstOrDefault(t => t.Id == taskId);
+                    if (task?.ListName == listName)
+                    {
+                        tasksPanel = sp;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (tasksPanel == null) return;
+
+        // Find insertion point among task items only
+        var taskBorders = tasksPanel.Children
+            .OfType<Border>()
+            .Where(b => b.Classes.Contains("taskItem"))
+            .ToList();
+
+        // Calculate actual child index in the panel
+        var insertIndex = 0;
+        if (index < taskBorders.Count)
+        {
+            var targetBorder = taskBorders[index];
+            insertIndex = tasksPanel.Children.IndexOf(targetBorder);
+        }
+        else if (taskBorders.Count > 0)
+        {
+            var lastBorder = taskBorders[^1];
+            insertIndex = tasksPanel.Children.IndexOf(lastBorder) + 1;
+        }
+
+        tasksPanel.Children.Insert(insertIndex, _dropIndicator);
+        _dropIndicator.Classes.Add("visible");
+    }
+
+    private void CompleteDrag()
+    {
+        if (_draggedTask == null || _dropTargetIndex < 0)
+        {
+            CancelDrag();
+            return;
+        }
+
+        _state = PopupState.DroppingInProgress;
+
+        try
+        {
+            // Get tasks in the same list
+            var tasksInList = _tasks.Where(t => t.ListName == _draggedTask.ListName).ToList();
+            var currentIndex = tasksInList.IndexOf(_draggedTask);
+
+            // Only reorder if position actually changed
+            if (currentIndex != _dropTargetIndex && _dropTargetIndex != currentIndex + 1)
+            {
+                // Adjust target index if dragging down (since we're removing the item first)
+                var adjustedIndex = _dropTargetIndex;
+                if (_dropTargetIndex > currentIndex)
+                {
+                    adjustedIndex--;
+                }
+
+                TodoTaskList.ReorderTask(_draggedTask.Id, adjustedIndex);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            CleanupDrag();
+
+            // Resume file watcher
+            if (Application.Current is App app)
+            {
+                app.ResumeFileWatcher();
+            }
+
+            // Check if refresh was pending
+            if (_state == PopupState.RefreshPending)
+            {
+                _state = PopupState.Idle;
+                DoRefreshTasks();
+            }
+            else
+            {
+                _state = PopupState.Idle;
+                RefreshTasks();
+            }
+        }
+    }
+
+    private void CancelDrag()
+    {
+        CleanupDrag();
+
+        // Resume file watcher
+        if (Application.Current is App app)
+        {
+            app.ResumeFileWatcher();
+        }
+
+        if (_state == PopupState.RefreshPending)
+        {
+            _state = PopupState.Idle;
+            DoRefreshTasks();
+        }
+        else
+        {
+            _state = PopupState.Idle;
+        }
+    }
+
+    private void CleanupDrag()
+    {
+        // Remove dragging class
+        _draggedTaskBorder?.Classes.Remove("dragging");
+
+        // Remove drop indicator
+        if (_dropIndicator?.Parent is Panel parent)
+        {
+            parent.Children.Remove(_dropIndicator);
+        }
+        _dropIndicator?.Classes.Remove("visible");
+
+        // Reset state
+        _draggedTaskBorder = null;
+        _draggedTask = null;
+        _isDragging = false;
+        _dropTargetIndex = -1;
+
+        // Reset list drag state
+        _draggedListBorder = null;
+        _draggedListName = null;
+        _isDraggingList = false;
+        _listDropTargetIndex = -1;
+    }
+
+    /// <summary>
+    /// Sets up drag event handlers for a list header.
+    /// </summary>
+    private void SetupListDragHandlers(Border border, Panel gripHandle, string listName)
+    {
+        var capturedGeneration = _generationId;
+
+        gripHandle.PointerPressed += (sender, e) =>
+        {
+            // Stale handler check
+            if (capturedGeneration != _generationId) return;
+
+            if (e.GetCurrentPoint(gripHandle).Properties.IsLeftButtonPressed)
+            {
+                _draggedListBorder = border;
+                _draggedListName = listName;
+                _dragStartPoint = e.GetPosition(TaskListPanel);
+                e.Handled = true;
+            }
+        };
+
+        gripHandle.PointerMoved += (sender, e) =>
+        {
+            // Stale handler check
+            if (capturedGeneration != _generationId) return;
+
+            if (_draggedListBorder != border || _draggedListName == null) return;
+
+            var currentPoint = e.GetPosition(TaskListPanel);
+            var distance = Math.Abs(currentPoint.Y - _dragStartPoint.Y);
+
+            // Start dragging after moving 5 pixels
+            if (!_isDraggingList && distance > 5)
+            {
+                StartListDrag();
+            }
+
+            if (_isDraggingList)
+            {
+                UpdateListDragPosition(currentPoint);
+            }
+        };
+
+        gripHandle.PointerReleased += (sender, e) =>
+        {
+            // Stale handler check
+            if (capturedGeneration != _generationId) return;
+
+            if (_draggedListBorder == border && _isDraggingList)
+            {
+                CompleteListDrag();
+            }
+            else
+            {
+                CancelDrag();
+            }
+        };
+
+        gripHandle.PointerCaptureLost += (sender, e) =>
+        {
+            if (capturedGeneration != _generationId) return;
+
+            if (_draggedListBorder == border && _isDraggingList)
+            {
+                CancelDrag();
+            }
+        };
+    }
+
+    private void StartListDrag()
+    {
+        if (_draggedListBorder == null || _draggedListName == null) return;
+
+        _isDraggingList = true;
+        _state = PopupState.Dragging;
+
+        // Suspend file watcher
+        if (Application.Current is App app)
+        {
+            app.SuspendFileWatcher();
+        }
+
+        // Add dragging class for visual feedback
+        _draggedListBorder.Classes.Add("dragging");
+
+        // Create drop indicator if not exists
+        if (_dropIndicator == null)
+        {
+            _dropIndicator = new Border
+            {
+                Classes = { "dropIndicator" }
+            };
+        }
+    }
+
+    private void UpdateListDragPosition(Point currentPoint)
+    {
+        if (_draggedListName == null) return;
+
+        var newIndex = CalculateListDropIndex(currentPoint);
+
+        if (newIndex != _listDropTargetIndex && newIndex >= 0)
+        {
+            _listDropTargetIndex = newIndex;
+            UpdateListDropIndicator(newIndex);
+        }
+    }
+
+    private int CalculateListDropIndex(Point point)
+    {
+        // Get all list header borders
+        var listHeaders = TaskListPanel.Children
+            .OfType<Border>()
+            .Where(b => b.Classes.Contains("listHeader"))
+            .ToList();
+
+        if (listHeaders.Count == 0) return 0;
+
+        var y = point.Y;
+
+        for (var i = 0; i < listHeaders.Count; i++)
+        {
+            var bounds = listHeaders[i].Bounds;
+            var midY = bounds.Top + bounds.Height / 2;
+
+            if (y < midY)
+            {
+                return i;
+            }
+        }
+
+        return listHeaders.Count;
+    }
+
+    private void UpdateListDropIndicator(int index)
+    {
+        if (_dropIndicator == null) return;
+
+        // Remove from previous location
+        if (_dropIndicator.Parent is Panel oldParent)
+        {
+            oldParent.Children.Remove(_dropIndicator);
+        }
+
+        // Find list header borders in the panel
+        var listHeaders = TaskListPanel.Children
+            .OfType<Border>()
+            .Where(b => b.Classes.Contains("listHeader"))
+            .ToList();
+
+        if (listHeaders.Count == 0) return;
+
+        // Calculate actual child index in TaskListPanel
+        int insertIndex;
+        if (index < listHeaders.Count)
+        {
+            var targetHeader = listHeaders[index];
+            insertIndex = TaskListPanel.Children.IndexOf(targetHeader);
+        }
+        else
+        {
+            // After the last list - find the last list's tasks panel and insert after it
+            var lastHeader = listHeaders[^1];
+            var lastHeaderIndex = TaskListPanel.Children.IndexOf(lastHeader);
+
+            // Look for the tasks panel after this header
+            insertIndex = lastHeaderIndex + 1;
+            if (insertIndex < TaskListPanel.Children.Count &&
+                TaskListPanel.Children[insertIndex] is StackPanel sp &&
+                sp.Classes.Contains("listTasks"))
+            {
+                insertIndex++; // Insert after the tasks panel
+            }
+        }
+
+        TaskListPanel.Children.Insert(insertIndex, _dropIndicator);
+        _dropIndicator.Classes.Add("visible");
+    }
+
+    private void CompleteListDrag()
+    {
+        if (_draggedListName == null || _listDropTargetIndex < 0)
+        {
+            CancelDrag();
+            return;
+        }
+
+        _state = PopupState.DroppingInProgress;
+
+        try
+        {
+            // Get current list order
+            var allLists = TodoTaskList.GetAllListNames().ToList();
+            var currentIndex = allLists.IndexOf(_draggedListName);
+
+            // Only reorder if position actually changed
+            if (currentIndex >= 0 && currentIndex != _listDropTargetIndex && _listDropTargetIndex != currentIndex + 1)
+            {
+                // Adjust target index if dragging down
+                var adjustedIndex = _listDropTargetIndex;
+                if (_listDropTargetIndex > currentIndex)
+                {
+                    adjustedIndex--;
+                }
+
+                TodoTaskList.ReorderList(_draggedListName, adjustedIndex);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            CleanupDrag();
+
+            // Resume file watcher
+            if (Application.Current is App app)
+            {
+                app.ResumeFileWatcher();
+            }
+
+            // Check if refresh was pending
+            if (_state == PopupState.RefreshPending)
+            {
+                _state = PopupState.Idle;
+                DoRefreshTasks();
+            }
+            else
+            {
+                _state = PopupState.Idle;
+                RefreshTasks();
+            }
+        }
+    }
+
+    #endregion
 }

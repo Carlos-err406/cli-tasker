@@ -59,6 +59,69 @@
             <Setter Property="Background" Value="#333333"/>
         </Style>
 
+        <!-- Drag handle visibility -->
+        <Style Selector="Border.taskItem Panel.gripHandle">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Cursor" Value="SizeAll"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.1"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.taskItem:pointerover Panel.gripHandle">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+        <Style Selector="Border.taskItem:pointerover Panel.gripHandle:pointerover">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+
+        <!-- Dragging state -->
+        <Style Selector="Border.taskItem.dragging">
+            <Setter Property="Opacity" Value="0.8"/>
+            <Setter Property="RenderTransform" Value="scale(1.02)"/>
+            <Setter Property="ZIndex" Value="100"/>
+        </Style>
+
+        <!-- Drop indicator -->
+        <Style Selector="Border.dropIndicator">
+            <Setter Property="Height" Value="2"/>
+            <Setter Property="Background" Value="#0A84FF"/>
+            <Setter Property="CornerRadius" Value="1"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.1"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.dropIndicator.visible">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+
+        <!-- List header drag styles -->
+        <Style Selector="Border.listHeader Panel.gripHandle">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Cursor" Value="SizeAll"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.1"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.listHeader:pointerover Panel.gripHandle">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+        <Style Selector="Border.listHeader:pointerover Panel.gripHandle:pointerover">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+        <Style Selector="Border.listHeader.dragging">
+            <Setter Property="Opacity" Value="0.8"/>
+            <Setter Property="RenderTransform" Value="scale(1.02)"/>
+            <Setter Property="ZIndex" Value="100"/>
+        </Style>
+
         <!-- List section collapse/expand -->
         <Style Selector="StackPanel.listTasks">
             <Setter Property="MaxHeight" Value="2000"/>
