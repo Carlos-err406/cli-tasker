@@ -4,6 +4,8 @@ using System.Text.RegularExpressions;
 using TaskerCore.Config;
 using TaskerCore.Exceptions;
 using TaskerCore.Results;
+using TaskerCore.Undo;
+using TaskerCore.Undo.Commands;
 
 public static partial class ListManager
 {
@@ -87,8 +89,11 @@ public static partial class ListManager
     /// <summary>
     /// Renames a list.
     /// </summary>
+    /// <param name="oldName">Current name of the list.</param>
+    /// <param name="newName">New name for the list.</param>
+    /// <param name="recordUndo">Whether to record this action for undo. Set to false when called from undo/redo.</param>
     /// <returns>TaskResult indicating success or if default list was updated.</returns>
-    public static TaskResult RenameList(string oldName, string newName)
+    public static TaskResult RenameList(string oldName, string newName, bool recordUndo = true)
     {
         if (oldName == DefaultListName)
         {
@@ -110,13 +115,37 @@ public static partial class ListManager
             throw new ListAlreadyExistsException(newName);
         }
 
+        // Record undo command before making changes
+        var wasDefault = AppConfig.GetDefaultList() == oldName;
+        if (recordUndo)
+        {
+            var cmd = new RenameListCommand
+            {
+                OldName = oldName,
+                NewName = newName,
+                WasDefaultList = wasDefault
+            };
+            UndoManager.Instance.RecordCommand(cmd);
+        }
+
         TodoTaskList.RenameList(oldName, newName);
 
         // Update default if renaming the default list
-        if (AppConfig.GetDefaultList() == oldName)
+        if (wasDefault)
         {
             AppConfig.SetDefaultList(newName);
+
+            if (recordUndo)
+            {
+                UndoManager.Instance.SaveHistory();
+            }
+
             return new TaskResult.Success($"Renamed '{oldName}' to '{newName}'. Note: It was the default list. Default updated to '{newName}'.");
+        }
+
+        if (recordUndo)
+        {
+            UndoManager.Instance.SaveHistory();
         }
 
         return new TaskResult.Success($"Renamed list '{oldName}' to '{newName}'");

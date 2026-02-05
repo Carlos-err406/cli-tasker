@@ -37,6 +37,8 @@ dotnet test -v n
 
 Tests use isolated storage (temp directory) to avoid affecting real tasks.
 
+**Important:** When verifying new functionality, write tests instead of using `dotnet run --` commands. Tests are repeatable, don't affect real data, and serve as documentation.
+
 ### Reading tasks from the backlog
 When referencing a task by ID, always read the **full task description**, not just the title. Tasks often have multi-line descriptions with important context.
 

@@ -13,6 +13,7 @@ using TaskerCore.Undo.Commands;
 [JsonDerivedType(typeof(ClearTasksCommand), "clear")]
 [JsonDerivedType(typeof(CompositeCommand), "batch")]
 [JsonDerivedType(typeof(TaskMetadataChangedCommand), "metadata")]
+[JsonDerivedType(typeof(RenameListCommand), "renameList")]
 public interface IUndoableCommand
 {
     string Description { get; }
