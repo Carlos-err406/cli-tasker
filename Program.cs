@@ -34,6 +34,7 @@ class Program
         rootCommand.Add(checkCommand);
         rootCommand.Add(uncheckCommand);
         rootCommand.Add(RenameCommand.CreateRenameCommand(listOption));
+        rootCommand.Add(GetCommand.CreateGetCommand());
         rootCommand.Add(MoveCommand.CreateMoveCommand());
         rootCommand.Add(DueCommand.CreateDueCommand());
         rootCommand.Add(PriorityCommand.CreatePriorityCommand());

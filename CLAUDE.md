@@ -41,14 +41,15 @@ Tests use isolated storage (temp directory) to avoid affecting real tasks.
 When referencing a task by ID, always read the **full task description**, not just the title. Tasks often have multi-line descriptions with important context.
 
 ```bash
-# Get a specific task with full description (use grep -A to get lines after match)
-dotnet run -- list | grep -A5 "(<task_id>)"
+# Get a specific task with full description
+tasker get <taskId>
 
-# Example: Read task 286 with 5 lines of context
-dotnet run -- list | grep -A5 "(286)"
+# Example: Get task 286 with all details
+tasker get 286
+
+# Get task as JSON (useful for agents/scripts)
+tasker get 286 --json
 ```
-
-Note: There is no `get <id>` command yet. Use `grep -A<n>` to capture continuation lines.
 
 ### Version bumping
 Before updating, increment the version in `cli-tasker.csproj`:
@@ -260,6 +261,7 @@ All exceptions caught by `CommandHelper.WithErrorHandling()` and displayed via `
 | `CheckCommand.cs` | `check`, `uncheck` | Returns tuple, supports multiple IDs |
 | `DeleteCommand.cs` | `delete`, `clear` | Returns tuple, supports multiple IDs |
 | `RenameCommand.cs` | `rename` | Single task by ID |
+| `GetCommand.cs` | `get` | Single task by ID, supports `--json` |
 | `MoveCommand.cs` | `move` | Single task, validates target list |
 | `ListsCommand.cs` | `lists`, `lists create`, `lists delete`, `lists rename`, `lists set-default` | Complex with subcommands |
 | `TrashCommand.cs` | `trash list`, `trash restore`, `trash clear` | Complex with subcommands |
