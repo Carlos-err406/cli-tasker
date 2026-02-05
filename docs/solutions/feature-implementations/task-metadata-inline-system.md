@@ -101,7 +101,8 @@ private static partial Regex PriorityRegex();
 [GeneratedRegex(@"@(\S+)")]
 private static partial Regex DueDateRegex();
 
-[GeneratedRegex(@"#(\w+)")]
+// Note: [\w-]+ includes hyphens for tags like #cli-only
+[GeneratedRegex(@"#([\w-]+)")]
 private static partial Regex TagRegex();
 ```
 

@@ -12,8 +12,22 @@ public record TodoTask(
     Priority? Priority = null,
     string[]? Tags = null)
 {
-    public static TodoTask CreateTodoTask(string description, string listName) =>
-        new(Guid.NewGuid().ToString()[..3], description.Trim(), false, DateTime.Now, listName);
+    public static TodoTask CreateTodoTask(string description, string listName)
+    {
+        var trimmed = description.Trim();
+        var parsed = TaskDescriptionParser.Parse(trimmed);
+
+        return new TodoTask(
+            Guid.NewGuid().ToString()[..3],
+            trimmed,
+            false,
+            DateTime.Now,
+            listName,
+            parsed.DueDate,
+            parsed.Priority,
+            parsed.Tags.Length > 0 ? parsed.Tags : null
+        );
+    }
 
     // Computed properties for display logic
     public bool IsOverdue => DueDate.HasValue && DueDate.Value < DateOnly.FromDateTime(DateTime.Today);

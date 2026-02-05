@@ -178,7 +178,7 @@ public static partial class TaskDescriptionParser
     [GeneratedRegex(@"@(\S+)")]
     private static partial Regex DueDateRegex();
 
-    // Match #word for tags
-    [GeneratedRegex(@"#(\w+)")]
+    // Match #word for tags (supports hyphens like #cli-only)
+    [GeneratedRegex(@"#([\w-]+)")]
     private static partial Regex TagRegex();
 }
