@@ -37,6 +37,19 @@ dotnet test -v n
 
 Tests use isolated storage (temp directory) to avoid affecting real tasks.
 
+### Reading tasks from the backlog
+When referencing a task by ID, always read the **full task description**, not just the title. Tasks often have multi-line descriptions with important context.
+
+```bash
+# Get a specific task with full description (use grep -A to get lines after match)
+dotnet run -- list | grep -A5 "(<task_id>)"
+
+# Example: Read task 286 with 5 lines of context
+dotnet run -- list | grep -A5 "(286)"
+```
+
+Note: There is no `get <id>` command yet. Use `grep -A<n>` to capture continuation lines.
+
 ### Version bumping
 Before updating, increment the version in `cli-tasker.csproj`:
 ```xml
