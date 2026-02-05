@@ -59,6 +59,9 @@ Before updating, increment the version in `cli-tasker.csproj`:
 
 ### Updating CLI and TaskerTray
 To update both the global CLI tool and the menu bar app after making changes:
+
+**Important:** Bump the version in `cli-tasker.csproj` first, otherwise the global tool won't update.
+
 ```bash
 ./update.sh
 ```
