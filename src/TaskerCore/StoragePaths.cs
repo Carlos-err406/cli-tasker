@@ -5,10 +5,17 @@ namespace TaskerCore;
 /// </summary>
 public static class StoragePaths
 {
+    private static string? _overrideDirectory;
+
     /// <summary>Base directory for all cli-tasker data.</summary>
-    public static string Directory => Path.Combine(
+    public static string Directory => _overrideDirectory ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "cli-tasker");
+
+    /// <summary>
+    /// Sets a custom directory for testing. Pass null to reset to default.
+    /// </summary>
+    internal static void SetDirectory(string? path) => _overrideDirectory = path;
 
     /// <summary>Path to the main tasks JSON file.</summary>
     public static string AllTasksPath => Path.Combine(Directory, "all-tasks.json");

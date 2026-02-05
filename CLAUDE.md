@@ -23,6 +23,20 @@ dotnet pack -c Release -o ./nupkg
 dotnet tool update -g cli-tasker --add-source ./nupkg
 ```
 
+### Running tests
+```bash
+# Run all tests
+dotnet test
+
+# Run specific test class
+dotnet test --filter "FullyQualifiedName~TaskDescriptionParserTests"
+
+# Run with verbose output
+dotnet test -v n
+```
+
+Tests use isolated storage (temp directory) to avoid affecting real tasks.
+
 ### Version bumping
 Before updating, increment the version in `cli-tasker.csproj`:
 ```xml

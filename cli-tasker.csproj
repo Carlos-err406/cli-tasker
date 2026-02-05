@@ -14,8 +14,8 @@
     <Version>2.19.0</Version>
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
-    <!-- Exclude src/ folder which contains TaskerCore project -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);src/**</DefaultItemExcludes>
+    <!-- Exclude src/ and tests/ folders which contain separate projects -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);src/**;tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
