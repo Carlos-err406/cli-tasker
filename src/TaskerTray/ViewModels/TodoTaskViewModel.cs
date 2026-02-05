@@ -187,7 +187,7 @@ public partial class TodoTaskViewModel : ObservableObject
         var lines = displayDesc.Split('\n');
         if (lines.Length <= 1) return string.Empty;
 
-        // Join remaining lines - no truncation, let UI wrap
-        return string.Join(" ", lines.Skip(1).Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l)));
+        // Join remaining lines with newlines to preserve line breaks
+        return string.Join("\n", lines.Skip(1).Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l)));
     }
 }
