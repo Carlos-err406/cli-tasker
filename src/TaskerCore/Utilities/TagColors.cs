@@ -2,19 +2,19 @@ namespace TaskerCore.Utilities;
 
 public static class TagColors
 {
-    // Curated palette - dark theme friendly, visually distinct
+    // Curated palette - all colors are dark enough for white text on dark backgrounds
     private static readonly string[] Palette =
     [
-        "#3B82F6", // Blue
-        "#10B981", // Emerald
-        "#F59E0B", // Amber
-        "#EF4444", // Red
-        "#8B5CF6", // Violet
-        "#EC4899", // Pink
-        "#06B6D4", // Cyan
-        "#84CC16", // Lime
-        "#F97316", // Orange
-        "#6366F1", // Indigo
+        "#2563EB", // Blue
+        "#059669", // Emerald
+        "#B45309", // Amber
+        "#DC2626", // Red
+        "#7C3AED", // Violet
+        "#DB2777", // Pink
+        "#0891B2", // Cyan
+        "#4D7C0F", // Lime (darkened)
+        "#EA580C", // Orange
+        "#4F46E5", // Indigo
     ];
 
     public static string GetHexColor(string tag)
@@ -27,23 +27,6 @@ public static class TagColors
     {
         var hex = GetHexColor(tag);
         return $"[{hex}]";
-    }
-
-    public static string GetForegroundHex(string tag)
-    {
-        var hex = GetHexColor(tag);
-        return IsLightColor(hex) ? "#000000" : "#FFFFFF";
-    }
-
-    private static bool IsLightColor(string hex)
-    {
-        var r = Convert.ToInt32(hex.Substring(1, 2), 16) / 255.0;
-        var g = Convert.ToInt32(hex.Substring(3, 2), 16) / 255.0;
-        var b = Convert.ToInt32(hex.Substring(5, 2), 16) / 255.0;
-
-        // Relative luminance (WCAG formula)
-        var luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        return luminance > 0.5;
     }
 
     /// <summary>
