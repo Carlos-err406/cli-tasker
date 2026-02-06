@@ -28,6 +28,22 @@ public partial class TodoTaskViewModel : ObservableObject
     public bool HasDueDate => _task.DueDate.HasValue;
     public bool HasPriority => _task.Priority.HasValue;
     public bool HasTags => _task.HasTags;
+    public DateTime? CompletedAt => _task.CompletedAt;
+
+    /// <summary>
+    /// Relative time display for completed tasks (e.g., "2h ago").
+    /// </summary>
+    public string? CompletedAtDisplay => CompletedAt.HasValue ? FormatRelativeTime(CompletedAt.Value) : null;
+
+    private static string FormatRelativeTime(DateTime timestamp)
+    {
+        var span = DateTime.UtcNow - timestamp;
+        return span.TotalMinutes < 1 ? "just now"
+             : span.TotalHours < 1 ? $"{(int)span.TotalMinutes}m ago"
+             : span.TotalDays < 1 ? $"{(int)span.TotalHours}h ago"
+             : span.TotalDays < 7 ? $"{(int)span.TotalDays}d ago"
+             : timestamp.ToLocalTime().ToString("MMM d");
+    }
 
     [ObservableProperty]
     private bool _isChecked;

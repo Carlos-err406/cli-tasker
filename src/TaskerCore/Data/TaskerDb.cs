@@ -79,7 +79,8 @@ public sealed class TaskerDb : IDisposable
                 priority INTEGER,
                 tags TEXT,
                 is_trashed INTEGER DEFAULT 0,
-                sort_order INTEGER DEFAULT 0
+                sort_order INTEGER DEFAULT 0,
+                completed_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS config (
@@ -103,6 +104,9 @@ public sealed class TaskerDb : IDisposable
 
         // Migrate from is_checked → status if upgrading from older schema
         MigrateIsCheckedToStatus();
+
+        // Add completed_at column if upgrading from older schema
+        MigrateAddCompletedAt();
 
         // Ensure default list exists
         EnsureDefaultList();
@@ -165,6 +169,24 @@ public sealed class TaskerDb : IDisposable
             tx.Rollback();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Adds completed_at column to tasks table for existing databases.
+    /// Backfills done tasks with created_at as a reasonable approximation.
+    /// </summary>
+    private void MigrateAddCompletedAt()
+    {
+        var hasCompletedAt = Query(
+            "PRAGMA table_info(tasks)",
+            reader => reader.GetString(1),
+            []).Any(col => col == "completed_at");
+
+        if (hasCompletedAt) return;
+
+        Execute("ALTER TABLE tasks ADD COLUMN completed_at TEXT");
+        Execute("UPDATE tasks SET completed_at = created_at WHERE status = 2");
+        Execute("DELETE FROM undo_history");
     }
 
     private void EnsureDefaultList()

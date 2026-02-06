@@ -74,7 +74,8 @@ static class GetCommand
             dueDate = task.DueDate?.ToString("yyyy-MM-dd"),
             tags = task.Tags,
             listName = task.ListName,
-            createdAt = task.CreatedAt.ToString("o")
+            createdAt = task.CreatedAt.ToString("o"),
+            completedAt = task.CompletedAt?.ToString("o")
         };
         Console.WriteLine(JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -98,6 +99,8 @@ static class GetCommand
         Output.Markup($"[bold]Due:[/]         {dueDate}");
         Output.Markup($"[bold]Tags:[/]        {tags}");
         Output.Markup($"[bold]Created:[/]     {task.CreatedAt:yyyy-MM-dd HH:mm}");
+        if (task.CompletedAt.HasValue)
+            Output.Markup($"[bold]Completed:[/]   {task.CompletedAt.Value:yyyy-MM-dd HH:mm}");
         Output.Markup($"[bold]Description:[/]");
         Console.WriteLine(task.Description);
     }

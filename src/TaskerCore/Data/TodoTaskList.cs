@@ -48,6 +48,9 @@ public class TodoTaskList
         var priorityVal = reader.IsDBNull(6) ? (int?)null : reader.GetInt32(6);
         Priority? priority = priorityVal.HasValue ? (Priority)priorityVal.Value : null;
 
+        var completedAtStr = reader.IsDBNull(8) ? null : reader.GetString(8);
+        DateTime? completedAt = completedAtStr != null ? DateTime.Parse(completedAtStr) : null;
+
         return new TodoTask(
             Id: reader.GetString(0),
             Description: reader.GetString(1),
@@ -56,12 +59,13 @@ public class TodoTaskList
             ListName: reader.GetString(4),
             DueDate: dueDate,
             Priority: priority,
-            Tags: tags is { Length: > 0 } ? tags : null
+            Tags: tags is { Length: > 0 } ? tags : null,
+            CompletedAt: completedAt
         );
     }
 
     private static string TaskSelectColumns =>
-        "id, description, status, created_at, list_name, due_date, priority, tags";
+        "id, description, status, created_at, list_name, due_date, priority, tags, completed_at";
 
     // --- Query helpers ---
 
@@ -128,12 +132,22 @@ public class TodoTaskList
         if (filterOverdue == true)
             filteredTasks = filteredTasks.Where(t => t.DueDate.HasValue && t.DueDate.Value < today);
 
-        return filteredTasks
-            .OrderBy(td => StatusSortOrder(td.Status))
-            .ThenBy(td => td.Priority.HasValue ? (int)td.Priority : 99)
-            .ThenBy(td => GetDueDateSortOrder(td.DueDate, today))
-            .ThenByDescending(td => td.CreatedAt)
+        // Active tasks: priority → due date → created_at
+        var active = filteredTasks
+            .Where(t => t.Status != TaskStatus.Done)
+            .OrderBy(t => StatusSortOrder(t.Status))
+            .ThenBy(t => t.Priority.HasValue ? (int)t.Priority : 99)
+            .ThenBy(t => GetDueDateSortOrder(t.DueDate, today))
+            .ThenByDescending(t => t.CreatedAt)
             .ToList();
+
+        // Done tasks: purely by completed_at DESC (NULL sorts last)
+        var done = filteredTasks
+            .Where(t => t.Status == TaskStatus.Done)
+            .OrderByDescending(t => t.CompletedAt ?? DateTime.MinValue)
+            .ToList();
+
+        return [..active, ..done];
     }
 
     /// <summary>
@@ -168,8 +182,8 @@ public class TodoTaskList
             : null;
 
         _db.Execute("""
-            INSERT INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
-            VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, @trashed, @order)
+            INSERT INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at)
+            VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, @trashed, @order, @completed)
             """,
             ("@id", task.Id),
             ("@desc", task.Description),
@@ -180,7 +194,8 @@ public class TodoTaskList
             ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
             ("@tags", (object?)tagsJson ?? DBNull.Value),
             ("@trashed", isTrashed ? 1 : 0),
-            ("@order", maxOrder + 1));
+            ("@order", maxOrder + 1),
+            ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
     }
 
     private void UpdateTask(TodoTask task)
@@ -191,7 +206,7 @@ public class TodoTaskList
 
         _db.Execute("""
             UPDATE tasks SET description = @desc, status = @status, list_name = @list,
-                due_date = @due, priority = @priority, tags = @tags
+                due_date = @due, priority = @priority, tags = @tags, completed_at = @completed
             WHERE id = @id
             """,
             ("@id", task.Id),
@@ -200,7 +215,8 @@ public class TodoTaskList
             ("@list", task.ListName),
             ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
             ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
-            ("@tags", (object?)tagsJson ?? DBNull.Value));
+            ("@tags", (object?)tagsJson ?? DBNull.Value),
+            ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
     }
 
     private void DeleteTaskById(string taskId)
@@ -849,8 +865,8 @@ public class TodoTaskList
             {
                 var tagsJson = task.Tags is { Length: > 0 } ? JsonSerializer.Serialize(task.Tags) : null;
                 db.Execute("""
-                    INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
-                    VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 0, @order)
+                    INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at)
+                    VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 0, @order, @completed)
                     """,
                     ("@id", task.Id),
                     ("@desc", task.Description),
@@ -860,7 +876,8 @@ public class TodoTaskList
                     ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
                     ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
                     ("@tags", (object?)tagsJson ?? DBNull.Value),
-                    ("@order", 0));
+                    ("@order", 0),
+                    ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
             }
 
             // Insert trashed tasks
@@ -870,8 +887,8 @@ public class TodoTaskList
                 {
                     var tagsJson = task.Tags is { Length: > 0 } ? JsonSerializer.Serialize(task.Tags) : null;
                     db.Execute("""
-                        INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
-                        VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 1, @order)
+                        INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at)
+                        VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 1, @order, @completed)
                         """,
                         ("@id", task.Id),
                         ("@desc", task.Description),
@@ -881,7 +898,8 @@ public class TodoTaskList
                         ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
                         ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
                         ("@tags", (object?)tagsJson ?? DBNull.Value),
-                        ("@order", 0));
+                        ("@order", 0),
+                        ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
                 }
             }
 

@@ -1235,6 +1235,19 @@ public partial class TaskListPopup : Window
             contentPanel.Children.Add(dueDate);
         }
 
+        // Completed "ago" label for done tasks
+        if (task.CompletedAtDisplay != null)
+        {
+            var completedLabel = new TextBlock
+            {
+                Text = task.CompletedAtDisplay,
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse("#888")),
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            contentPanel.Children.Add(completedLabel);
+        }
+
         // Tags display - pill badges
         if (task.HasTags)
         {

@@ -10,7 +10,8 @@ public record TodoTask(
     string ListName,
     DateOnly? DueDate = null,
     Priority? Priority = null,
-    string[]? Tags = null)
+    string[]? Tags = null,
+    DateTime? CompletedAt = null)
 {
     public static TodoTask CreateTodoTask(string description, string listName)
     {
@@ -35,7 +36,11 @@ public record TodoTask(
     public bool IsDueSoon => DueDate.HasValue && DueDate.Value <= DateOnly.FromDateTime(DateTime.Today.AddDays(3));
     public bool HasTags => Tags is { Length: > 0 };
 
-    public TodoTask WithStatus(TaskStatus status) => this with { Status = status };
+    public TodoTask WithStatus(TaskStatus status) => this with
+    {
+        Status = status,
+        CompletedAt = status == TaskStatus.Done ? DateTime.UtcNow : null
+    };
 
     public TodoTask Rename(string newDescription)
     {

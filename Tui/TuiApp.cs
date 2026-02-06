@@ -116,7 +116,9 @@ public class TuiApp
                 .OrderBy(t => t.ListName != ListManager.DefaultListName) // default list first
                 .ThenBy(t => t.ListName)
                 .ThenBy(t => StatusSortOrder(t.Status))
-                .ThenByDescending(t => t.CreatedAt)
+                .ThenByDescending(t => t.Status == TaskStatus.Done
+                    ? (t.CompletedAt ?? DateTime.MinValue)
+                    : t.CreatedAt)
                 .ToList();
         }
         else
@@ -124,7 +126,9 @@ public class TuiApp
             // Single list view - in-progress first, then pending, then done
             sorted = tasks
                 .OrderBy(t => StatusSortOrder(t.Status))
-                .ThenByDescending(t => t.CreatedAt)
+                .ThenByDescending(t => t.Status == TaskStatus.Done
+                    ? (t.CompletedAt ?? DateTime.MinValue)
+                    : t.CreatedAt)
                 .ToList();
         }
 
