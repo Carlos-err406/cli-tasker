@@ -8,7 +8,7 @@ using TaskerCore.Parsing;
 
 static class AddCommand
 {
-    public static Command CreateAddCommand(Option<string?> listOption)
+    public static Command CreateAddCommand(Option<string?> listOption, Option<bool> allOption)
     {
         var addCommand = new Command("add", "Add a new task");
         addCommand.Options.Add(listOption);
@@ -19,7 +19,8 @@ static class AddCommand
         addCommand.Arguments.Add(descriptionArg);
         addCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption) ?? TaskerServices.Default.Config.GetDefaultList();
+            var listName = ListManager.ResolveListFilter(parseResult.GetValue(listOption), parseResult.GetValue(allOption))
+                ?? TaskerServices.Default.Config.GetDefaultList();
 
             var description = parseResult.GetValue(descriptionArg);
             if (description == null)

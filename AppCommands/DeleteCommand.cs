@@ -5,7 +5,7 @@ using TaskerCore.Data;
 
 static class DeleteCommand
 {
-    public static (Command, Command) CreateDeleteCommands(Option<string?> listOption)
+    public static (Command, Command) CreateDeleteCommands(Option<string?> listOption, Option<bool> allOption)
     {
         var deleteCommand = new Command("delete", "Delete one or more tasks");
         var clearCommand = new Command("clear", "Delete all tasks from a list");
@@ -35,7 +35,7 @@ static class DeleteCommand
 
         clearCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption);
+            var listName = ListManager.ResolveListFilter(parseResult.GetValue(listOption), parseResult.GetValue(allOption));
             if (listName == null)
             {
                 Output.Error("Please specify a list with -l <list-name>");

@@ -193,6 +193,28 @@ public static partial class ListManager
     public static TaskResult RenameList(string oldName, string newName, bool recordUndo = true) =>
         RenameList(TaskerServices.Default, oldName, newName, recordUndo);
 
+    // Resolution
+
+    /// <summary>
+    /// Resolves effective list filter. Priority: explicitList > auto-detect (unless showAll) > null.
+    /// </summary>
+    public static string? ResolveListFilter(
+        TaskerServices services,
+        string? explicitList,
+        bool showAll,
+        string? workingDirectory = null)
+    {
+        if (explicitList != null) return explicitList;
+        if (showAll) return null;
+
+        workingDirectory ??= Directory.GetCurrentDirectory();
+        var dirName = Path.GetFileName(workingDirectory);
+        return !string.IsNullOrEmpty(dirName) && ListExists(services, dirName) ? dirName : null;
+    }
+
+    public static string? ResolveListFilter(string? explicitList, bool showAll, string? workingDirectory = null)
+        => ResolveListFilter(TaskerServices.Default, explicitList, showAll, workingDirectory);
+
     // Factory
 
     public static TodoTaskList GetTaskList(TaskerServices services, string? listName)

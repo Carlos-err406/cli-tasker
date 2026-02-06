@@ -24,10 +24,17 @@ class Program
         };
         rootCommand.Options.Add(listOption);
 
+        // Global option to bypass directory auto-detection
+        var allOption = new Option<bool>("--all", "-a")
+        {
+            Description = "Show all lists (bypass directory auto-detection)"
+        };
+        rootCommand.Options.Add(allOption);
+
         // Initialize subcommands
-        rootCommand.Add(AddCommand.CreateAddCommand(listOption));
-        rootCommand.Add(ListCommand.CreateListCommand(listOption));
-        var (deleteCommand, clearCommand) = DeleteCommand.CreateDeleteCommands(listOption);
+        rootCommand.Add(AddCommand.CreateAddCommand(listOption, allOption));
+        rootCommand.Add(ListCommand.CreateListCommand(listOption, allOption));
+        var (deleteCommand, clearCommand) = DeleteCommand.CreateDeleteCommands(listOption, allOption);
         rootCommand.Add(deleteCommand);
         rootCommand.Add(clearCommand);
         var (checkCommand, uncheckCommand) = CheckCommand.CreateCheckCommands(listOption);
@@ -39,8 +46,9 @@ class Program
         rootCommand.Add(DueCommand.CreateDueCommand());
         rootCommand.Add(PriorityCommand.CreatePriorityCommand());
         rootCommand.Add(ListsCommand.CreateListsCommand());
-        rootCommand.Add(TrashCommand.CreateTrashCommand(listOption));
+        rootCommand.Add(TrashCommand.CreateTrashCommand(listOption, allOption));
         rootCommand.Add(SystemCommand.CreateSystemCommand());
+        rootCommand.Add(InitCommand.CreateInitCommand());
         rootCommand.Add(BackupCommand.CreateBackupCommand());
         var (undoCmd, redoCmd, historyCmd) = UndoCommand.CreateUndoCommands();
         rootCommand.Add(undoCmd);

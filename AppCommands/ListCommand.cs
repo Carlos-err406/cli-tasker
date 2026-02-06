@@ -9,7 +9,7 @@ using TaskerCore.Parsing;
 
 static class ListCommand
 {
-    public static Command CreateListCommand(Option<string?> listOption)
+    public static Command CreateListCommand(Option<string?> listOption, Option<bool> allOption)
     {
         var listCommand = new Command("list", "List all tasks");
         var checkedOption = new Option<bool>("--checked", "-c")
@@ -40,7 +40,9 @@ static class ListCommand
         {
             var showChecked = parseResult.GetValue(checkedOption);
             var showUnchecked = parseResult.GetValue(uncheckedOption);
-            var listName = parseResult.GetValue(listOption);
+            var explicitList = parseResult.GetValue(listOption);
+            var showAll = parseResult.GetValue(allOption);
+            var listName = ListManager.ResolveListFilter(explicitList, showAll);
             var priorityStr = parseResult.GetValue(priorityOption);
             var showOverdue = parseResult.GetValue(overdueOption);
 
@@ -66,6 +68,12 @@ static class ListCommand
             };
 
             bool? filterOverdue = showOverdue ? true : null;
+
+            // Show indicator when auto-detection is active
+            if (explicitList == null && !showAll && listName != null)
+            {
+                Output.Info($"[dim](auto: {listName})[/]");
+            }
 
             if (listName == null)
             {

@@ -8,26 +8,26 @@ using TaskerCore.Models;
 
 static class TrashCommand
 {
-    public static Command CreateTrashCommand(Option<string?> listOption)
+    public static Command CreateTrashCommand(Option<string?> listOption, Option<bool> allOption)
     {
         var trashCommand = new Command("trash", "Manage deleted tasks");
 
         // Subcommands
-        trashCommand.Add(CreateListCommand(listOption));
+        trashCommand.Add(CreateListCommand(listOption, allOption));
         trashCommand.Add(CreateRestoreCommand(listOption));
-        trashCommand.Add(CreateClearCommand(listOption));
+        trashCommand.Add(CreateClearCommand(listOption, allOption));
 
         return trashCommand;
     }
 
-    private static Command CreateListCommand(Option<string?> listOption)
+    private static Command CreateListCommand(Option<string?> listOption, Option<bool> allOption)
     {
         var listCommand = new Command("list", "List deleted tasks in trash");
         listCommand.Options.Add(listOption);
 
         listCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption);
+            var listName = ListManager.ResolveListFilter(parseResult.GetValue(listOption), parseResult.GetValue(allOption));
 
             if (listName == null)
             {
@@ -102,14 +102,14 @@ static class TrashCommand
         return restoreCommand;
     }
 
-    private static Command CreateClearCommand(Option<string?> listOption)
+    private static Command CreateClearCommand(Option<string?> listOption, Option<bool> allOption)
     {
         var clearCommand = new Command("clear", "Permanently delete all tasks in trash");
         clearCommand.Options.Add(listOption);
 
         clearCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption);
+            var listName = ListManager.ResolveListFilter(parseResult.GetValue(listOption), parseResult.GetValue(allOption));
 
             int count;
             if (listName == null)
