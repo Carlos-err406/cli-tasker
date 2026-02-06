@@ -3,6 +3,7 @@ namespace cli_tasker;
 using Spectre.Console;
 using TaskerCore.Models;
 using TaskerCore.Results;
+using TaskerCore.Utilities;
 
 static class Output
 {
@@ -33,8 +34,9 @@ static class Output
     public static string FormatTags(string[]? tags)
     {
         if (tags is not { Length: > 0 }) return "";
-        var tagStr = string.Join(" ", tags.Select(t => $"#{t}"));
-        return $"  [cyan]{Spectre.Console.Markup.Escape(tagStr)}[/]";
+        var formatted = tags.Select(t =>
+            $"{TagColors.GetSpectreMarkup(t)}#{Spectre.Console.Markup.Escape(t)}[/]");
+        return "  " + string.Join(" ", formatted);
     }
 
     public static void Success(string message)

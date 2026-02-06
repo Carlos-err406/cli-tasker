@@ -1,10 +1,9 @@
 using System;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using TaskerCore.Config;
+using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
-using TaskerCore.Undo;
 
 namespace TaskerTray.ViewModels;
 
@@ -51,7 +50,7 @@ public partial class AppViewModel : ObservableObject
     {
         try
         {
-            var defaultList = AppConfig.GetDefaultList();
+            var defaultList = TaskerServices.Default.Config.GetDefaultList();
             var task = TodoTask.CreateTodoTask(description, defaultList);
             var taskList = new TodoTaskList(defaultList);
             taskList.AddTodoTask(task);
@@ -69,7 +68,7 @@ public partial class AppViewModel : ObservableObject
     [RelayCommand]
     private void Undo()
     {
-        var undoManager = UndoManager.Instance;
+        var undoManager = TaskerServices.Default.Undo;
         if (undoManager.CanUndo)
         {
             undoManager.Undo();
@@ -82,7 +81,7 @@ public partial class AppViewModel : ObservableObject
     [RelayCommand]
     private void Redo()
     {
-        var undoManager = UndoManager.Instance;
+        var undoManager = TaskerServices.Default.Undo;
         if (undoManager.CanRedo)
         {
             undoManager.Redo();
@@ -94,7 +93,7 @@ public partial class AppViewModel : ObservableObject
 
     private void UpdateUndoState()
     {
-        var undoManager = UndoManager.Instance;
+        var undoManager = TaskerServices.Default.Undo;
         CanUndo = undoManager.CanUndo;
         CanRedo = undoManager.CanRedo;
     }

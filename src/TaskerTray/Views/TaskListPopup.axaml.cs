@@ -9,10 +9,11 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using TaskerCore.Config;
+using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
+using TaskerCore.Utilities;
 using TaskerTray.ViewModels;
 
 namespace TaskerTray.Views;
@@ -1401,7 +1402,7 @@ public partial class TaskListPopup : Window
     private async void OnAddTask(object? sender, RoutedEventArgs e)
     {
         // Start inline add for the default list or current filter
-        var targetList = _currentListFilter ?? AppConfig.GetDefaultList();
+        var targetList = _currentListFilter ?? TaskerServices.Default.Config.GetDefaultList();
         StartInlineAdd(targetList);
     }
 
@@ -1540,26 +1541,11 @@ public partial class TaskListPopup : Window
 
     /// <summary>
     /// Returns a consistent color for a tag based on its hash.
+    /// Uses shared TagColors utility for deterministic colors across app restarts.
     /// </summary>
     private static Color GetTagColor(string tag)
     {
-        // Palette of nice tag colors (muted but visible)
-        var colors = new[]
-        {
-            "#3B82F6", // Blue
-            "#10B981", // Emerald
-            "#F59E0B", // Amber
-            "#EF4444", // Red
-            "#8B5CF6", // Violet
-            "#EC4899", // Pink
-            "#06B6D4", // Cyan
-            "#84CC16", // Lime
-            "#F97316", // Orange
-            "#6366F1", // Indigo
-        };
-
-        var index = Math.Abs(tag.GetHashCode()) % colors.Length;
-        return Color.Parse(colors[index]);
+        return Color.Parse(TagColors.GetHexColor(tag));
     }
 
     [System.Runtime.InteropServices.DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]

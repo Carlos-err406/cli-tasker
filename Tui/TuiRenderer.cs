@@ -3,6 +3,7 @@ namespace cli_tasker.Tui;
 using Spectre.Console;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
+using TaskerCore.Utilities;
 
 public class TuiRenderer
 {
@@ -164,8 +165,9 @@ public class TuiRenderer
     private static string FormatTags(string[]? tags)
     {
         if (tags is not { Length: > 0 }) return "";
-        var tagStr = string.Join(" ", tags.Select(t => $"#{t}"));
-        return $"  [cyan]{Markup.Escape(tagStr)}[/]";
+        var formatted = tags.Select(t =>
+            $"{TagColors.GetSpectreMarkup(t)}#{Markup.Escape(t)}[/]");
+        return "  " + string.Join(" ", formatted);
     }
 
     private static string HighlightSearch(string text, string? searchQuery)
