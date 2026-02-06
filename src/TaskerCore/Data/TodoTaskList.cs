@@ -1058,4 +1058,31 @@ public class TodoTaskList
 
     public static void ReorderList(string listName, int newIndex, bool recordUndo = true) =>
         ReorderList(TaskerServices.Default, listName, newIndex, recordUndo);
+
+    // --- Search ---
+
+    public static List<TodoTask> SearchTasks(TaskerServices services, string query)
+    {
+        var escaped = query.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+        var tasks = services.Db.Query(
+            $"SELECT {TaskSelectColumns} FROM tasks WHERE is_trashed = 0 AND description LIKE @search ESCAPE '\\' COLLATE NOCASE ORDER BY sort_order DESC",
+            ReadTask,
+            ("@search", $"%{escaped}%"));
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var active = tasks
+            .Where(t => t.Status != TaskStatus.Done)
+            .OrderBy(t => StatusSortOrder(t.Status))
+            .ThenBy(t => t.Priority.HasValue ? (int)t.Priority : 99)
+            .ThenBy(t => GetDueDateSortOrder(t.DueDate, today))
+            .ThenByDescending(t => t.CreatedAt)
+            .ToList();
+        var done = tasks
+            .Where(t => t.Status == TaskStatus.Done)
+            .OrderByDescending(t => t.CompletedAt ?? DateTime.MinValue)
+            .ToList();
+        return [..active, ..done];
+    }
+
+    public static List<TodoTask> SearchTasks(string query) => SearchTasks(TaskerServices.Default, query);
 }
