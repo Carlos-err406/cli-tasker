@@ -133,20 +133,10 @@ public partial class TaskListPopup : Window
     {
         var hadPendingDrag = _dragStartPoint.HasValue;
 
-        // Reset grip handle color if we have one
-        if (_pendingGripHandle != null)
-        {
-            foreach (var dot in _pendingGripHandle.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("gripDot")))
-            {
-                dot.Background = new SolidColorBrush(Color.Parse("#666"));
-            }
-        }
-
         _dragStartPoint = null;
         _pendingDragBorder = null;
         _pendingDragTask = null;
         _pendingDragListName = null;
-        _pendingGripHandle = null;
 
         // If we had a pending drag and there's a queued refresh, do it now
         if (hadPendingDrag && _state == PopupState.RefreshPending && !_isDragging)
@@ -382,24 +372,20 @@ public partial class TaskListPopup : Window
             Classes = { "listHeader" }
         };
 
-        // Column count: grip (if reorderable) + chevron + name + add + menu (if not default)
-        var columnDef = canReorder
-            ? (isDefaultList ? "Auto,Auto,*,Auto" : "Auto,Auto,*,Auto,Auto")
-            : (isDefaultList ? "Auto,*,Auto" : "Auto,*,Auto,Auto");
+        // Columns: chevron + name + add + menu (if not default)
+        var columnDef = isDefaultList ? "Auto,*,Auto" : "Auto,*,Auto,Auto";
         var headerPanel = new Grid
         {
             ColumnDefinitions = ColumnDefinitions.Parse(columnDef)
         };
 
-        var colOffset = canReorder ? 1 : 0;
+        var colOffset = 0;
 
-        // Grip handle for list reordering (only if multiple lists)
+        // Set up drag from the entire list header (only if multiple lists)
         if (canReorder)
         {
-            var gripHandle = CreateGripHandle();
-            Grid.SetColumn(gripHandle, 0);
-            headerPanel.Children.Add(gripHandle);
-            SetupListDragHandlers(headerBorder, gripHandle, listName);
+            headerBorder.Cursor = new Cursor(StandardCursorType.Hand);
+            SetupListDragHandlers(headerBorder, listName);
         }
 
         // Collapse chevron button - uses rotation animation
@@ -1095,17 +1081,15 @@ public partial class TaskListPopup : Window
 
         var grid = new Grid
         {
-            ColumnDefinitions = ColumnDefinitions.Parse("Auto,Auto,*,Auto")
+            ColumnDefinitions = ColumnDefinitions.Parse("Auto,*,Auto")
         };
 
-        // Grip handle for drag-and-drop (only shown when > 1 task in list)
+        // Set up drag from the entire task container
         var tasksInSameList = _tasks.Count(t => t.ListName == task.ListName);
         if (tasksInSameList > 1)
         {
-            var gripHandle = CreateGripHandle();
-            Grid.SetColumn(gripHandle, 0);
-            grid.Children.Add(gripHandle);
-            SetupTaskDragHandlers(border, gripHandle, task);
+            border.Cursor = new Cursor(StandardCursorType.Hand);
+            SetupTaskDragHandlers(border, task);
         }
 
         // Checkbox
@@ -1115,7 +1099,7 @@ public partial class TaskListPopup : Window
             Margin = new Thickness(0, 0, 10, 0),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top
         };
-        Grid.SetColumn(checkbox, 1);
+        Grid.SetColumn(checkbox, 0);
         checkbox.Click += (_, _) => OnCheckboxClicked(task, checkbox);
         grid.Children.Add(checkbox);
 
@@ -1124,7 +1108,7 @@ public partial class TaskListPopup : Window
         {
             Spacing = 2
         };
-        Grid.SetColumn(contentPanel, 2);
+        Grid.SetColumn(contentPanel, 1);
 
         // Title row with priority indicator - use Grid to constrain width and enable wrapping
         var titleRow = new Grid
@@ -1269,7 +1253,7 @@ public partial class TaskListPopup : Window
         menuBtn.ContextMenu = contextMenu;
         menuBtn.Click += (_, _) => contextMenu.Open(menuBtn);
 
-        Grid.SetColumn(menuBtn, 3);
+        Grid.SetColumn(menuBtn, 2);
         grid.Children.Add(menuBtn);
 
         border.Child = grid;
@@ -1567,7 +1551,6 @@ public partial class TaskListPopup : Window
     private Border? _pendingDragBorder;
     private TodoTaskViewModel? _pendingDragTask;
     private string? _pendingDragListName;
-    private Panel? _pendingGripHandle;
 
     // Active drag state (after threshold is crossed)
     private Border? _draggedBorder;
@@ -1586,85 +1569,23 @@ public partial class TaskListPopup : Window
     private Canvas? _dragCanvas;
 
     /// <summary>
-    /// Creates a 6-dot grip handle for drag-and-drop reordering.
-    /// The handle has an expanded hit area for easier targeting.
-    /// </summary>
-    private Panel CreateGripHandle()
-    {
-        // Outer container with expanded hit area
-        var outerPanel = new Panel
-        {
-            Width = 20, // Larger hit area
-            MinHeight = 24,
-            Background = Brushes.Transparent, // Transparent but still captures input
-            Margin = new Thickness(0, 0, 4, 0),
-            Classes = { "gripHandle" }
-        };
-
-        // Inner panel with the visual dots
-        var dotsPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Vertical,
-            Spacing = 2,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
-        };
-
-        // Create 3 rows of 2 dots each
-        for (var row = 0; row < 3; row++)
-        {
-            var dotRow = new StackPanel
-            {
-                Orientation = Avalonia.Layout.Orientation.Horizontal,
-                Spacing = 2,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
-            };
-
-            for (var col = 0; col < 2; col++)
-            {
-                var dot = new Border
-                {
-                    Width = 3,
-                    Height = 3,
-                    CornerRadius = new CornerRadius(1.5),
-                    Background = new SolidColorBrush(Color.Parse("#666")),
-                    Classes = { "gripDot" }
-                };
-                dotRow.Children.Add(dot);
-            }
-
-            dotsPanel.Children.Add(dotRow);
-        }
-
-        outerPanel.Children.Add(dotsPanel);
-        return outerPanel;
-    }
-
-    /// <summary>
     /// Sets up smooth drag handlers for a task item using pointer capture and ghost element.
     /// </summary>
-    private void SetupTaskDragHandlers(Border border, Panel gripHandle, TodoTaskViewModel task)
+    private void SetupTaskDragHandlers(Border border, TodoTaskViewModel task)
     {
         var capturedGeneration = _generationId;
 
-        gripHandle.PointerPressed += (sender, e) =>
+        border.PointerPressed += (sender, e) =>
         {
             if (capturedGeneration != _generationId) return;
-            if (_isDragging) return; // Already dragging
-            if (!e.GetCurrentPoint(gripHandle).Properties.IsLeftButtonPressed) return;
-
-            // Visual feedback - highlight the grip dots while pressed
-            foreach (var dot in gripHandle.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("gripDot")))
-            {
-                dot.Background = new SolidColorBrush(Color.Parse("#0A84FF"));
-            }
+            if (_isDragging) return;
+            if (!e.GetCurrentPoint(border).Properties.IsLeftButtonPressed) return;
 
             // Set up pending drag - window handlers will detect threshold and start
             _dragStartPoint = e.GetPosition(this);
             _pendingDragBorder = border;
             _pendingDragTask = task;
             _pendingDragListName = null;
-            _pendingGripHandle = gripHandle;
             e.Handled = true;
         };
     }
@@ -1882,28 +1803,21 @@ public partial class TaskListPopup : Window
     /// <summary>
     /// Sets up smooth drag handlers for a list header using pointer capture and ghost element.
     /// </summary>
-    private void SetupListDragHandlers(Border border, Panel gripHandle, string listName)
+    private void SetupListDragHandlers(Border border, string listName)
     {
         var capturedGeneration = _generationId;
 
-        gripHandle.PointerPressed += (sender, e) =>
+        border.PointerPressed += (sender, e) =>
         {
             if (capturedGeneration != _generationId) return;
             if (_isDragging) return;
-            if (!e.GetCurrentPoint(gripHandle).Properties.IsLeftButtonPressed) return;
-
-            // Visual feedback - highlight the grip dots while pressed
-            foreach (var dot in gripHandle.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("gripDot")))
-            {
-                dot.Background = new SolidColorBrush(Color.Parse("#0A84FF"));
-            }
+            if (!e.GetCurrentPoint(border).Properties.IsLeftButtonPressed) return;
 
             // Set up pending drag - window handlers will detect threshold and start
             _dragStartPoint = e.GetPosition(this);
             _pendingDragBorder = border;
             _pendingDragTask = null;
             _pendingDragListName = listName;
-            _pendingGripHandle = gripHandle;
             e.Handled = true;
         };
     }
