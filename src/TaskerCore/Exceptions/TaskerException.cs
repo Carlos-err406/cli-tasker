@@ -34,3 +34,9 @@ public class TaskNotFoundException : TaskerException
     public TaskNotFoundException(string taskId)
         : base($"Could not find task with id '{taskId}'.") { }
 }
+
+public class BackupNotFoundException : TaskerException
+{
+    public BackupNotFoundException(string message)
+        : base(message) { }
+}

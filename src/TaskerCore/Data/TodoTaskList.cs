@@ -1,6 +1,7 @@
 namespace TaskerCore.Data;
 
 using System.Text.Json;
+using TaskerCore.Backup;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
 using TaskerCore.Results;
@@ -933,13 +934,25 @@ public class TodoTaskList
     private void Save()
     {
         StoragePaths.Current.EnsureDirectory();
+
+        // Create backup BEFORE writing (captures current state)
+        // Backup failure should not block save
+        try { BackupManager.CreateBackup(); }
+        catch { /* Ignore backup failures */ }
+
         lock (SaveLock)
         {
+            // Atomic write for tasks: write to temp, then rename
+            var tasksTempPath = StoragePaths.Current.AllTasksPath + ".tmp";
             var tasksJson = JsonSerializer.Serialize(TaskLists);
-            File.WriteAllText(StoragePaths.Current.AllTasksPath, tasksJson);
+            File.WriteAllText(tasksTempPath, tasksJson);
+            File.Move(tasksTempPath, StoragePaths.Current.AllTasksPath, overwrite: true);
 
+            // Atomic write for trash
+            var trashTempPath = StoragePaths.Current.AllTrashPath + ".tmp";
             var trashJson = JsonSerializer.Serialize(TrashLists);
-            File.WriteAllText(StoragePaths.Current.AllTrashPath, trashJson);
+            File.WriteAllText(trashTempPath, trashJson);
+            File.Move(trashTempPath, StoragePaths.Current.AllTrashPath, overwrite: true);
         }
     }
 

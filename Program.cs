@@ -41,6 +41,7 @@ class Program
         rootCommand.Add(ListsCommand.CreateListsCommand());
         rootCommand.Add(TrashCommand.CreateTrashCommand(listOption));
         rootCommand.Add(SystemCommand.CreateSystemCommand());
+        rootCommand.Add(BackupCommand.CreateBackupCommand());
         var (undoCmd, redoCmd, historyCmd) = UndoCommand.CreateUndoCommands();
         rootCommand.Add(undoCmd);
         rootCommand.Add(redoCmd);
