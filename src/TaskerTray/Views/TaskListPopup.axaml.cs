@@ -40,6 +40,8 @@ public partial class TaskListPopup : Window
     private int _showCount; // Incremented each time window is shown, used to ignore stale LostFocus events
     private bool _inlineAddSubmitted; // Prevents double submission between Deactivated and LostFocus
     private string? _newlyAddedTaskId; // Track newly added task for entrance animation
+    private string? _searchQuery; // Current search filter text
+    private DispatcherTimer? _searchDebounceTimer;
     private Dictionary<string, Border> _taskBorders = new(); // Track task borders for animations
     private Dictionary<string, CheckBox> _taskCheckboxes = new();
     private Dictionary<string, TextBlock> _taskTitles = new();
@@ -62,6 +64,8 @@ public partial class TaskListPopup : Window
         // Window-level pointer handlers for smooth drag tracking
         PointerMoved += OnWindowPointerMoved;
         PointerReleased += OnWindowPointerReleased;
+
+        SearchTextBox.TextChanged += OnSearchTextChanged;
 
         LoadLists();
         RefreshTasks();
@@ -160,10 +164,22 @@ public partial class TaskListPopup : Window
                 CancelInlineEdit();
                 e.Handled = true;
             }
+            else if (!string.IsNullOrEmpty(SearchTextBox.Text))
+            {
+                SearchTextBox.Text = "";
+                SearchTextBox.Focus();
+                e.Handled = true;
+            }
             else
             {
                 _ = HideWithAnimation();
             }
+        }
+        else if (e.Key == Key.K && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+        {
+            SearchTextBox.Focus();
+            SearchTextBox.SelectAll();
+            e.Handled = true;
         }
         else if (e.Key == Key.W && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
         {
@@ -219,6 +235,23 @@ public partial class TaskListPopup : Window
         // Lists are loaded dynamically when dropdown is clicked
     }
 
+    private void OnSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        _searchDebounceTimer?.Stop();
+
+        var text = SearchTextBox.Text;
+        var query = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+        _searchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _searchDebounceTimer.Tick += (_, _) =>
+        {
+            _searchDebounceTimer!.Stop();
+            _searchQuery = query;
+            DoRefreshTasks();
+        };
+        _searchDebounceTimer.Start();
+    }
+
     public void RefreshTasks()
     {
         // Queue refresh if drag operation is in progress OR pending (user pressed but hasn't moved threshold)
@@ -233,8 +266,16 @@ public partial class TaskListPopup : Window
 
     private void DoRefreshTasks()
     {
-        var taskList = new TodoTaskList(_currentListFilter);
-        var tasks = taskList.GetSortedTasks();
+        List<TodoTask> tasks;
+        if (_searchQuery != null)
+        {
+            tasks = TodoTaskList.SearchTasks(_searchQuery);
+        }
+        else
+        {
+            var taskList = new TodoTaskList(_currentListFilter);
+            tasks = taskList.GetSortedTasks();
+        }
 
         _tasks.Clear();
         foreach (var task in tasks)
@@ -263,12 +304,16 @@ public partial class TaskListPopup : Window
 
         if (_tasks.Count == 0 && _addingToList == null && !_creatingNewList)
         {
+            var message = _searchQuery != null
+                ? $"No results for \"{_searchQuery}\""
+                : "No tasks";
             var emptyText = new TextBlock
             {
-                Text = "No tasks",
+                Text = message,
                 Foreground = new SolidColorBrush(Color.Parse("#666")),
+                FontSize = 13,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                Margin = new Thickness(0, 20, 0, 0)
+                Margin = new Thickness(0, 40, 0, 0)
             };
             TaskListPanel.Children.Add(emptyText);
             return;
@@ -283,6 +328,10 @@ public partial class TaskListPopup : Window
 
             foreach (var listName in allListNames)
             {
+                // During search, skip lists with no matching tasks
+                if (_searchQuery != null && !tasksByList.ContainsKey(listName))
+                    continue;
+
                 var isCollapsed = TodoTaskList.IsListCollapsed(listName);
                 AddListHeader(listName, isCollapsed);
 
@@ -1458,6 +1507,11 @@ public partial class TaskListPopup : Window
 
     private void UpdateStatus()
     {
+        if (_searchQuery != null)
+        {
+            StatusText.Text = $"{_tasks.Count} matching";
+            return;
+        }
         var total = _tasks.Count;
         var pending = _tasks.Count(t => t.Status != TaskStatus.Done);
         var wip = _tasks.Count(t => t.Status == TaskStatus.InProgress);
@@ -1535,6 +1589,9 @@ public partial class TaskListPopup : Window
     public void ShowAtPosition(PixelPoint position)
     {
         _showCount++; // Increment to invalidate any pending LostFocus handlers from previous show
+        SearchTextBox.Text = "";
+        _searchQuery = null;
+        _searchDebounceTimer?.Stop();
         Position = position;
         CancelInlineEdit();
         TaskerServices.Default.Undo.ReloadHistory();
