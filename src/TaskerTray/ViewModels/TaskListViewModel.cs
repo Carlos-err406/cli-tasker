@@ -51,13 +51,7 @@ public partial class TaskListViewModel : ObservableObject
     private void LoadTasks()
     {
         var taskList = new TodoTaskList(CurrentListFilter);
-        var allTasks = taskList.GetAllTasks();
-
-        // Sort: unchecked first, then by creation date descending
-        var sortedTasks = allTasks
-            .OrderBy(t => t.IsChecked)
-            .ThenByDescending(t => t.CreatedAt)
-            .ToList();
+        var sortedTasks = taskList.GetSortedTasks();
 
         // Update counts
         TotalCount = sortedTasks.Count;

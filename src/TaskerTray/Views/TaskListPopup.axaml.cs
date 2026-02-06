@@ -199,7 +199,7 @@ public partial class TaskListPopup : Window
     private void DoRefreshTasks()
     {
         var taskList = new TodoTaskList(_currentListFilter);
-        var tasks = taskList.GetAllTasks();
+        var tasks = taskList.GetSortedTasks();
 
         _tasks.Clear();
         foreach (var task in tasks)

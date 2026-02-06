@@ -75,7 +75,7 @@ public class TuiApp
     private List<TodoTask> LoadTasks()
     {
         var taskList = new TodoTaskList(_state.CurrentList);
-        var tasks = taskList.GetAllTasks();
+        var tasks = taskList.GetSortedTasks();
 
         // Apply search filter
         if (!string.IsNullOrEmpty(_state.SearchQuery))
