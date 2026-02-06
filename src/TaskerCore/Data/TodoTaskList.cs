@@ -6,6 +6,7 @@ using TaskerCore.Models;
 using TaskerCore.Parsing;
 using TaskerCore.Results;
 using TaskerCore.Undo.Commands;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 public class TodoTaskList
 {
@@ -50,7 +51,7 @@ public class TodoTaskList
         return new TodoTask(
             Id: reader.GetString(0),
             Description: reader.GetString(1),
-            IsChecked: reader.GetInt32(2) != 0,
+            Status: (TaskStatus)reader.GetInt32(2),
             CreatedAt: DateTime.Parse(reader.GetString(3)),
             ListName: reader.GetString(4),
             DueDate: dueDate,
@@ -60,7 +61,7 @@ public class TodoTaskList
     }
 
     private static string TaskSelectColumns =>
-        "id, description, is_checked, created_at, list_name, due_date, priority, tags";
+        "id, description, status, created_at, list_name, due_date, priority, tags";
 
     // --- Query helpers ---
 
@@ -98,19 +99,28 @@ public class TodoTaskList
     public List<TodoTask> GetAllTasks() => GetFilteredTasks();
 
     /// <summary>
-    /// Gets tasks sorted for display: unchecked first (by priority, then due date), then checked.
+    /// Gets tasks sorted for display: in-progress first, then pending, then done.
+    /// Within each group: by priority, then due date.
     /// </summary>
-    public List<TodoTask> GetSortedTasks(bool? filterChecked = null, Priority? filterPriority = null, bool? filterOverdue = null)
+    public List<TodoTask> GetSortedTasks(TaskStatus? filterStatus = null, bool? filterChecked = null, Priority? filterPriority = null, bool? filterOverdue = null)
     {
         var tasks = GetFilteredTasks();
         var today = DateOnly.FromDateTime(DateTime.Today);
 
-        IEnumerable<TodoTask> filteredTasks = filterChecked switch
+        IEnumerable<TodoTask> filteredTasks = tasks;
+
+        // Explicit status filter
+        if (filterStatus.HasValue)
         {
-            true => tasks.Where(td => td.IsChecked),
-            false => tasks.Where(td => !td.IsChecked),
-            null => tasks
-        };
+            filteredTasks = filteredTasks.Where(td => td.Status == filterStatus.Value);
+        }
+        // Backward compat: -c = done, -u = pending + in-progress
+        else if (filterChecked.HasValue)
+        {
+            filteredTasks = filterChecked.Value
+                ? filteredTasks.Where(td => td.Status == TaskStatus.Done)
+                : filteredTasks.Where(td => td.Status != TaskStatus.Done);
+        }
 
         if (filterPriority.HasValue)
             filteredTasks = filteredTasks.Where(t => t.Priority == filterPriority.Value);
@@ -119,12 +129,23 @@ public class TodoTaskList
             filteredTasks = filteredTasks.Where(t => t.DueDate.HasValue && t.DueDate.Value < today);
 
         return filteredTasks
-            .OrderBy(td => td.IsChecked)
+            .OrderBy(td => StatusSortOrder(td.Status))
             .ThenBy(td => td.Priority.HasValue ? (int)td.Priority : 99)
             .ThenBy(td => GetDueDateSortOrder(td.DueDate, today))
             .ThenByDescending(td => td.CreatedAt)
             .ToList();
     }
+
+    /// <summary>
+    /// Sort order for status: in-progress (0) first, pending (1), done (2) last.
+    /// </summary>
+    private static int StatusSortOrder(TaskStatus status) => status switch
+    {
+        TaskStatus.InProgress => 0,
+        TaskStatus.Pending => 1,
+        TaskStatus.Done => 2,
+        _ => 1
+    };
 
     private static int GetDueDateSortOrder(DateOnly? dueDate, DateOnly today)
     {
@@ -147,12 +168,12 @@ public class TodoTaskList
             : null;
 
         _db.Execute("""
-            INSERT INTO tasks (id, description, is_checked, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
-            VALUES (@id, @desc, @checked, @created, @list, @due, @priority, @tags, @trashed, @order)
+            INSERT INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
+            VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, @trashed, @order)
             """,
             ("@id", task.Id),
             ("@desc", task.Description),
-            ("@checked", task.IsChecked ? 1 : 0),
+            ("@status", (int)task.Status),
             ("@created", task.CreatedAt.ToString("o")),
             ("@list", task.ListName),
             ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
@@ -169,13 +190,13 @@ public class TodoTaskList
             : null;
 
         _db.Execute("""
-            UPDATE tasks SET description = @desc, is_checked = @checked, list_name = @list,
+            UPDATE tasks SET description = @desc, status = @status, list_name = @list,
                 due_date = @due, priority = @priority, tags = @tags
             WHERE id = @id
             """,
             ("@id", task.Id),
             ("@desc", task.Description),
-            ("@checked", task.IsChecked ? 1 : 0),
+            ("@status", (int)task.Status),
             ("@list", task.ListName),
             ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
             ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
@@ -228,7 +249,7 @@ public class TodoTaskList
         return QuerySingleTask("WHERE id = @id AND is_trashed = 0", ("@id", taskId));
     }
 
-    public TaskResult CheckTask(string taskId, bool recordUndo = true)
+    public TaskResult SetStatus(string taskId, TaskStatus status, bool recordUndo = true)
     {
         var todoTask = GetTodoTaskById(taskId);
         if (todoTask == null)
@@ -236,52 +257,53 @@ public class TodoTaskList
             return new TaskResult.NotFound(taskId);
         }
 
+        if (todoTask.Status == status)
+        {
+            return new TaskResult.NoChange($"Task {taskId} is already {StatusLabel(status)}");
+        }
+
         if (recordUndo)
         {
-            var cmd = new CheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
+            var cmd = new SetStatusCommand
+            {
+                TaskId = taskId,
+                OldStatus = todoTask.Status,
+                NewStatus = status
+            };
             _services.Undo.RecordCommand(cmd);
         }
 
         CreateBackup();
-        var checkedTask = todoTask.Check();
-        UpdateTask(checkedTask);
-        // Move to top of sort order
-        BumpSortOrder(taskId, checkedTask.ListName);
+        var updatedTask = todoTask.WithStatus(status);
+        UpdateTask(updatedTask);
 
         if (recordUndo)
         {
             _services.Undo.SaveHistory();
         }
 
-        return new TaskResult.Success($"Checked task: {taskId}");
+        return new TaskResult.Success($"Set {taskId} to {StatusLabel(status)}");
     }
 
-    public TaskResult UncheckTask(string taskId, bool recordUndo = true)
+    /// <summary>
+    /// Backward compat: check = set to Done.
+    /// </summary>
+    public TaskResult CheckTask(string taskId, bool recordUndo = true) =>
+        SetStatus(taskId, TaskStatus.Done, recordUndo);
+
+    /// <summary>
+    /// Backward compat: uncheck = set to Pending.
+    /// </summary>
+    public TaskResult UncheckTask(string taskId, bool recordUndo = true) =>
+        SetStatus(taskId, TaskStatus.Pending, recordUndo);
+
+    private static string StatusLabel(TaskStatus status) => status switch
     {
-        var todoTask = GetTodoTaskById(taskId);
-        if (todoTask == null)
-        {
-            return new TaskResult.NotFound(taskId);
-        }
-
-        if (recordUndo)
-        {
-            var cmd = new UncheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
-            _services.Undo.RecordCommand(cmd);
-        }
-
-        CreateBackup();
-        var uncheckedTask = todoTask.UnCheck();
-        UpdateTask(uncheckedTask);
-        BumpSortOrder(taskId, uncheckedTask.ListName);
-
-        if (recordUndo)
-        {
-            _services.Undo.SaveHistory();
-        }
-
-        return new TaskResult.Success($"Unchecked task: {taskId}");
-    }
+        TaskStatus.Pending => "pending",
+        TaskStatus.InProgress => "in-progress",
+        TaskStatus.Done => "done",
+        _ => status.ToString()
+    };
 
     /// <summary>
     /// Moves a task to the top of its list's sort order.
@@ -380,11 +402,11 @@ public class TodoTaskList
         return new BatchTaskResult { Results = results };
     }
 
-    public BatchTaskResult CheckTasks(string[] taskIds, bool recordUndo = true)
+    public BatchTaskResult SetStatuses(string[] taskIds, TaskStatus status, bool recordUndo = true)
     {
         if (recordUndo)
         {
-            _services.Undo.BeginBatch($"Check {taskIds.Length} tasks");
+            _services.Undo.BeginBatch($"Set {taskIds.Length} tasks to {StatusLabel(status)}");
         }
 
         CreateBackup();
@@ -402,16 +424,26 @@ public class TodoTaskList
                     continue;
                 }
 
+                if (todoTask.Status == status)
+                {
+                    results.Add(new TaskResult.NoChange($"Task {taskId} is already {StatusLabel(status)}"));
+                    continue;
+                }
+
                 if (recordUndo)
                 {
-                    var cmd = new CheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
+                    var cmd = new SetStatusCommand
+                    {
+                        TaskId = taskId,
+                        OldStatus = todoTask.Status,
+                        NewStatus = status
+                    };
                     _services.Undo.RecordCommand(cmd);
                 }
 
-                var checkedTask = todoTask.Check();
-                UpdateTask(checkedTask);
-                BumpSortOrder(taskId, checkedTask.ListName);
-                results.Add(new TaskResult.Success($"Checked task: {taskId}"));
+                var updatedTask = todoTask.WithStatus(status);
+                UpdateTask(updatedTask);
+                results.Add(new TaskResult.Success($"Set {taskId} to {StatusLabel(status)}"));
             }
 
             transaction.Commit();
@@ -431,56 +463,17 @@ public class TodoTaskList
         return new BatchTaskResult { Results = results };
     }
 
-    public BatchTaskResult UncheckTasks(string[] taskIds, bool recordUndo = true)
-    {
-        if (recordUndo)
-        {
-            _services.Undo.BeginBatch($"Uncheck {taskIds.Length} tasks");
-        }
+    /// <summary>
+    /// Backward compat: batch check = set to Done.
+    /// </summary>
+    public BatchTaskResult CheckTasks(string[] taskIds, bool recordUndo = true) =>
+        SetStatuses(taskIds, TaskStatus.Done, recordUndo);
 
-        CreateBackup();
-        var results = new List<TaskResult>();
-
-        using var transaction = _db.BeginTransaction();
-        try
-        {
-            foreach (var taskId in taskIds)
-            {
-                var todoTask = GetTodoTaskById(taskId);
-                if (todoTask == null)
-                {
-                    results.Add(new TaskResult.NotFound(taskId));
-                    continue;
-                }
-
-                if (recordUndo)
-                {
-                    var cmd = new UncheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
-                    _services.Undo.RecordCommand(cmd);
-                }
-
-                var uncheckedTask = todoTask.UnCheck();
-                UpdateTask(uncheckedTask);
-                BumpSortOrder(taskId, uncheckedTask.ListName);
-                results.Add(new TaskResult.Success($"Unchecked task: {taskId}"));
-            }
-
-            transaction.Commit();
-        }
-        catch
-        {
-            transaction.Rollback();
-            throw;
-        }
-
-        if (recordUndo)
-        {
-            _services.Undo.EndBatch();
-            _services.Undo.SaveHistory();
-        }
-
-        return new BatchTaskResult { Results = results };
-    }
+    /// <summary>
+    /// Backward compat: batch uncheck = set to Pending.
+    /// </summary>
+    public BatchTaskResult UncheckTasks(string[] taskIds, bool recordUndo = true) =>
+        SetStatuses(taskIds, TaskStatus.Pending, recordUndo);
 
     public int ClearTasks(bool recordUndo = true)
     {
@@ -726,8 +719,9 @@ public class TodoTaskList
         return new TaskStats
         {
             Total = tasks.Count,
-            Checked = tasks.Count(t => t.IsChecked),
-            Unchecked = tasks.Count(t => !t.IsChecked),
+            Pending = tasks.Count(t => t.Status == TaskStatus.Pending),
+            InProgress = tasks.Count(t => t.Status == TaskStatus.InProgress),
+            Done = tasks.Count(t => t.Status == TaskStatus.Done),
             Trash = trash.Count
         };
     }
@@ -855,12 +849,12 @@ public class TodoTaskList
             {
                 var tagsJson = task.Tags is { Length: > 0 } ? JsonSerializer.Serialize(task.Tags) : null;
                 db.Execute("""
-                    INSERT OR IGNORE INTO tasks (id, description, is_checked, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
-                    VALUES (@id, @desc, @checked, @created, @list, @due, @priority, @tags, 0, @order)
+                    INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
+                    VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 0, @order)
                     """,
                     ("@id", task.Id),
                     ("@desc", task.Description),
-                    ("@checked", task.IsChecked ? 1 : 0),
+                    ("@status", (int)task.Status),
                     ("@created", task.CreatedAt.ToString("o")),
                     ("@list", task.ListName),
                     ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
@@ -876,12 +870,12 @@ public class TodoTaskList
                 {
                     var tagsJson = task.Tags is { Length: > 0 } ? JsonSerializer.Serialize(task.Tags) : null;
                     db.Execute("""
-                        INSERT OR IGNORE INTO tasks (id, description, is_checked, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
-                        VALUES (@id, @desc, @checked, @created, @list, @due, @priority, @tags, 1, @order)
+                        INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
+                        VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 1, @order)
                         """,
                         ("@id", task.Id),
                         ("@desc", task.Description),
-                        ("@checked", task.IsChecked ? 1 : 0),
+                        ("@status", (int)task.Status),
                         ("@created", task.CreatedAt.ToString("o")),
                         ("@list", task.ListName),
                         ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),

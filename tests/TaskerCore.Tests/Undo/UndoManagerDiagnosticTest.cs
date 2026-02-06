@@ -2,6 +2,9 @@ namespace TaskerCore.Tests.Undo;
 
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskerCore.Results;
+using TaskerCore.Undo;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 [Collection("IsolatedTests")]
 public class UndoManagerDiagnosticTest : IDisposable
@@ -54,6 +57,97 @@ public class UndoManagerDiagnosticTest : IDisposable
         // Step 3: Check history command returns the operations
         var histories = _services.Undo.UndoHistory;
         Assert.Equal(2, histories.Count);
+    }
+
+    [Fact]
+    public void UndoDelete_RestoresTaskFromTrash()
+    {
+        // Arrange: add then delete a task
+        var task = TodoTask.CreateTodoTask("undo delete test", "tasks");
+        var taskList = new TodoTaskList(_services, "tasks");
+        taskList.AddTodoTask(task);
+        taskList.DeleteTask(task.Id);
+
+        // Task should be in trash, not in active list
+        Assert.Null(taskList.GetTodoTaskById(task.Id));
+
+        // Act: undo the delete
+        _services.Undo.Undo();
+
+        // Assert: task is restored
+        var restored = taskList.GetTodoTaskById(task.Id);
+        Assert.NotNull(restored);
+        Assert.Equal("undo delete test", restored.Description);
+    }
+
+    [Fact]
+    public void UndoDelete_AfterTrashCleared_ReInsertsTask()
+    {
+        // Arrange: add, delete, then clear trash
+        var task = TodoTask.CreateTodoTask("undo after clear", "tasks");
+        var taskList = new TodoTaskList(_services, "tasks");
+        taskList.AddTodoTask(task);
+        taskList.DeleteTask(task.Id);
+        taskList.ClearTrash();
+
+        // Task is gone entirely
+        Assert.Null(taskList.GetTodoTaskById(task.Id));
+
+        // Act: undo the delete — should re-insert from captured state
+        _services.Undo.Undo();
+
+        // Assert: task is restored
+        var restored = taskList.GetTodoTaskById(task.Id);
+        Assert.NotNull(restored);
+        Assert.Equal("undo after clear", restored.Description);
+    }
+
+    [Fact]
+    public void UndoCheck_RestoresOriginalStatus()
+    {
+        // Arrange: add a task, then check it
+        var task = TodoTask.CreateTodoTask("undo check test", "tasks");
+        var taskList = new TodoTaskList(_services, "tasks");
+        taskList.AddTodoTask(task);
+
+        // Check the task (same path as `tasker check <id>`)
+        var checkResult = taskList.CheckTasks([task.Id]);
+        Assert.Single(checkResult.Results);
+        Assert.IsType<TaskResult.Success>(checkResult.Results[0]);
+
+        // Verify task is now Done
+        var checkedTask = taskList.GetTodoTaskById(task.Id);
+        Assert.Equal(TaskStatus.Done, checkedTask!.Status);
+
+        // Act: undo the check
+        var undoDesc = _services.Undo.Undo();
+        Assert.NotNull(undoDesc);
+
+        // Assert: task is back to Pending
+        var restored = taskList.GetTodoTaskById(task.Id);
+        Assert.NotNull(restored);
+        Assert.Equal(TaskStatus.Pending, restored.Status);
+    }
+
+    [Fact]
+    public void UndoCheck_PersistsAcrossProcesses()
+    {
+        // Simulates: tasker check <id> in one process, tasker undo in another
+        var task = TodoTask.CreateTodoTask("cross-process undo", "tasks");
+        var taskList = new TodoTaskList(_services, "tasks");
+        taskList.AddTodoTask(task);
+        taskList.CheckTasks([task.Id]);
+
+        // Simulate new process: reload undo history from SQLite
+        _services.Undo.ReloadHistory();
+
+        // Act: undo should revert the check, not the add
+        _services.Undo.Undo();
+
+        // Assert: task still exists with original status
+        var restored = taskList.GetTodoTaskById(task.Id);
+        Assert.NotNull(restored);
+        Assert.Equal(TaskStatus.Pending, restored.Status);
     }
 
     [Fact]

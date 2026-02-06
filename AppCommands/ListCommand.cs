@@ -6,6 +6,7 @@ using TaskerCore.Config;
 using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 static class ListCommand
 {
@@ -83,7 +84,7 @@ static class ListCommand
                 {
                     var taskList = new TodoTaskList(name);
                     Output.Markup($"[bold underline]{name}[/]");
-                    DisplayTasks(taskList.GetSortedTasks(filterChecked, filterPriority, filterOverdue), filterChecked);
+                    DisplayTasks(taskList.GetSortedTasks(filterChecked: filterChecked, filterPriority: filterPriority, filterOverdue: filterOverdue), filterChecked);
                     Output.Info("");
                 }
             }
@@ -91,7 +92,7 @@ static class ListCommand
             {
                 // Filter to specific list
                 var todoTaskList = new TodoTaskList(listName);
-                DisplayTasks(todoTaskList.GetSortedTasks(filterChecked, filterPriority, filterOverdue), filterChecked);
+                DisplayTasks(todoTaskList.GetSortedTasks(filterChecked: filterChecked, filterPriority: filterPriority, filterOverdue: filterOverdue), filterChecked);
             }
         }));
         return listCommand;
@@ -121,7 +122,12 @@ static class ListCommand
                 ? string.Concat(lines.Skip(1).Select(l => $"\n{indent}[dim]{Markup.Escape(l)}[/]"))
                 : "";
 
-            var checkbox = td.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
+            var checkbox = td.Status switch
+            {
+                TaskStatus.Done => "[green][[x]][/]",
+                TaskStatus.InProgress => "[yellow][[-]][/]",
+                _ => "[grey][[ ]][/]"
+            };
             var taskId = $"[dim]({td.Id})[/]";
             var priority = Output.FormatPriority(td.Priority);
             var dueDate = Output.FormatDueDate(td.DueDate);

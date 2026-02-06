@@ -72,7 +72,7 @@ public sealed class TaskerDb : IDisposable
             CREATE TABLE IF NOT EXISTS tasks (
                 id TEXT PRIMARY KEY,
                 description TEXT NOT NULL,
-                is_checked INTEGER DEFAULT 0,
+                status INTEGER DEFAULT 0,
                 created_at TEXT NOT NULL,
                 list_name TEXT NOT NULL REFERENCES lists(name) ON UPDATE CASCADE ON DELETE CASCADE,
                 due_date TEXT,
@@ -96,13 +96,75 @@ public sealed class TaskerDb : IDisposable
 
             CREATE INDEX IF NOT EXISTS idx_tasks_list_name ON tasks(list_name);
             CREATE INDEX IF NOT EXISTS idx_tasks_is_trashed ON tasks(is_trashed);
-            CREATE INDEX IF NOT EXISTS idx_tasks_sort ON tasks(is_checked, priority, due_date, created_at);
+            CREATE INDEX IF NOT EXISTS idx_tasks_sort ON tasks(status, priority, due_date, sort_order);
             CREATE INDEX IF NOT EXISTS idx_undo_stack_type ON undo_history(stack_type);
             """;
         cmd.ExecuteNonQuery();
 
+        // Migrate from is_checked → status if upgrading from older schema
+        MigrateIsCheckedToStatus();
+
         // Ensure default list exists
         EnsureDefaultList();
+    }
+
+    /// <summary>
+    /// Migrates old is_checked column to status column for existing databases.
+    /// is_checked 0 (unchecked) → status 0 (Pending), is_checked 1 (checked) → status 2 (Done).
+    /// </summary>
+    private void MigrateIsCheckedToStatus()
+    {
+        // Check if tasks table has is_checked column (old schema)
+        var hasIsChecked = Query(
+            "PRAGMA table_info(tasks)",
+            reader => reader.GetString(1), // column name
+            []).Any(col => col == "is_checked");
+
+        if (!hasIsChecked) return;
+
+        using var tx = BeginTransaction();
+        try
+        {
+            // Recreate tasks table with status column
+            Execute("""
+                CREATE TABLE tasks_new (
+                    id TEXT PRIMARY KEY,
+                    description TEXT NOT NULL,
+                    status INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    list_name TEXT NOT NULL REFERENCES lists(name) ON UPDATE CASCADE ON DELETE CASCADE,
+                    due_date TEXT,
+                    priority INTEGER,
+                    tags TEXT,
+                    is_trashed INTEGER DEFAULT 0,
+                    sort_order INTEGER DEFAULT 0
+                )
+                """);
+            Execute("""
+                INSERT INTO tasks_new (id, description, status, created_at, list_name,
+                    due_date, priority, tags, is_trashed, sort_order)
+                SELECT id, description, CASE WHEN is_checked = 1 THEN 2 ELSE 0 END,
+                    created_at, list_name, due_date, priority, tags, is_trashed, sort_order
+                FROM tasks
+                """);
+            Execute("DROP TABLE tasks");
+            Execute("ALTER TABLE tasks_new RENAME TO tasks");
+
+            // Recreate indexes on new table
+            Execute("CREATE INDEX IF NOT EXISTS idx_tasks_list_name ON tasks(list_name)");
+            Execute("CREATE INDEX IF NOT EXISTS idx_tasks_is_trashed ON tasks(is_trashed)");
+            Execute("CREATE INDEX IF NOT EXISTS idx_tasks_sort ON tasks(status, priority, due_date, sort_order)");
+
+            // Clear undo history — old check/uncheck commands won't deserialize
+            Execute("DELETE FROM undo_history");
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 
     private void EnsureDefaultList()

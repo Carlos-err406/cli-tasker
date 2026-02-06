@@ -4,6 +4,7 @@ using Spectre.Console;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
 using TaskerCore.Utilities;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 public class TuiRenderer
 {
@@ -92,7 +93,12 @@ public class TuiRenderer
             : "";
 
         var cursor = isSelected ? "[bold blue]>[/]" : " ";
-        var checkbox = task.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
+        var checkbox = task.Status switch
+        {
+            TaskStatus.Done => "[green][[x]][/]",
+            TaskStatus.InProgress => "[yellow][[-]][/]",
+            _ => "[grey][[ ]][/]"
+        };
         var taskId = $"[dim]({task.Id})[/]";
         var priority = FormatPriority(task.Priority);
         var dueDate = FormatDueDate(task.DueDate);
@@ -108,7 +114,7 @@ public class TuiRenderer
         var firstLine = HighlightSearch(lines[0], searchQuery);
         var description = isSelected
             ? $"[bold]{firstLine}[/]"
-            : (task.IsChecked ? $"[dim strikethrough]{firstLine}[/]" : firstLine);
+            : (task.Status == TaskStatus.Done ? $"[dim strikethrough]{firstLine}[/]" : firstLine);
 
         WriteLineCleared($"{cursor}{selectionIndicator}{taskId} {priority} {checkbox} {description}{dueDate}{tags}");
         linesRendered++;
@@ -123,7 +129,7 @@ public class TuiRenderer
                     // Dimmed but NOT strikethrough when selected
                     WriteLineCleared($"{indent}[dim]{continuationLine}[/]");
                 }
-                else if (task.IsChecked)
+                else if (task.Status == TaskStatus.Done)
                 {
                     WriteLineCleared($"{indent}[dim strikethrough]{continuationLine}[/]");
                 }
@@ -222,7 +228,7 @@ public class TuiRenderer
 
         var hints = state.Mode switch
         {
-            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:check [dim]x[/]:del [dim]1/2/3[/]:priority [dim]d[/]:due [dim]z[/]:undo [dim]a[/]:add [dim]q[/]:quit",
+            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:cycle [dim]x[/]:del [dim]1/2/3[/]:priority [dim]d[/]:due [dim]z[/]:undo [dim]a[/]:add [dim]q[/]:quit",
             TuiMode.Search => "[dim]type[/]:filter [dim]enter[/]:done [dim]esc[/]:clear",
             TuiMode.MultiSelect => "[dim]space[/]:toggle [dim]x[/]:del [dim]c[/]:check [dim]u[/]:uncheck [dim]esc[/]:exit",
             _ => ""

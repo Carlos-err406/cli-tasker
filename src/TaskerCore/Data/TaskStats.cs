@@ -6,7 +6,8 @@ namespace TaskerCore.Data;
 public record TaskStats
 {
     public int Total { get; init; }
-    public int Checked { get; init; }
-    public int Unchecked { get; init; }
+    public int Pending { get; init; }
+    public int InProgress { get; init; }
+    public int Done { get; init; }
     public int Trash { get; init; }
 }

@@ -4,6 +4,7 @@ using System.CommandLine;
 using System.Text.Json;
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 static class GetCommand
 {
@@ -62,7 +63,13 @@ static class GetCommand
         {
             id = task.Id,
             description = task.Description,
-            isChecked = task.IsChecked,
+            status = task.Status switch
+            {
+                TaskStatus.Pending => "pending",
+                TaskStatus.InProgress => "in-progress",
+                TaskStatus.Done => "done",
+                _ => "pending"
+            },
             priority = task.Priority?.ToString().ToLower(),
             dueDate = task.DueDate?.ToString("yyyy-MM-dd"),
             tags = task.Tags,
@@ -74,7 +81,12 @@ static class GetCommand
 
     private static void OutputHumanReadable(TodoTask task)
     {
-        var checkbox = task.IsChecked ? "[[x]]" : "[[ ]]"; // Escape brackets for Spectre.Console
+        var checkbox = task.Status switch
+        {
+            TaskStatus.Done => "[[x]]",
+            TaskStatus.InProgress => "[[-]]",
+            _ => "[[ ]]"
+        };
         var priority = task.Priority.HasValue ? task.Priority.Value.ToString() : "-";
         var dueDate = task.DueDate.HasValue ? task.DueDate.Value.ToString("yyyy-MM-dd") : "-";
         var tags = task.Tags?.Length > 0 ? string.Join(" ", task.Tags.Select(t => $"#{t}")) : "-";

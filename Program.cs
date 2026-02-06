@@ -40,6 +40,9 @@ class Program
         var (checkCommand, uncheckCommand) = CheckCommand.CreateCheckCommands(listOption);
         rootCommand.Add(checkCommand);
         rootCommand.Add(uncheckCommand);
+        var (statusCmd, wipCmd) = StatusCommand.CreateStatusCommands();
+        rootCommand.Add(statusCmd);
+        rootCommand.Add(wipCmd);
         rootCommand.Add(RenameCommand.CreateRenameCommand(listOption));
         rootCommand.Add(GetCommand.CreateGetCommand());
         rootCommand.Add(MoveCommand.CreateMoveCommand());

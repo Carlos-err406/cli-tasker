@@ -2,6 +2,7 @@ namespace cli_tasker.Tui;
 
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 public class TuiApp
 {
@@ -9,6 +10,7 @@ public class TuiApp
     private readonly TuiRenderer _renderer = new();
     private readonly TuiKeyHandler _keyHandler;
     private bool _running = true;
+    private List<TodoTask>? _cachedTasks;
 
     public TuiApp(string? initialList = null)
     {
@@ -72,8 +74,28 @@ public class TuiApp
 
     public void Quit() => _running = false;
 
+    public void InvalidateCache() => _cachedTasks = null;
+
+    public void UpdateCachedTask(int index, TodoTask updated)
+    {
+        if (_cachedTasks != null && index >= 0 && index < _cachedTasks.Count)
+            _cachedTasks[index] = updated;
+    }
+
+    private static int StatusSortOrder(TaskStatus status) => status switch
+    {
+        TaskStatus.InProgress => 0,
+        TaskStatus.Pending => 1,
+        TaskStatus.Done => 2,
+        _ => 1
+    };
+
     private List<TodoTask> LoadTasks()
     {
+        // Don't use cache during active search — query changes every keystroke
+        if (_cachedTasks != null && string.IsNullOrEmpty(_state.SearchQuery))
+            return _cachedTasks;
+
         var taskList = new TodoTaskList(_state.CurrentList);
         var tasks = taskList.GetSortedTasks();
 
@@ -85,22 +107,31 @@ public class TuiApp
                 .ToList();
         }
 
-        // Sort: by list name (when viewing all), then unchecked first, then by creation date descending
+        // Sort: by list name (when viewing all), then by status (in-progress first), then by creation date descending
+        List<TodoTask> sorted;
         if (_state.CurrentList == null)
         {
             // Viewing all lists - group by list name, default list first
-            return tasks
+            sorted = tasks
                 .OrderBy(t => t.ListName != ListManager.DefaultListName) // default list first
                 .ThenBy(t => t.ListName)
-                .ThenBy(t => t.IsChecked)
+                .ThenBy(t => StatusSortOrder(t.Status))
+                .ThenByDescending(t => t.CreatedAt)
+                .ToList();
+        }
+        else
+        {
+            // Single list view - in-progress first, then pending, then done
+            sorted = tasks
+                .OrderBy(t => StatusSortOrder(t.Status))
                 .ThenByDescending(t => t.CreatedAt)
                 .ToList();
         }
 
-        // Single list view - unchecked first, then by creation date
-        return tasks
-            .OrderBy(t => t.IsChecked)
-            .ThenByDescending(t => t.CreatedAt)
-            .ToList();
+        // Only cache when not searching — search results change per keystroke
+        if (string.IsNullOrEmpty(_state.SearchQuery))
+            _cachedTasks = sorted;
+
+        return sorted;
     }
 }

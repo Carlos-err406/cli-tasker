@@ -29,8 +29,9 @@ static class SystemCommand
             }
 
             var totalTasks = 0;
-            var totalChecked = 0;
-            var totalUnchecked = 0;
+            var totalPending = 0;
+            var totalInProgress = 0;
+            var totalDone = 0;
             var totalTrash = 0;
 
             // Collect stats and display each list
@@ -43,15 +44,17 @@ static class SystemCommand
                 var stats = taskList.GetStats();
 
                 totalTasks += stats.Total;
-                totalChecked += stats.Checked;
-                totalUnchecked += stats.Unchecked;
+                totalPending += stats.Pending;
+                totalInProgress += stats.InProgress;
+                totalDone += stats.Done;
                 totalTrash += stats.Trash;
 
-                var checkedLabel = stats.Checked > 0 ? $"[green]{stats.Checked} checked[/]" : "[dim]0 checked[/]";
-                var uncheckedLabel = stats.Unchecked > 0 ? $"[yellow]{stats.Unchecked} unchecked[/]" : "[dim]0 unchecked[/]";
+                var doneLabel = stats.Done > 0 ? $"[green]{stats.Done} done[/]" : "[dim]0 done[/]";
+                var wipLabel = stats.InProgress > 0 ? $"[yellow]{stats.InProgress} in-progress[/]" : "[dim]0 in-progress[/]";
+                var pendingLabel = stats.Pending > 0 ? $"[grey]{stats.Pending} pending[/]" : "[dim]0 pending[/]";
                 var trashLabel = stats.Trash > 0 ? $"[red]{stats.Trash} in trash[/]" : "[dim]0 in trash[/]";
 
-                Output.Markup($"  [bold]{name}[/]: {checkedLabel}, {uncheckedLabel}, {trashLabel}");
+                Output.Markup($"  [bold]{name}[/]: {wipLabel}, {pendingLabel}, {doneLabel}, {trashLabel}");
             }
 
             // Summary
@@ -59,7 +62,7 @@ static class SystemCommand
             Output.Markup("[bold underline]Summary[/]");
             Output.Info("");
             Output.Markup($"  Lists: [bold]{listNames.Length}[/]");
-            Output.Markup($"  Total tasks: [bold]{totalTasks}[/] ([green]{totalChecked} checked[/], [yellow]{totalUnchecked} unchecked[/])");
+            Output.Markup($"  Total tasks: [bold]{totalTasks}[/] ([yellow]{totalInProgress} in-progress[/], [grey]{totalPending} pending[/], [green]{totalDone} done[/])");
             Output.Markup($"  Total in trash: [red]{totalTrash}[/]");
         }));
 
