@@ -39,18 +39,27 @@ Tests use isolated storage (temp directory or in-memory SQLite) to avoid affecti
 
 **Important:** When verifying new functionality, write tests instead of using `dotnet run --` commands. Tests are repeatable, don't affect real data, and serve as documentation.
 
-### Reading tasks from the backlog
+### Working on tasks from the backlog
 When referencing a task by ID, always read the **full task description**, not just the title. Tasks often have multi-line descriptions with important context.
 
 ```bash
 # Get a specific task with full description
 tasker get <taskId>
 
-# Example: Get task 286 with all details
-tasker get 286
-
 # Get task as JSON (useful for agents/scripts)
 tasker get 286 --json
+```
+
+When starting work on a task, set it to **in-progress**:
+
+```bash
+tasker wip <taskId>
+```
+
+When the task is complete (committed and merged), mark it as **done**:
+
+```bash
+tasker check <taskId>
 ```
 
 ### Updating CLI and TaskerTray
