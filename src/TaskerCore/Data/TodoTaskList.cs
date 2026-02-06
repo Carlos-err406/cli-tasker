@@ -959,7 +959,7 @@ public class TodoTaskList
     /// <summary>
     /// Reorders a task within its list by moving it to a new index.
     /// </summary>
-    public static void ReorderTask(string taskId, int newIndex)
+    public static void ReorderTask(string taskId, int newIndex, bool recordUndo = true)
     {
         StoragePaths.Current.EnsureDirectory();
         if (!File.Exists(StoragePaths.Current.AllTasksPath))
@@ -991,26 +991,43 @@ public class TodoTaskList
             var tasks = list.Tasks.ToList();
 
             // Clamp newIndex to valid range
-            newIndex = Math.Max(0, Math.Min(newIndex, tasks.Count - 1));
+            var clampedNewIndex = Math.Max(0, Math.Min(newIndex, tasks.Count - 1));
 
-            if (taskIndex == newIndex)
+            if (taskIndex == clampedNewIndex)
                 return;
+
+            // Record undo command before modification
+            if (recordUndo)
+            {
+                UndoManager.Instance.RecordCommand(new Undo.Commands.ReorderTaskCommand
+                {
+                    TaskId = taskId,
+                    ListName = list.ListName,
+                    OldIndex = taskIndex,
+                    NewIndex = clampedNewIndex
+                });
+            }
 
             // Remove from old position and insert at new position
             var task = tasks[taskIndex];
             tasks.RemoveAt(taskIndex);
-            tasks.Insert(newIndex, task);
+            tasks.Insert(clampedNewIndex, task);
 
             taskLists[listIndex] = list.ReplaceTasks(tasks.ToArray());
 
             File.WriteAllText(StoragePaths.Current.AllTasksPath, JsonSerializer.Serialize(taskLists));
+
+            if (recordUndo)
+            {
+                UndoManager.Instance.SaveHistory();
+            }
         }
     }
 
     /// <summary>
     /// Reorders a list by moving it to a new index in the TaskLists array.
     /// </summary>
-    public static void ReorderList(string listName, int newIndex)
+    public static void ReorderList(string listName, int newIndex, bool recordUndo = true)
     {
         StoragePaths.Current.EnsureDirectory();
         if (!File.Exists(StoragePaths.Current.AllTasksPath))
@@ -1026,17 +1043,33 @@ public class TodoTaskList
                 return;
 
             // Clamp newIndex to valid range
-            newIndex = Math.Max(0, Math.Min(newIndex, taskLists.Count - 1));
+            var clampedNewIndex = Math.Max(0, Math.Min(newIndex, taskLists.Count - 1));
 
-            if (currentIndex == newIndex)
+            if (currentIndex == clampedNewIndex)
                 return;
+
+            // Record undo command before modification
+            if (recordUndo)
+            {
+                UndoManager.Instance.RecordCommand(new Undo.Commands.ReorderListCommand
+                {
+                    ListName = listName,
+                    OldIndex = currentIndex,
+                    NewIndex = clampedNewIndex
+                });
+            }
 
             // Remove from old position and insert at new position
             var list = taskLists[currentIndex];
             taskLists.RemoveAt(currentIndex);
-            taskLists.Insert(newIndex, list);
+            taskLists.Insert(clampedNewIndex, list);
 
             File.WriteAllText(StoragePaths.Current.AllTasksPath, JsonSerializer.Serialize(taskLists.ToArray()));
+
+            if (recordUndo)
+            {
+                UndoManager.Instance.SaveHistory();
+            }
         }
     }
 }
