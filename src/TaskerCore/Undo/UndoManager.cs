@@ -6,17 +6,16 @@ using TaskerCore.Undo.Commands;
 
 public sealed class UndoManager
 {
-    private static readonly Lazy<UndoManager> _instance = new(() => new UndoManager());
-    public static UndoManager Instance => _instance.Value;
-
+    private readonly StoragePaths _paths;
     private static readonly object SaveLock = new();
 
     private List<IUndoableCommand> _undoStack = [];
     private List<IUndoableCommand> _redoStack = [];
     private CompositeCommand? _currentBatch;
 
-    private UndoManager()
+    public UndoManager(StoragePaths paths)
     {
+        _paths = paths;
         LoadHistory();
     }
 
@@ -141,14 +140,15 @@ public sealed class UndoManager
 
     private void LoadHistory()
     {
-        if (!UndoConfig.PersistAcrossSessions || !File.Exists(UndoConfig.HistoryPath))
+        var historyPath = _paths.UndoHistoryPath;
+        if (!UndoConfig.PersistAcrossSessions || !File.Exists(historyPath))
         {
             return;
         }
 
         try
         {
-            var json = File.ReadAllText(UndoConfig.HistoryPath);
+            var json = File.ReadAllText(historyPath);
             var history = JsonSerializer.Deserialize<UndoHistory>(json, GetJsonOptions());
 
             if (history == null)
@@ -174,7 +174,7 @@ public sealed class UndoManager
 
     private void Save()
     {
-        StoragePaths.Current.EnsureDirectory();
+        _paths.EnsureDirectory();
 
         var history = new UndoHistory
         {
@@ -187,7 +187,7 @@ public sealed class UndoManager
         lock (SaveLock)
         {
             var json = JsonSerializer.Serialize(history, GetJsonOptions());
-            File.WriteAllText(UndoConfig.HistoryPath, json);
+            File.WriteAllText(_paths.UndoHistoryPath, json);
         }
     }
 
@@ -197,19 +197,21 @@ public sealed class UndoManager
             && GetTasksFileSize() == history.TasksFileSize;
     }
 
-    private static string ComputeChecksum()
+    private string ComputeChecksum()
     {
-        if (!File.Exists(UndoConfig.TasksPath))
+        var tasksPath = _paths.AllTasksPath;
+        if (!File.Exists(tasksPath))
             return "";
 
         using var md5 = MD5.Create();
-        using var stream = File.OpenRead(UndoConfig.TasksPath);
+        using var stream = File.OpenRead(tasksPath);
         return Convert.ToHexString(md5.ComputeHash(stream));
     }
 
-    private static long GetTasksFileSize()
+    private long GetTasksFileSize()
     {
-        return File.Exists(UndoConfig.TasksPath) ? new FileInfo(UndoConfig.TasksPath).Length : 0;
+        var tasksPath = _paths.AllTasksPath;
+        return File.Exists(tasksPath) ? new FileInfo(tasksPath).Length : 0;
     }
 
     private void CleanupOldHistory()

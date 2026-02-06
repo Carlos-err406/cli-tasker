@@ -1,6 +1,5 @@
 namespace TaskerCore.Undo.Commands;
 
-using TaskerCore.Config;
 using TaskerCore.Data;
 using TaskerCore.Exceptions;
 
@@ -27,9 +26,10 @@ public record RenameListCommand : IUndoableCommand
             ListManager.RenameList(NewName, OldName, recordUndo: false);
 
             // Restore default list if it was changed
-            if (WasDefaultList && AppConfig.GetDefaultList() == NewName)
+            var services = TaskerServices.Default;
+            if (WasDefaultList && services.Config.GetDefaultList() == NewName)
             {
-                AppConfig.SetDefaultList(OldName);
+                services.Config.SetDefaultList(OldName);
             }
         }
         catch (ListNotFoundException)

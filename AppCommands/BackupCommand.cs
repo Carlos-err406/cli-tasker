@@ -1,7 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
-using TaskerCore.Backup;
+using TaskerCore;
 using TaskerCore.Exceptions;
 
 static class BackupCommand
@@ -22,7 +22,7 @@ static class BackupCommand
 
         listCommand.SetAction(CommandHelper.WithErrorHandling(_ =>
         {
-            var backups = BackupManager.ListBackups();
+            var backups = TaskerServices.Default.Backup.ListBackups();
             if (backups.Count == 0)
             {
                 Output.Info("No backups available.");
@@ -64,7 +64,7 @@ static class BackupCommand
             if (index == 0) index = 1; // Default to most recent
             var force = parseResult.GetValue(forceOption);
 
-            var backups = BackupManager.ListBackups();
+            var backups = TaskerServices.Default.Backup.ListBackups();
             if (backups.Count == 0)
                 throw new BackupNotFoundException("No backups available. Backups are created automatically when you modify tasks.");
 
@@ -86,7 +86,7 @@ static class BackupCommand
                 }
             }
 
-            BackupManager.RestoreBackup(backup.Timestamp);
+            TaskerServices.Default.Backup.RestoreBackup(backup.Timestamp);
             Output.Success($"Restored from backup dated {backup.Timestamp:yyyy-MM-dd HH:mm:ss}");
         }));
 

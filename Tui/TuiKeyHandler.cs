@@ -1,10 +1,10 @@
 namespace cli_tasker.Tui;
 
 using Spectre.Console;
+using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
-using TaskerCore.Undo;
 
 public class TuiKeyHandler
 {
@@ -164,7 +164,7 @@ public class TuiKeyHandler
 
     private static TuiState PerformUndo(TuiState state)
     {
-        var desc = UndoManager.Instance.Undo();
+        var desc = TaskerServices.Default.Undo.Undo();
         return desc != null
             ? state.WithStatusMessage($"Undone: {desc}")
             : state.WithStatusMessage("Nothing to undo");
@@ -172,7 +172,7 @@ public class TuiKeyHandler
 
     private static TuiState PerformRedo(TuiState state)
     {
-        var desc = UndoManager.Instance.Redo();
+        var desc = TaskerServices.Default.Undo.Redo();
         return desc != null
             ? state.WithStatusMessage($"Redone: {desc}")
             : state.WithStatusMessage("Nothing to redo");

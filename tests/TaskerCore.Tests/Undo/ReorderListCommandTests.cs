@@ -1,39 +1,41 @@
 namespace TaskerCore.Tests.Undo;
 
 using TaskerCore.Data;
-using TaskerCore.Undo;
 using TaskerCore.Undo.Commands;
 
-[Collection("UndoTests")]
+[Collection("IsolatedTests")]
 public class ReorderListCommandTests : IDisposable
 {
     private readonly string _testDir;
+    private readonly TaskerServices _services;
 
     public ReorderListCommandTests()
     {
         _testDir = Path.Combine(Path.GetTempPath(), $"tasker-undo-test-{Guid.NewGuid()}");
         Directory.CreateDirectory(_testDir);
-        StoragePaths.SetDirectory(_testDir);
-        UndoManager.Instance.ClearHistory();
+        _services = new TaskerServices(_testDir);
+        TaskerServices.SetDefault(_services);
+        _services.Undo.ClearHistory();
     }
 
     public void Dispose()
     {
-        UndoManager.Instance.ClearHistory();
-        if (Directory.Exists(_testDir))
+        _services.Undo.ClearHistory();
+                if (Directory.Exists(_testDir))
         {
             Directory.Delete(_testDir, recursive: true);
         }
+        GC.SuppressFinalize(this);
     }
 
     private void CreateList(string name)
     {
-        ListManager.CreateList(name);
+        ListManager.CreateList(_services, name);
     }
 
     private string[] GetListOrder()
     {
-        return TodoTaskList.GetAllListNames().ToArray();
+        return TodoTaskList.GetAllListNames(_services).ToArray();
     }
 
     [Fact]
@@ -42,13 +44,13 @@ public class ReorderListCommandTests : IDisposable
         // Arrange - create lists (default "tasks" + 2 more)
         CreateList("listA");
         CreateList("listB");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act - move listB to index 0
-        TodoTaskList.ReorderList("listB", 0);
+        TodoTaskList.ReorderList(_services, "listB", 0);
 
         // Assert
-        Assert.True(UndoManager.Instance.CanUndo);
+        Assert.True(_services.Undo.CanUndo);
     }
 
     [Fact]
@@ -58,11 +60,11 @@ public class ReorderListCommandTests : IDisposable
         CreateList("listA");
         CreateList("listB");
         var initialOrder = GetListOrder();
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act - move listB to index 0
-        TodoTaskList.ReorderList("listB", 0);
-        UndoManager.Instance.Undo();
+        TodoTaskList.ReorderList(_services, "listB", 0);
+        _services.Undo.Undo();
 
         // Assert
         var currentOrder = GetListOrder();
@@ -75,14 +77,14 @@ public class ReorderListCommandTests : IDisposable
         // Arrange
         CreateList("listA");
         CreateList("listB");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act
-        TodoTaskList.ReorderList("listB", 0);
+        TodoTaskList.ReorderList(_services, "listB", 0);
         var orderAfterReorder = GetListOrder();
 
-        UndoManager.Instance.Undo();
-        UndoManager.Instance.Redo();
+        _services.Undo.Undo();
+        _services.Undo.Redo();
 
         // Assert
         var currentOrder = GetListOrder();
@@ -96,13 +98,13 @@ public class ReorderListCommandTests : IDisposable
         CreateList("listA");
         var lists = GetListOrder();
         var listAIndex = Array.IndexOf(lists, "listA");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act - try to move list to same position
-        TodoTaskList.ReorderList("listA", listAIndex);
+        TodoTaskList.ReorderList(_services, "listA", listAIndex);
 
         // Assert - no undo recorded for no-op
-        Assert.False(UndoManager.Instance.CanUndo);
+        Assert.False(_services.Undo.CanUndo);
     }
 
     [Fact]
@@ -111,13 +113,13 @@ public class ReorderListCommandTests : IDisposable
         // Arrange
         CreateList("listA");
         CreateList("listB");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act
-        TodoTaskList.ReorderList("listB", 0, recordUndo: false);
+        TodoTaskList.ReorderList(_services, "listB", 0, recordUndo: false);
 
         // Assert
-        Assert.False(UndoManager.Instance.CanUndo);
+        Assert.False(_services.Undo.CanUndo);
     }
 
     [Fact]
@@ -143,15 +145,15 @@ public class ReorderListCommandTests : IDisposable
         CreateList("listB");
         CreateList("listC");
         var initialOrder = GetListOrder();
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act - do multiple reorders
-        TodoTaskList.ReorderList("listC", 0);
-        TodoTaskList.ReorderList("listA", 0);
+        TodoTaskList.ReorderList(_services, "listC", 0);
+        TodoTaskList.ReorderList(_services, "listA", 0);
 
         // Undo both
-        UndoManager.Instance.Undo();
-        UndoManager.Instance.Undo();
+        _services.Undo.Undo();
+        _services.Undo.Undo();
 
         // Assert - should be back to initial order
         var currentOrder = GetListOrder();
@@ -163,17 +165,17 @@ public class ReorderListCommandTests : IDisposable
     {
         // Arrange - create list with task
         CreateList("withTasks");
-        var taskList = new TodoTaskList("withTasks");
+        var taskList = new TodoTaskList(_services, "withTasks");
         var task = TaskerCore.Models.TodoTask.CreateTodoTask("test task", "withTasks");
         taskList.AddTodoTask(task, recordUndo: false);
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act - reorder and undo
-        TodoTaskList.ReorderList("withTasks", 0);
-        UndoManager.Instance.Undo();
+        TodoTaskList.ReorderList(_services, "withTasks", 0);
+        _services.Undo.Undo();
 
         // Assert - task should still exist
-        var restoredList = new TodoTaskList("withTasks");
+        var restoredList = new TodoTaskList(_services, "withTasks");
         var tasks = restoredList.GetAllTasks();
         Assert.Single(tasks);
         Assert.Equal("test task", tasks[0].Description);

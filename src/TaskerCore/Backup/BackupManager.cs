@@ -7,33 +7,39 @@ using TaskerCore.Undo;
 /// <summary>
 /// Manages automatic backup creation, rotation, and restoration.
 /// </summary>
-public static class BackupManager
+public class BackupManager
 {
-    private static readonly object BackupLock = new();
+    private readonly StoragePaths _paths;
+    private readonly object _backupLock = new();
+
+    public BackupManager(StoragePaths paths)
+    {
+        _paths = paths;
+    }
 
     /// <summary>
     /// Creates a backup of current task files. Called before each save.
     /// Silently fails if backup cannot be created (should not block saves).
     /// </summary>
-    public static void CreateBackup()
+    public void CreateBackup()
     {
-        lock (BackupLock)
+        lock (_backupLock)
         {
-            StoragePaths.Current.EnsureBackupDirectory();
+            _paths.EnsureBackupDirectory();
             var timestamp = DateTime.Now;
 
             // Only backup if files exist
-            if (!File.Exists(StoragePaths.Current.AllTasksPath))
+            if (!File.Exists(_paths.AllTasksPath))
                 return;
 
             // Create version backup
             var tasksBackupPath = GetVersionBackupPath(timestamp, "all-tasks");
-            File.Copy(StoragePaths.Current.AllTasksPath, tasksBackupPath, overwrite: true);
+            File.Copy(_paths.AllTasksPath, tasksBackupPath, overwrite: true);
 
-            if (File.Exists(StoragePaths.Current.AllTrashPath))
+            if (File.Exists(_paths.AllTrashPath))
             {
                 var trashBackupPath = GetVersionBackupPath(timestamp, "all-tasks.trash");
-                File.Copy(StoragePaths.Current.AllTrashPath, trashBackupPath, overwrite: true);
+                File.Copy(_paths.AllTrashPath, trashBackupPath, overwrite: true);
             }
 
             // Create/update daily backup if needed
@@ -48,9 +54,9 @@ public static class BackupManager
     /// Lists available backups, newest first.
     /// Returns only task file backups (not trash backups separately).
     /// </summary>
-    public static IReadOnlyList<BackupInfo> ListBackups()
+    public IReadOnlyList<BackupInfo> ListBackups()
     {
-        var backupDir = StoragePaths.Current.BackupDirectory;
+        var backupDir = _paths.BackupDirectory;
         if (!Directory.Exists(backupDir))
             return Array.Empty<BackupInfo>();
 
@@ -75,11 +81,12 @@ public static class BackupManager
     /// <summary>
     /// Restores from a specific backup timestamp.
     /// Creates a pre-restore safety backup first.
-    /// Clears undo history after restore (checksums won't match).
     /// </summary>
-    public static void RestoreBackup(DateTime timestamp)
+    /// <param name="timestamp">The timestamp of the backup to restore.</param>
+    /// <param name="undoManager">Optional undo manager to clear history after restore.</param>
+    public void RestoreBackup(DateTime timestamp, UndoManager? undoManager = null)
     {
-        lock (BackupLock)
+        lock (_backupLock)
         {
             var tasksBackupPath = FindBackupByTimestamp(timestamp, "all-tasks");
             if (tasksBackupPath == null)
@@ -90,21 +97,21 @@ public static class BackupManager
             CreatePreRestoreBackup();
 
             // Restore tasks file
-            File.Copy(tasksBackupPath, StoragePaths.Current.AllTasksPath, overwrite: true);
+            File.Copy(tasksBackupPath, _paths.AllTasksPath, overwrite: true);
 
             // Restore trash file if it exists in backup
             var trashBackupPath = FindBackupByTimestamp(timestamp, "all-tasks.trash");
             if (trashBackupPath != null)
             {
-                File.Copy(trashBackupPath, StoragePaths.Current.AllTrashPath, overwrite: true);
+                File.Copy(trashBackupPath, _paths.AllTrashPath, overwrite: true);
             }
 
             // Clear undo history - checksums won't match after restore
-            UndoManager.Instance.ClearHistory();
+            undoManager?.ClearHistory();
         }
     }
 
-    private static void CreateDailyBackupIfNeeded(DateTime timestamp)
+    private void CreateDailyBackupIfNeeded(DateTime timestamp)
     {
         var dailyTasksPath = GetDailyBackupPath(timestamp, "all-tasks");
 
@@ -112,34 +119,34 @@ public static class BackupManager
         if (File.Exists(dailyTasksPath))
             return;
 
-        File.Copy(StoragePaths.Current.AllTasksPath, dailyTasksPath, overwrite: true);
+        File.Copy(_paths.AllTasksPath, dailyTasksPath, overwrite: true);
 
-        if (File.Exists(StoragePaths.Current.AllTrashPath))
+        if (File.Exists(_paths.AllTrashPath))
         {
             var dailyTrashPath = GetDailyBackupPath(timestamp, "all-tasks.trash");
-            File.Copy(StoragePaths.Current.AllTrashPath, dailyTrashPath, overwrite: true);
+            File.Copy(_paths.AllTrashPath, dailyTrashPath, overwrite: true);
         }
     }
 
-    private static void CreatePreRestoreBackup()
+    private void CreatePreRestoreBackup()
     {
-        if (!File.Exists(StoragePaths.Current.AllTasksPath))
+        if (!File.Exists(_paths.AllTasksPath))
             return;
 
         var timestamp = DateTime.Now;
         var preRestorePath = GetPreRestoreBackupPath(timestamp, "all-tasks");
-        File.Copy(StoragePaths.Current.AllTasksPath, preRestorePath, overwrite: true);
+        File.Copy(_paths.AllTasksPath, preRestorePath, overwrite: true);
 
-        if (File.Exists(StoragePaths.Current.AllTrashPath))
+        if (File.Exists(_paths.AllTrashPath))
         {
             var preRestoreTrashPath = GetPreRestoreBackupPath(timestamp, "all-tasks.trash");
-            File.Copy(StoragePaths.Current.AllTrashPath, preRestoreTrashPath, overwrite: true);
+            File.Copy(_paths.AllTrashPath, preRestoreTrashPath, overwrite: true);
         }
     }
 
-    private static void RotateBackups()
+    private void RotateBackups()
     {
-        var backupDir = StoragePaths.Current.BackupDirectory;
+        var backupDir = _paths.BackupDirectory;
         if (!Directory.Exists(backupDir))
             return;
 
@@ -150,7 +157,7 @@ public static class BackupManager
         RotateDailyBackups(backupDir);
     }
 
-    private static void RotateVersionBackups(string backupDir)
+    private void RotateVersionBackups(string backupDir)
     {
         // Get all version backup files for tasks (not daily, not pre-restore)
         var versionBackups = Directory.GetFiles(backupDir, "all-tasks.*" + BackupConfig.BackupExtension)
@@ -169,7 +176,7 @@ public static class BackupManager
         }
     }
 
-    private static void RotateDailyBackups(string backupDir)
+    private void RotateDailyBackups(string backupDir)
     {
         var cutoff = DateTime.Now.AddDays(-BackupConfig.MaxDailyBackupDays);
 
@@ -203,9 +210,9 @@ public static class BackupManager
         }
     }
 
-    private static string? FindBackupByTimestamp(DateTime timestamp, string baseName)
+    private string? FindBackupByTimestamp(DateTime timestamp, string baseName)
     {
-        var backupDir = StoragePaths.Current.BackupDirectory;
+        var backupDir = _paths.BackupDirectory;
         if (!Directory.Exists(backupDir))
             return null;
 
@@ -257,21 +264,21 @@ public static class BackupManager
         return null;
     }
 
-    private static string GetVersionBackupPath(DateTime timestamp, string baseName)
+    private string GetVersionBackupPath(DateTime timestamp, string baseName)
     {
         var fileName = $"{baseName}.{timestamp.ToString(BackupConfig.TimestampFormat)}{BackupConfig.BackupExtension}";
-        return Path.Combine(StoragePaths.Current.BackupDirectory, fileName);
+        return Path.Combine(_paths.BackupDirectory, fileName);
     }
 
-    private static string GetDailyBackupPath(DateTime timestamp, string baseName)
+    private string GetDailyBackupPath(DateTime timestamp, string baseName)
     {
         var fileName = $"{baseName}.{BackupConfig.DailyPrefix}{timestamp.ToString(BackupConfig.DailyDateFormat)}{BackupConfig.BackupExtension}";
-        return Path.Combine(StoragePaths.Current.BackupDirectory, fileName);
+        return Path.Combine(_paths.BackupDirectory, fileName);
     }
 
-    private static string GetPreRestoreBackupPath(DateTime timestamp, string baseName)
+    private string GetPreRestoreBackupPath(DateTime timestamp, string baseName)
     {
         var fileName = $"{baseName}.{BackupConfig.PreRestorePrefix}{timestamp.ToString(BackupConfig.TimestampFormat)}{BackupConfig.BackupExtension}";
-        return Path.Combine(StoragePaths.Current.BackupDirectory, fileName);
+        return Path.Combine(_paths.BackupDirectory, fileName);
     }
 }

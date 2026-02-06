@@ -6,22 +6,29 @@ using TaskerCore.Data;
 /// <summary>
 /// Application configuration management.
 /// </summary>
-public static class AppConfig
+public class AppConfig
 {
     /// <summary>Length of the task display prefix "(xxx) [ ] - " for formatting.</summary>
     public const int TaskPrefixLength = 12;
 
-    /// <summary>Gets the default list name for adding new tasks.</summary>
-    public static string GetDefaultList()
+    private readonly StoragePaths _paths;
+
+    public AppConfig(StoragePaths paths)
     {
-        if (!File.Exists(StoragePaths.Current.ConfigPath))
+        _paths = paths;
+    }
+
+    /// <summary>Gets the default list name for adding new tasks.</summary>
+    public string GetDefaultList()
+    {
+        if (!File.Exists(_paths.ConfigPath))
         {
             return ListManager.DefaultListName;
         }
 
         try
         {
-            var json = File.ReadAllText(StoragePaths.Current.ConfigPath);
+            var json = File.ReadAllText(_paths.ConfigPath);
             var config = JsonSerializer.Deserialize<ConfigData>(json);
             return config?.DefaultList ?? ListManager.DefaultListName;
         }
@@ -32,12 +39,12 @@ public static class AppConfig
     }
 
     /// <summary>Sets the default list name for adding new tasks.</summary>
-    public static void SetDefaultList(string name)
+    public void SetDefaultList(string name)
     {
-        StoragePaths.Current.EnsureDirectory();
+        _paths.EnsureDirectory();
         var config = new ConfigData { DefaultList = name };
         var json = JsonSerializer.Serialize(config);
-        File.WriteAllText(StoragePaths.Current.ConfigPath, json);
+        File.WriteAllText(_paths.ConfigPath, json);
     }
 
     private sealed class ConfigData

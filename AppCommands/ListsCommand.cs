@@ -2,7 +2,7 @@ namespace cli_tasker;
 
 using System.CommandLine;
 using Spectre.Console;
-using TaskerCore.Config;
+using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Exceptions;
 
@@ -16,7 +16,7 @@ static class ListsCommand
         listsCommand.SetAction(_ =>
         {
             var lists = ListManager.GetAllListNames();
-            var defaultList = AppConfig.GetDefaultList();
+            var defaultList = TaskerServices.Default.Config.GetDefaultList();
 
             if (lists.Length == 0)
             {
@@ -148,7 +148,7 @@ static class ListsCommand
                 throw new InvalidListNameException(name);
             }
 
-            AppConfig.SetDefaultList(name);
+            TaskerServices.Default.Config.SetDefaultList(name);
             Output.Success($"Default list set to '{name}'");
         }));
 

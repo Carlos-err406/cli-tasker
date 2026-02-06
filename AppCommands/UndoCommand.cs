@@ -1,6 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
+using TaskerCore;
 using TaskerCore.Undo;
 
 static class UndoCommand
@@ -13,7 +14,7 @@ static class UndoCommand
 
         undoCmd.SetAction(CommandHelper.WithErrorHandling(_ =>
         {
-            var desc = UndoManager.Instance.Undo();
+            var desc = TaskerServices.Default.Undo.Undo();
             if (desc != null)
                 Output.Success($"Undone: {desc}");
             else
@@ -22,7 +23,7 @@ static class UndoCommand
 
         redoCmd.SetAction(CommandHelper.WithErrorHandling(_ =>
         {
-            var desc = UndoManager.Instance.Redo();
+            var desc = TaskerServices.Default.Undo.Redo();
             if (desc != null)
                 Output.Success($"Redone: {desc}");
             else
@@ -38,15 +39,17 @@ static class UndoCommand
         historyCmd.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
             var clear = parseResult.GetValue(clearOption);
+            var undoManager = TaskerServices.Default.Undo;
+
             if (clear)
             {
-                UndoManager.Instance.ClearHistory();
+                undoManager.ClearHistory();
                 Output.Success("Undo/redo history cleared");
                 return;
             }
 
-            var undo = UndoManager.Instance.UndoHistory;
-            var redo = UndoManager.Instance.RedoHistory;
+            var undo = undoManager.UndoHistory;
+            var redo = undoManager.RedoHistory;
 
             if (undo.Count == 0 && redo.Count == 0)
             {

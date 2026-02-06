@@ -1,14 +1,13 @@
 namespace TaskerCore.Tests.Undo;
 
-using TaskerCore.Config;
 using TaskerCore.Data;
-using TaskerCore.Undo;
 using TaskerCore.Undo.Commands;
 
-[Collection("UndoTests")]
+[Collection("IsolatedTests")]
 public class RenameListCommandTests : IDisposable
 {
     private readonly string _testDir;
+    private readonly TaskerServices _services;
     private readonly List<string> _createdLists = new();
 
     public RenameListCommandTests()
@@ -16,23 +15,24 @@ public class RenameListCommandTests : IDisposable
         // Each test gets its own isolated storage
         _testDir = Path.Combine(Path.GetTempPath(), $"tasker-undo-test-{Guid.NewGuid()}");
         Directory.CreateDirectory(_testDir);
-        StoragePaths.SetDirectory(_testDir);
-        UndoManager.Instance.ClearHistory();
+        _services = new TaskerServices(_testDir);
+        TaskerServices.SetDefault(_services);
+        _services.Undo.ClearHistory();
     }
 
     public void Dispose()
     {
-        UndoManager.Instance.ClearHistory();
-        // Don't reset to null - test mode stays active to prevent accidental production writes
-        if (Directory.Exists(_testDir))
+        _services.Undo.ClearHistory();
+                if (Directory.Exists(_testDir))
         {
             Directory.Delete(_testDir, recursive: true);
         }
+        GC.SuppressFinalize(this);
     }
 
     private void CreateTestList(string name)
     {
-        ListManager.CreateList(name);
+        ListManager.CreateList(_services, name);
         _createdLists.Add(name);
     }
 
@@ -43,10 +43,10 @@ public class RenameListCommandTests : IDisposable
         CreateTestList("testlist");
 
         // Act
-        ListManager.RenameList("testlist", "renamed");
+        ListManager.RenameList(_services, "testlist", "renamed");
 
         // Assert
-        Assert.True(UndoManager.Instance.CanUndo);
+        Assert.True(_services.Undo.CanUndo);
     }
 
     [Fact]
@@ -56,12 +56,12 @@ public class RenameListCommandTests : IDisposable
         CreateTestList("original");
 
         // Act
-        ListManager.RenameList("original", "newname");
-        UndoManager.Instance.Undo();
+        ListManager.RenameList(_services, "original", "newname");
+        _services.Undo.Undo();
 
         // Assert
-        Assert.True(ListManager.ListExists("original"));
-        Assert.False(ListManager.ListExists("newname"));
+        Assert.True(ListManager.ListExists(_services, "original"));
+        Assert.False(ListManager.ListExists(_services, "newname"));
     }
 
     [Fact]
@@ -71,13 +71,13 @@ public class RenameListCommandTests : IDisposable
         CreateTestList("original");
 
         // Act
-        ListManager.RenameList("original", "newname");
-        UndoManager.Instance.Undo();
-        UndoManager.Instance.Redo();
+        ListManager.RenameList(_services, "original", "newname");
+        _services.Undo.Undo();
+        _services.Undo.Redo();
 
         // Assert
-        Assert.False(ListManager.ListExists("original"));
-        Assert.True(ListManager.ListExists("newname"));
+        Assert.False(ListManager.ListExists(_services, "original"));
+        Assert.True(ListManager.ListExists(_services, "newname"));
     }
 
     [Fact]
@@ -85,20 +85,20 @@ public class RenameListCommandTests : IDisposable
     {
         // Arrange
         CreateTestList("mydefault");
-        AppConfig.SetDefaultList("mydefault");
+        _services.Config.SetDefaultList("mydefault");
 
         // Act
-        ListManager.RenameList("mydefault", "renamed");
+        ListManager.RenameList(_services, "mydefault", "renamed");
 
         // Verify default was updated
-        Assert.Equal("renamed", AppConfig.GetDefaultList());
+        Assert.Equal("renamed", _services.Config.GetDefaultList());
 
         // Undo
-        UndoManager.Instance.Undo();
+        _services.Undo.Undo();
 
         // Assert - default should be restored
-        Assert.Equal("mydefault", AppConfig.GetDefaultList());
-        Assert.True(ListManager.ListExists("mydefault"));
+        Assert.Equal("mydefault", _services.Config.GetDefaultList());
+        Assert.True(ListManager.ListExists(_services, "mydefault"));
     }
 
     [Fact]
@@ -106,16 +106,16 @@ public class RenameListCommandTests : IDisposable
     {
         // Arrange
         CreateTestList("withTasks");
-        var taskList = new TodoTaskList("withTasks");
+        var taskList = new TodoTaskList(_services, "withTasks");
         var task = TaskerCore.Models.TodoTask.CreateTodoTask("test task", "withTasks");
         taskList.AddTodoTask(task, recordUndo: false);
 
         // Act - rename and undo
-        ListManager.RenameList("withTasks", "renamedList");
-        UndoManager.Instance.Undo();
+        ListManager.RenameList(_services, "withTasks", "renamedList");
+        _services.Undo.Undo();
 
         // Assert - task should still exist under original list name
-        var restoredList = new TodoTaskList("withTasks");
+        var restoredList = new TodoTaskList(_services, "withTasks");
         var tasks = restoredList.GetAllTasks();
         Assert.Single(tasks);
         Assert.Equal("test task", tasks[0].Description);
@@ -141,12 +141,12 @@ public class RenameListCommandTests : IDisposable
     {
         // Arrange
         CreateTestList("noundo");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act
-        ListManager.RenameList("noundo", "renamed", recordUndo: false);
+        ListManager.RenameList(_services, "noundo", "renamed", recordUndo: false);
 
         // Assert
-        Assert.False(UndoManager.Instance.CanUndo);
+        Assert.False(_services.Undo.CanUndo);
     }
 }

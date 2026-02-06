@@ -1,15 +1,15 @@
 namespace TaskerCore.Tests.Undo;
 
 /// <summary>
-/// Collection definition for undo tests to run sequentially.
-/// Required because UndoManager is a singleton and tests share state.
+/// Collection definition for tests that need isolated storage via SetDefault.
+/// Runs tests sequentially to prevent interference through the static TaskerServices.Default.
 /// </summary>
-[CollectionDefinition("UndoTests")]
-public class UndoTestCollection : ICollectionFixture<UndoTestFixture>
+[CollectionDefinition("IsolatedTests")]
+public class IsolatedTestsCollection : ICollectionFixture<IsolatedTestsFixture>
 {
 }
 
-public class UndoTestFixture
+public class IsolatedTestsFixture
 {
-    // No shared state needed - just used to group tests
+    // No shared state needed - just used to group tests for sequential execution
 }

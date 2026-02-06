@@ -2,34 +2,36 @@ namespace TaskerCore.Tests.Undo;
 
 using TaskerCore.Data;
 using TaskerCore.Models;
-using TaskerCore.Undo;
 using TaskerCore.Undo.Commands;
 
-[Collection("UndoTests")]
+[Collection("IsolatedTests")]
 public class ReorderTaskCommandTests : IDisposable
 {
     private readonly string _testDir;
+    private readonly TaskerServices _services;
 
     public ReorderTaskCommandTests()
     {
         _testDir = Path.Combine(Path.GetTempPath(), $"tasker-undo-test-{Guid.NewGuid()}");
         Directory.CreateDirectory(_testDir);
-        StoragePaths.SetDirectory(_testDir);
-        UndoManager.Instance.ClearHistory();
+        _services = new TaskerServices(_testDir);
+        TaskerServices.SetDefault(_services);
+        _services.Undo.ClearHistory();
     }
 
     public void Dispose()
     {
-        UndoManager.Instance.ClearHistory();
-        if (Directory.Exists(_testDir))
+        _services.Undo.ClearHistory();
+                if (Directory.Exists(_testDir))
         {
             Directory.Delete(_testDir, recursive: true);
         }
+        GC.SuppressFinalize(this);
     }
 
     private TodoTask CreateTask(string description, string listName = "tasks")
     {
-        var taskList = new TodoTaskList(listName);
+        var taskList = new TodoTaskList(_services, listName);
         var task = TodoTask.CreateTodoTask(description, listName);
         taskList.AddTodoTask(task, recordUndo: false);
         return task;
@@ -42,13 +44,13 @@ public class ReorderTaskCommandTests : IDisposable
         var task1 = CreateTask("Task 1");
         var task2 = CreateTask("Task 2");
         var task3 = CreateTask("Task 3");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act - move task3 (index 0) to index 2
-        TodoTaskList.ReorderTask(task3.Id, 2);
+        TodoTaskList.ReorderTask(_services, task3.Id, 2);
 
         // Assert
-        Assert.True(UndoManager.Instance.CanUndo);
+        Assert.True(_services.Undo.CanUndo);
     }
 
     [Fact]
@@ -58,14 +60,14 @@ public class ReorderTaskCommandTests : IDisposable
         var task1 = CreateTask("Task 1");
         var task2 = CreateTask("Task 2");
         var task3 = CreateTask("Task 3");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act - move task3 from index 0 to index 2
-        TodoTaskList.ReorderTask(task3.Id, 2);
-        UndoManager.Instance.Undo();
+        TodoTaskList.ReorderTask(_services, task3.Id, 2);
+        _services.Undo.Undo();
 
         // Assert - task3 should be back at index 0
-        var taskList = new TodoTaskList("tasks");
+        var taskList = new TodoTaskList(_services, "tasks");
         var tasks = taskList.GetAllTasks();
         Assert.Equal(task3.Id, tasks[0].Id);
     }
@@ -77,15 +79,15 @@ public class ReorderTaskCommandTests : IDisposable
         var task1 = CreateTask("Task 1");
         var task2 = CreateTask("Task 2");
         var task3 = CreateTask("Task 3");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act
-        TodoTaskList.ReorderTask(task3.Id, 2);
-        UndoManager.Instance.Undo();
-        UndoManager.Instance.Redo();
+        TodoTaskList.ReorderTask(_services, task3.Id, 2);
+        _services.Undo.Undo();
+        _services.Undo.Redo();
 
         // Assert - task3 should be at index 2 again
-        var taskList = new TodoTaskList("tasks");
+        var taskList = new TodoTaskList(_services, "tasks");
         var tasks = taskList.GetAllTasks();
         Assert.Equal(task3.Id, tasks[2].Id);
     }
@@ -95,13 +97,13 @@ public class ReorderTaskCommandTests : IDisposable
     {
         // Arrange
         var task1 = CreateTask("Task 1");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act - try to move task to same position (index 0)
-        TodoTaskList.ReorderTask(task1.Id, 0);
+        TodoTaskList.ReorderTask(_services, task1.Id, 0);
 
         // Assert - no undo recorded for no-op
-        Assert.False(UndoManager.Instance.CanUndo);
+        Assert.False(_services.Undo.CanUndo);
     }
 
     [Fact]
@@ -110,13 +112,13 @@ public class ReorderTaskCommandTests : IDisposable
         // Arrange
         var task1 = CreateTask("Task 1");
         var task2 = CreateTask("Task 2");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Act
-        TodoTaskList.ReorderTask(task2.Id, 1, recordUndo: false);
+        TodoTaskList.ReorderTask(_services, task2.Id, 1, recordUndo: false);
 
         // Assert
-        Assert.False(UndoManager.Instance.CanUndo);
+        Assert.False(_services.Undo.CanUndo);
     }
 
     [Fact]
@@ -143,24 +145,24 @@ public class ReorderTaskCommandTests : IDisposable
         var task2 = CreateTask("Task 2");
         var task3 = CreateTask("Task 3");
         var task4 = CreateTask("Task 4");
-        UndoManager.Instance.ClearHistory();
+        _services.Undo.ClearHistory();
 
         // Verify initial order: task4, task3, task2, task1
-        var initialList = new TodoTaskList("tasks");
+        var initialList = new TodoTaskList(_services, "tasks");
         var initialTasks = initialList.GetAllTasks();
         Assert.Equal(task4.Id, initialTasks[0].Id);
         Assert.Equal(task3.Id, initialTasks[1].Id);
 
         // Act - do multiple reorders
-        TodoTaskList.ReorderTask(task4.Id, 3); // move task4 to end
-        TodoTaskList.ReorderTask(task3.Id, 2); // move task3 down
+        TodoTaskList.ReorderTask(_services, task4.Id, 3); // move task4 to end
+        TodoTaskList.ReorderTask(_services, task3.Id, 2); // move task3 down
 
         // Undo both
-        UndoManager.Instance.Undo();
-        UndoManager.Instance.Undo();
+        _services.Undo.Undo();
+        _services.Undo.Undo();
 
         // Assert - should be back to initial order
-        var taskList = new TodoTaskList("tasks");
+        var taskList = new TodoTaskList(_services, "tasks");
         var tasks = taskList.GetAllTasks();
         Assert.Equal(task4.Id, tasks[0].Id);
         Assert.Equal(task3.Id, tasks[1].Id);

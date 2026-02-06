@@ -1,7 +1,7 @@
 namespace cli_tasker;
 
 using System.CommandLine;
-using TaskerCore.Config;
+using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
@@ -19,7 +19,7 @@ static class AddCommand
         addCommand.Arguments.Add(descriptionArg);
         addCommand.SetAction(CommandHelper.WithErrorHandling(parseResult =>
         {
-            var listName = parseResult.GetValue(listOption) ?? AppConfig.GetDefaultList();
+            var listName = parseResult.GetValue(listOption) ?? TaskerServices.Default.Config.GetDefaultList();
 
             var description = parseResult.GetValue(descriptionArg);
             if (description == null)
