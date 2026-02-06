@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Transformation;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using TaskerCore;
@@ -1539,7 +1540,6 @@ public partial class TaskListPopup : Window
     #region Drag-and-Drop Implementation (Custom Smooth Drag)
 
     // Drop indicator for visual feedback
-    private Border? _dropIndicator;
     private int _dropTargetIndex = -1;
     private int _listDropTargetIndex = -1;
 
@@ -1610,11 +1610,9 @@ public partial class TaskListPopup : Window
         // Create ghost element
         CreateDragGhost(border, task);
 
-        // Dim the original
-        border.Opacity = 0.3;
+        // Hide the original from layout (it's now "lifted" as the ghost)
+        border.IsVisible = false;
 
-        // Create drop indicator
-        EnsureDropIndicator();
     }
 
     private void CreateDragGhost(Border original, TodoTaskViewModel task)
@@ -1819,7 +1817,7 @@ public partial class TaskListPopup : Window
         if (newIndex != _dropTargetIndex)
         {
             _dropTargetIndex = newIndex;
-            UpdateTaskDropIndicator(tasksPanel, newIndex);
+            AnimateTaskSiblings(tasksPanel, newIndex);
         }
     }
 
@@ -1857,41 +1855,32 @@ public partial class TaskListPopup : Window
         return taskBorders.Count;
     }
 
-    private void UpdateTaskDropIndicator(StackPanel tasksPanel, int index)
+    private void AnimateTaskSiblings(StackPanel tasksPanel, int dropIndex)
     {
-        EnsureDropIndicator();
-        if (_dropIndicator == null) return;
-
-        // Remove from previous location
-        if (_dropIndicator.Parent is Panel oldParent)
-        {
-            oldParent.Children.Remove(_dropIndicator);
-        }
-
         var taskBorders = tasksPanel.Children
             .OfType<Border>()
             .Where(b => b.Classes.Contains("taskItem"))
             .ToList();
 
-        // Calculate insertion index in panel
-        int insertIndex;
-        if (index < taskBorders.Count)
-        {
-            var targetBorder = taskBorders[index];
-            insertIndex = tasksPanel.Children.IndexOf(targetBorder);
-        }
-        else if (taskBorders.Count > 0)
-        {
-            var lastBorder = taskBorders[^1];
-            insertIndex = tasksPanel.Children.IndexOf(lastBorder) + 1;
-        }
-        else
-        {
-            insertIndex = tasksPanel.Children.Count;
-        }
+        // Use dragged item's height as the gap size
+        var gapHeight = _draggedBorder?.Bounds.Height + 4 ?? 44; // 4 = margin
 
-        tasksPanel.Children.Insert(insertIndex, _dropIndicator);
-        _dropIndicator.Classes.Add("visible");
+        // Find the dragged item's index in the list
+        var draggedIndex = taskBorders.IndexOf(_draggedBorder!);
+
+        for (var i = 0; i < taskBorders.Count; i++)
+        {
+            var border = taskBorders[i];
+            if (border == _draggedBorder) continue;
+
+            // Calculate logical index excluding the dragged item
+            var logicalIndex = i < draggedIndex ? i : i - 1;
+
+            // Items at or after the drop position shift down to make space
+            var adjustedDrop = dropIndex > draggedIndex ? dropIndex - 1 : dropIndex;
+            var offset = logicalIndex >= adjustedDrop ? gapHeight : 0;
+            border.RenderTransform = TransformOperations.Parse($"translateY({offset}px)");
+        }
     }
 
     private void CompleteTaskDrag(TodoTaskViewModel task)
@@ -1968,11 +1957,8 @@ public partial class TaskListPopup : Window
         // Create ghost for list header
         CreateListDragGhost(border, listName);
 
-        // Dim the original
-        border.Opacity = 0.3;
-
-        // Create drop indicator
-        EnsureDropIndicator();
+        // Hide the original from layout (it's now "lifted" as the ghost)
+        border.IsVisible = false;
     }
 
     private void CreateListDragGhost(Border original, string listName)
@@ -2053,7 +2039,7 @@ public partial class TaskListPopup : Window
         if (newIndex != _listDropTargetIndex)
         {
             _listDropTargetIndex = newIndex;
-            UpdateListDropIndicator(newIndex);
+            AnimateListSiblings(newIndex);
         }
     }
 
@@ -2082,17 +2068,8 @@ public partial class TaskListPopup : Window
         return listHeaders.Count;
     }
 
-    private void UpdateListDropIndicator(int index)
+    private void AnimateListSiblings(int dropIndex)
     {
-        EnsureDropIndicator();
-        if (_dropIndicator == null) return;
-
-        // Remove from previous location
-        if (_dropIndicator.Parent is Panel oldParent)
-        {
-            oldParent.Children.Remove(_dropIndicator);
-        }
-
         var listHeaders = TaskListPanel.Children
             .OfType<Border>()
             .Where(b => b.Classes.Contains("listHeader"))
@@ -2100,29 +2077,30 @@ public partial class TaskListPopup : Window
 
         if (listHeaders.Count == 0) return;
 
-        int insertIndex;
-        if (index < listHeaders.Count)
-        {
-            var targetHeader = listHeaders[index];
-            insertIndex = TaskListPanel.Children.IndexOf(targetHeader);
-        }
-        else
-        {
-            // After last list
-            var lastHeader = listHeaders[^1];
-            var lastHeaderIndex = TaskListPanel.Children.IndexOf(lastHeader);
+        // Use dragged header's height as gap size (include its task panel height since lists are collapsed during drag)
+        var gapHeight = _draggedBorder?.Bounds.Height + 12 ?? 36; // 12 = margins
 
-            insertIndex = lastHeaderIndex + 1;
-            if (insertIndex < TaskListPanel.Children.Count &&
-                TaskListPanel.Children[insertIndex] is StackPanel sp &&
+        var draggedIndex = listHeaders.IndexOf(_draggedBorder!);
+
+        for (var i = 0; i < listHeaders.Count; i++)
+        {
+            var header = listHeaders[i];
+            if (header == _draggedBorder) continue;
+
+            var logicalIndex = i < draggedIndex ? i : i - 1;
+            var adjustedDrop = dropIndex > draggedIndex ? dropIndex - 1 : dropIndex;
+            var offset = logicalIndex >= adjustedDrop ? gapHeight : 0;
+            header.RenderTransform = TransformOperations.Parse($"translateY({offset}px)");
+
+            // Also shift the associated listTasks panel
+            var headerIdx = TaskListPanel.Children.IndexOf(header);
+            if (headerIdx + 1 < TaskListPanel.Children.Count &&
+                TaskListPanel.Children[headerIdx + 1] is StackPanel sp &&
                 sp.Classes.Contains("listTasks"))
             {
-                insertIndex++;
+                sp.RenderTransform = TransformOperations.Parse($"translateY({offset}px)");
             }
         }
-
-        TaskListPanel.Children.Insert(insertIndex, _dropIndicator);
-        _dropIndicator.Classes.Add("visible");
     }
 
     private void CompleteListDrag(string listName)
@@ -2196,24 +2174,26 @@ public partial class TaskListPopup : Window
         _collapsedDuringDrag = null;
     }
 
-    private void EnsureDropIndicator()
+    private void ResetSiblingTransforms()
     {
-        if (_dropIndicator == null)
+        // Reset task items
+        foreach (var panel in _listTaskPanels.Values)
         {
-            _dropIndicator = new Border
+            foreach (var child in panel.Children.OfType<Border>())
             {
-                Classes = { "dropIndicator" }
-            };
+                if (child.Classes.Contains("taskItem"))
+                    child.RenderTransform = TransformOperations.Parse("translateY(0px)");
+            }
         }
-    }
 
-    private void RemoveDropIndicator()
-    {
-        if (_dropIndicator?.Parent is Panel parent)
+        // Reset list headers and their task panels
+        foreach (var child in TaskListPanel.Children)
         {
-            parent.Children.Remove(_dropIndicator);
+            if (child is Border b && b.Classes.Contains("listHeader"))
+                b.RenderTransform = TransformOperations.Parse("translateY(0px)");
+            if (child is StackPanel sp && sp.Classes.Contains("listTasks"))
+                sp.RenderTransform = TransformOperations.Parse("translateY(0px)");
         }
-        _dropIndicator?.Classes.Remove("visible");
     }
 
     private void CleanupDrag()
@@ -2228,10 +2208,10 @@ public partial class TaskListPopup : Window
             _dragGhost = null;
         }
 
-        // Restore original border opacity
+        // Restore original border visibility
         if (_draggedBorder != null)
         {
-            _draggedBorder.Opacity = 1.0;
+            _draggedBorder.IsVisible = true;
             _draggedBorder = null;
         }
 
@@ -2245,8 +2225,8 @@ public partial class TaskListPopup : Window
         // Restore collapsed lists
         RestoreCollapsedLists();
 
-        // Remove drop indicator
-        RemoveDropIndicator();
+        // Reset sibling transforms
+        ResetSiblingTransforms();
 
         // Reset state
         _draggedTask = null;

@@ -36,7 +36,7 @@
         <!-- Task item animations -->
         <Style Selector="Border.taskItem">
             <Setter Property="Opacity" Value="1"/>
-            <Setter Property="RenderTransform" Value="translateX(0)"/>
+            <Setter Property="RenderTransform" Value="translateY(0px)"/>
             <Setter Property="Transitions">
                 <Transitions>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
@@ -67,25 +67,9 @@
             <Setter Property="BoxShadow" Value="0 8 24 0 #40000000"/>
         </Style>
 
-        <!-- Drop indicator -->
-        <Style Selector="Border.dropIndicator">
-            <Setter Property="Height" Value="3"/>
-            <Setter Property="Background" Value="#0A84FF"/>
-            <Setter Property="CornerRadius" Value="1.5"/>
-            <Setter Property="Margin" Value="4,2"/>
-            <Setter Property="Opacity" Value="0"/>
-            <Setter Property="Transitions">
-                <Transitions>
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
-                </Transitions>
-            </Setter>
-        </Style>
-        <Style Selector="Border.dropIndicator.visible">
-            <Setter Property="Opacity" Value="1"/>
-        </Style>
-
         <!-- List header base styles -->
         <Style Selector="Border.listHeader">
+            <Setter Property="RenderTransform" Value="translateY(0px)"/>
             <Setter Property="Transitions">
                 <Transitions>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
@@ -108,10 +92,12 @@
         <Style Selector="StackPanel.listTasks">
             <Setter Property="MaxHeight" Value="2000"/>
             <Setter Property="Opacity" Value="1"/>
+            <Setter Property="RenderTransform" Value="translateY(0)"/>
             <Setter Property="Transitions">
                 <Transitions>
                     <DoubleTransition Property="MaxHeight" Duration="0:0:0.2" Easing="CubicEaseInOut"/>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="CubicEaseOut"/>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="CubicEaseOut"/>
                 </Transitions>
             </Setter>
         </Style>
