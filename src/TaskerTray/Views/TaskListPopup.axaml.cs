@@ -176,10 +176,41 @@ public partial class TaskListPopup : Window
             RefreshTasks();
             e.Handled = true;
         }
+        else if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Meta) && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            HandleUndoRedo(isRedo: true);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Meta) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            HandleUndoRedo(isRedo: false);
+            e.Handled = true;
+        }
         else if (e.Key == Key.Q && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
         {
             QuitRequested?.Invoke();
             e.Handled = true;
+        }
+    }
+
+    private void HandleUndoRedo(bool isRedo)
+    {
+        if (_activeInlineEditor != null) return;
+        if (_state != PopupState.Idle || _dragStartPoint.HasValue) return;
+
+        var undo = TaskerServices.Default.Undo;
+        try
+        {
+            var desc = isRedo ? undo.Redo() : undo.Undo();
+            RefreshTasks();
+            var verb = isRedo ? "Redone" : "Undone";
+            var empty = isRedo ? "Nothing to redo" : "Nothing to undo";
+            StatusText.Text = desc != null ? $"{verb}: {desc}" : empty;
+        }
+        catch (Exception ex)
+        {
+            RefreshTasks();
+            StatusText.Text = $"{(isRedo ? "Redo" : "Undo")} failed: {ex.Message}";
         }
     }
 
@@ -1496,6 +1527,7 @@ public partial class TaskListPopup : Window
         _showCount++; // Increment to invalidate any pending LostFocus handlers from previous show
         Position = position;
         CancelInlineEdit();
+        TaskerServices.Default.Undo.ReloadHistory();
         RefreshTasks();
 
         // Reset to hidden state before showing
