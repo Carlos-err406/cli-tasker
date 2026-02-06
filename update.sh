@@ -1,7 +1,32 @@
 #!/bin/bash
 set -e
 
+# Require bump type argument
+if [ -z "$1" ]; then
+    echo "Usage: ./update.sh <major|minor|patch>" >&2
+    exit 1
+fi
+
+BUMP_TYPE="$1"
 cd "$(dirname "$0")"
+
+# Read current version from csproj
+CURRENT_VERSION=$(grep -oE '<Version>[^<]+' cli-tasker.csproj | sed 's/<Version>//')
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+# Bump version
+case "$BUMP_TYPE" in
+    major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+    minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+    patch) PATCH=$((PATCH + 1)) ;;
+    *) echo "Error: Invalid bump type '$BUMP_TYPE'. Use major, minor, or patch." >&2; exit 1 ;;
+esac
+
+NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+
+# Update version in csproj
+sed -i '' "s|<Version>$CURRENT_VERSION</Version>|<Version>$NEW_VERSION</Version>|" cli-tasker.csproj
+echo "Version: $CURRENT_VERSION → $NEW_VERSION"
 
 # Update CLI
 echo "Updating CLI..."

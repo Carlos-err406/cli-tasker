@@ -53,21 +53,16 @@ tasker get 286
 tasker get 286 --json
 ```
 
-### Version bumping
-Before updating, increment the version in `cli-tasker.csproj`:
-```xml
-<Version>2.14.0</Version>  <!-- Bump this -->
-```
-
 ### Updating CLI and TaskerTray
 To update both the global CLI tool and the menu bar app after making changes:
 
-**Important:** Bump the version in `cli-tasker.csproj` first, otherwise the global tool won't update.
-
 ```bash
-./update.sh
+./update.sh patch   # 2.29.0 → 2.29.1 (bug fixes)
+./update.sh minor   # 2.29.0 → 2.30.0 (new features)
+./update.sh major   # 2.29.0 → 3.0.0  (breaking changes)
 ```
-This script:
+
+The script automatically bumps the version in `cli-tasker.csproj`, then:
 1. Packs and updates the global `tasker` CLI tool
 2. Stops the running TaskerTray app
 3. Builds and installs TaskerTray to /Applications
