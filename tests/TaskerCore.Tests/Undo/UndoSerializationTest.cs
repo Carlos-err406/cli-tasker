@@ -4,6 +4,7 @@ using System.Text.Json;
 using TaskerCore.Models;
 using TaskerCore.Undo;
 using TaskerCore.Undo.Commands;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 public class UndoSerializationTest
 {
@@ -110,6 +111,59 @@ public class UndoSerializationTest
         Assert.Equal("old", restoredCmd.OldName);
         Assert.Equal("new", restoredCmd.NewName);
         Assert.True(restoredCmd.WasDefaultList);
+    }
+
+    [Fact]
+    public void SetStatusCommand_SerializesAndDeserializes()
+    {
+        var cmd = new SetStatusCommand
+        {
+            TaskId = "abc",
+            OldStatus = TaskStatus.Pending,
+            NewStatus = TaskStatus.Done
+        };
+
+        // Serialize as IUndoableCommand (same as UndoManager.Save)
+        var json = JsonSerializer.Serialize<IUndoableCommand>(cmd, GetJsonOptions());
+
+        Assert.Contains("\"$type\": \"set-status\"", json);
+
+        // Deserialize (same as UndoManager.LoadHistory)
+        var deserialized = JsonSerializer.Deserialize<IUndoableCommand>(json, GetJsonOptions());
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<SetStatusCommand>(deserialized);
+
+        var restored = (SetStatusCommand)deserialized;
+        Assert.Equal("abc", restored.TaskId);
+        Assert.Equal(TaskStatus.Pending, restored.OldStatus);
+        Assert.Equal(TaskStatus.Done, restored.NewStatus);
+    }
+
+    [Fact]
+    public void CompositeWithSetStatus_SerializesAndDeserializes()
+    {
+        var inner = new SetStatusCommand
+        {
+            TaskId = "abc",
+            OldStatus = TaskStatus.Pending,
+            NewStatus = TaskStatus.Done
+        };
+        var composite = new CompositeCommand
+        {
+            BatchDescription = "Set 1 tasks to done",
+            Commands = [inner]
+        };
+
+        var json = JsonSerializer.Serialize<IUndoableCommand>(composite, GetJsonOptions());
+        var deserialized = JsonSerializer.Deserialize<IUndoableCommand>(json, GetJsonOptions());
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<CompositeCommand>(deserialized);
+
+        var restored = (CompositeCommand)deserialized;
+        Assert.Single(restored.Commands);
+        Assert.IsType<SetStatusCommand>(restored.Commands[0]);
     }
 
     [Fact]

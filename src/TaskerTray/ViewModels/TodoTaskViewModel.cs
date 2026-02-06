@@ -7,6 +7,7 @@ using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
 using TaskerCore.Results;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 namespace TaskerTray.ViewModels;
 
@@ -31,6 +32,9 @@ public partial class TodoTaskViewModel : ObservableObject
     [ObservableProperty]
     private bool _isChecked;
 
+    [ObservableProperty]
+    private TaskStatus _status;
+
     /// <summary>
     /// Display text for menu item - first line, truncated.
     /// </summary>
@@ -54,7 +58,12 @@ public partial class TodoTaskViewModel : ObservableObject
     /// <summary>
     /// Menu item text with checkbox indicator.
     /// </summary>
-    public string MenuText => IsChecked ? $"[x] {DisplayText}" : $"[ ] {DisplayText}";
+    public string MenuText => Status switch
+    {
+        TaskStatus.Done => $"[x] {DisplayText}",
+        TaskStatus.InProgress => $"[-] {DisplayText}",
+        _ => $"[ ] {DisplayText}"
+    };
 
     /// <summary>
     /// Priority display text.
@@ -114,27 +123,37 @@ public partial class TodoTaskViewModel : ObservableObject
     {
         _task = task;
         _onChanged = onChanged;
-        _isChecked = task.IsChecked;
+        _isChecked = task.Status == TaskStatus.Done;
+        _status = task.Status;
     }
 
     [RelayCommand]
     private void Toggle()
     {
         var taskList = new TodoTaskList();
-        TaskResult result;
-
-        if (IsChecked)
-        {
-            result = taskList.UncheckTask(Id);
-        }
-        else
-        {
-            result = taskList.CheckTask(Id);
-        }
+        // Click = toggle done/pending
+        var newStatus = Status == TaskStatus.Done ? TaskStatus.Pending : TaskStatus.Done;
+        var result = taskList.SetStatus(Id, newStatus);
 
         if (result is TaskResult.Success)
         {
-            IsChecked = !IsChecked;
+            Status = newStatus;
+            IsChecked = newStatus == TaskStatus.Done;
+            OnPropertyChanged(nameof(MenuText));
+            _onChanged?.Invoke(this);
+        }
+    }
+
+    [RelayCommand]
+    private void SetInProgress()
+    {
+        var taskList = new TodoTaskList();
+        var result = taskList.SetStatus(Id, TaskStatus.InProgress);
+
+        if (result is TaskResult.Success)
+        {
+            Status = TaskStatus.InProgress;
+            IsChecked = false;
             OnPropertyChanged(nameof(MenuText));
             _onChanged?.Invoke(this);
         }

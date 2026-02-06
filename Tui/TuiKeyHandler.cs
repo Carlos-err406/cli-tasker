@@ -5,6 +5,7 @@ using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 public class TuiKeyHandler
 {
@@ -126,7 +127,7 @@ public class TuiKeyHandler
         }
     }
 
-    private static TuiState SetTaskPriority(TuiState state, IReadOnlyList<TodoTask> tasks, Priority? priority)
+    private TuiState SetTaskPriority(TuiState state, IReadOnlyList<TodoTask> tasks, Priority? priority)
     {
         if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
             return state;
@@ -134,6 +135,7 @@ public class TuiKeyHandler
         var task = tasks[state.CursorIndex];
         var taskList = new TodoTaskList(state.CurrentList);
         taskList.SetTaskPriority(task.Id, priority);
+        _app.InvalidateCache();
 
         var message = priority.HasValue
             ? $"Set priority: {priority}"
@@ -150,7 +152,7 @@ public class TuiKeyHandler
         return state.StartInputDueDate(task.Id);
     }
 
-    private static TuiState ClearTaskDueDate(TuiState state, IReadOnlyList<TodoTask> tasks)
+    private TuiState ClearTaskDueDate(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
         if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
             return state;
@@ -158,21 +160,24 @@ public class TuiKeyHandler
         var task = tasks[state.CursorIndex];
         var taskList = new TodoTaskList(state.CurrentList);
         taskList.SetTaskDueDate(task.Id, null);
+        _app.InvalidateCache();
 
         return state.WithStatusMessage("Cleared due date");
     }
 
-    private static TuiState PerformUndo(TuiState state)
+    private TuiState PerformUndo(TuiState state)
     {
         var desc = TaskerServices.Default.Undo.Undo();
+        _app.InvalidateCache();
         return desc != null
             ? state.WithStatusMessage($"Undone: {desc}")
             : state.WithStatusMessage("Nothing to undo");
     }
 
-    private static TuiState PerformRedo(TuiState state)
+    private TuiState PerformRedo(TuiState state)
     {
         var desc = TaskerServices.Default.Undo.Redo();
+        _app.InvalidateCache();
         return desc != null
             ? state.WithStatusMessage($"Redone: {desc}")
             : state.WithStatusMessage("Nothing to redo");
@@ -424,6 +429,7 @@ public class TuiKeyHandler
         {
             var taskList = new TodoTaskList(state.CurrentList);
             taskList.RenameTask(state.InputTargetTaskId, text);
+            _app.InvalidateCache();
             return (state with
             {
                 Mode = TuiMode.Normal,
@@ -448,6 +454,7 @@ public class TuiKeyHandler
 
             var taskList = new TodoTaskList(state.CurrentList);
             taskList.AddTodoTask(task);
+            _app.InvalidateCache();
 
             return (state with
             {
@@ -469,12 +476,28 @@ public class TuiKeyHandler
         var task = tasks[state.CursorIndex];
         var taskList = new TodoTaskList(state.CurrentList);
 
-        if (task.IsChecked)
-            taskList.UncheckTask(task.Id);
-        else
-            taskList.CheckTask(task.Id);
+        // Cycle: pending → in-progress → done → pending
+        var nextStatus = task.Status switch
+        {
+            TaskStatus.Pending => TaskStatus.InProgress,
+            TaskStatus.InProgress => TaskStatus.Done,
+            TaskStatus.Done => TaskStatus.Pending,
+            _ => TaskStatus.Pending
+        };
 
-        return state.WithStatusMessage(task.IsChecked ? "Unchecked" : "Checked");
+        taskList.SetStatus(task.Id, nextStatus);
+
+        // Update cached task in-place so the list doesn't re-sort
+        _app.UpdateCachedTask(state.CursorIndex, task.WithStatus(nextStatus));
+
+        var label = nextStatus switch
+        {
+            TaskStatus.Pending => "Pending",
+            TaskStatus.InProgress => "In-progress",
+            TaskStatus.Done => "Done",
+            _ => nextStatus.ToString()
+        };
+        return state.WithStatusMessage(label);
     }
 
     private TuiState DeleteTask(TuiState state, IReadOnlyList<TodoTask> tasks)
@@ -485,6 +508,7 @@ public class TuiKeyHandler
         var task = tasks[state.CursorIndex];
         var taskList = new TodoTaskList(state.CurrentList);
         taskList.DeleteTask(task.Id);
+        _app.InvalidateCache();
 
         var newIndex = Math.Min(state.CursorIndex, Math.Max(0, tasks.Count - 2));
         return state.WithStatusMessage("Deleted") with { CursorIndex = newIndex };
@@ -531,6 +555,7 @@ public class TuiKeyHandler
 
                 var taskList = new TodoTaskList();
                 taskList.MoveTask(state.SelectTargetTaskId!, selected);
+                _app.InvalidateCache();
 
                 return (state with
                 {
@@ -568,6 +593,7 @@ public class TuiKeyHandler
             case ConsoleKey.Spacebar:
                 var selected = state.SelectOptions[state.SelectCursor];
                 var newList = selected == "<All Lists>" ? null : selected;
+                _app.InvalidateCache();
 
                 return (state with
                 {
@@ -596,6 +622,7 @@ public class TuiKeyHandler
         var count = state.SelectedTaskIds.Count;
         var taskList = new TodoTaskList();
         taskList.DeleteTasks(state.SelectedTaskIds.ToArray());
+        _app.InvalidateCache();
 
         return state.WithStatusMessage($"Deleted {count} tasks") with
         {
@@ -612,6 +639,7 @@ public class TuiKeyHandler
 
         var taskList = new TodoTaskList();
         taskList.CheckTasks(state.SelectedTaskIds.ToArray());
+        _app.InvalidateCache();
 
         return state.WithStatusMessage($"Checked {state.SelectedTaskIds.Count} tasks") with
         {
@@ -628,6 +656,7 @@ public class TuiKeyHandler
 
         var taskList = new TodoTaskList();
         taskList.UncheckTasks(state.SelectedTaskIds.ToArray());
+        _app.InvalidateCache();
 
         return state.WithStatusMessage($"Unchecked {state.SelectedTaskIds.Count} tasks") with
         {
@@ -671,7 +700,7 @@ public class TuiKeyHandler
         }
     }
 
-    private static TuiState ConfirmDueDateInput(TuiState state)
+    private TuiState ConfirmDueDateInput(TuiState state)
     {
         var text = state.InputBuffer.Trim();
 
@@ -688,6 +717,7 @@ public class TuiKeyHandler
 
         var taskList = new TodoTaskList();
         taskList.SetTaskDueDate(state.InputTargetTaskId!, dueDate);
+        _app.InvalidateCache();
 
         return (state with
         {

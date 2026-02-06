@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 namespace TaskerTray.ViewModels;
 
@@ -55,7 +56,7 @@ public partial class TaskListViewModel : ObservableObject
 
         // Update counts
         TotalCount = sortedTasks.Count;
-        UncheckedCount = sortedTasks.Count(t => !t.IsChecked);
+        UncheckedCount = sortedTasks.Count(t => t.Status != TaskStatus.Done);
 
         // Convert to ViewModels
         Tasks.Clear();

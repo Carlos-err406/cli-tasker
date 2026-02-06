@@ -13,7 +13,9 @@ using Avalonia.VisualTree;
 using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 using TaskerCore.Parsing;
+using TaskerCore.Results;
 using TaskerCore.Utilities;
 using TaskerTray.ViewModels;
 
@@ -39,6 +41,8 @@ public partial class TaskListPopup : Window
     private bool _inlineAddSubmitted; // Prevents double submission between Deactivated and LostFocus
     private string? _newlyAddedTaskId; // Track newly added task for entrance animation
     private Dictionary<string, Border> _taskBorders = new(); // Track task borders for animations
+    private Dictionary<string, CheckBox> _taskCheckboxes = new();
+    private Dictionary<string, TextBlock> _taskTitles = new();
 
     public TaskListPopup()
     {
@@ -216,6 +220,8 @@ public partial class TaskListPopup : Window
         _generationId++; // Invalidate all handlers from previous builds
         TaskListPanel.Children.Clear();
         _taskBorders.Clear();
+        _taskCheckboxes.Clear();
+        _taskTitles.Clear();
         _listTaskPanels.Clear();
 
         // Show create list input at top if active
@@ -364,7 +370,7 @@ public partial class TaskListPopup : Window
         // Get task counts for summary display when collapsed
         var tasksInList = _tasks.Where(t => t.ListName == listName).ToList();
         var totalCount = tasksInList.Count;
-        var pendingCount = tasksInList.Count(t => !t.IsChecked);
+        var pendingCount = tasksInList.Count(t => t.Status != TaskStatus.Done);
 
         // Wrap header in a Border for drag styling
         var headerBorder = new Border
@@ -1056,8 +1062,8 @@ public partial class TaskListPopup : Window
         // Track border for animations
         _taskBorders[task.Id] = border;
 
-        // Add checked class if task is checked
-        if (task.IsChecked)
+        // Add checked class if task is done
+        if (task.Status == TaskStatus.Done)
         {
             border.Classes.Add("checked");
         }
@@ -1103,17 +1109,29 @@ public partial class TaskListPopup : Window
             }
         };
 
-        // Checkbox
+        // Checkbox: click toggles done/pending, right-click sets in-progress
         var checkbox = new CheckBox
         {
-            IsChecked = task.IsChecked,
+            IsChecked = task.Status == TaskStatus.Done,
+            IsThreeState = true,
             Margin = new Thickness(0, 0, 10, 0),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
             Cursor = new Cursor(StandardCursorType.Arrow)
         };
+        if (task.Status == TaskStatus.InProgress)
+            checkbox.IsChecked = null;
         Grid.SetColumn(checkbox, 0);
         checkbox.Click += (_, _) => OnCheckboxClicked(task, checkbox);
+        checkbox.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(checkbox).Properties.IsRightButtonPressed)
+            {
+                e.Handled = true;
+                OnSetInProgress(task);
+            }
+        };
         grid.Children.Add(checkbox);
+        _taskCheckboxes[task.Id] = checkbox;
 
         // Task content (title + description + metadata)
         var contentPanel = new StackPanel
@@ -1144,7 +1162,7 @@ public partial class TaskListPopup : Window
             titleRow.Children.Add(priorityIndicator);
         }
 
-        var titleColor = task.IsChecked ? "#666" : "#FFF";
+        var titleColor = task.Status == TaskStatus.Done ? "#666" : "#FFF";
         var title = new TextBlock
         {
             Text = task.DisplayText,
@@ -1158,6 +1176,7 @@ public partial class TaskListPopup : Window
         if (!task.HasPriority)
             Grid.SetColumnSpan(title, 2);
         titleRow.Children.Add(title);
+        _taskTitles[task.Id] = title;
         contentPanel.Children.Add(titleRow);
 
         if (task.HasDescription)
@@ -1257,6 +1276,19 @@ public partial class TaskListPopup : Window
             contextMenu.Items.Add(moveItem);
         }
 
+        // Status submenu
+        var statusItem = new MenuItem { Header = "Set Status" };
+        var pendingItem = new MenuItem { Header = task.Status == TaskStatus.Pending ? "~ Pending" : "  Pending" };
+        pendingItem.Click += (_, _) => OnSetStatus(task, TaskStatus.Pending);
+        statusItem.Items.Add(pendingItem);
+        var inProgressItem = new MenuItem { Header = task.Status == TaskStatus.InProgress ? "~ In Progress" : "  In Progress" };
+        inProgressItem.Click += (_, _) => OnSetStatus(task, TaskStatus.InProgress);
+        statusItem.Items.Add(inProgressItem);
+        var doneItem = new MenuItem { Header = task.Status == TaskStatus.Done ? "~ Done" : "  Done" };
+        doneItem.Click += (_, _) => OnSetStatus(task, TaskStatus.Done);
+        statusItem.Items.Add(doneItem);
+        contextMenu.Items.Add(statusItem);
+
         contextMenu.Items.Add(new Separator());
 
         var deleteItem = new MenuItem { Header = "Delete", Foreground = new SolidColorBrush(Color.Parse("#FF6B6B")) };
@@ -1273,41 +1305,79 @@ public partial class TaskListPopup : Window
         return border;
     }
 
-    private async void OnCheckboxClicked(TodoTaskViewModel task, CheckBox checkbox)
+    private void OnCheckboxClicked(TodoTaskViewModel task, CheckBox checkbox)
     {
-        // Visual feedback on the task border
-        if (_taskBorders.TryGetValue(task.Id, out var border))
-        {
-            if (checkbox.IsChecked == true)
-            {
-                border.Classes.Add("checked");
-            }
-            else
-            {
-                border.Classes.Remove("checked");
-            }
-        }
+        // Click toggles between Done and Pending only (in-progress via right-click or context menu)
+        var newStatus = task.Status == TaskStatus.Done ? TaskStatus.Pending : TaskStatus.Done;
 
+        // Prevent three-state cycling — force the checkbox to our intended state
+        checkbox.IsChecked = newStatus == TaskStatus.Done;
+
+        OnSetStatus(task, newStatus);
+    }
+
+    private void OnSetStatus(TodoTaskViewModel task, TaskStatus newStatus)
+    {
         try
         {
             var taskList = new TodoTaskList();
-            if (checkbox.IsChecked == true)
+            var result = taskList.SetStatus(task.Id, newStatus);
+
+            if (result is TaskResult.NotFound)
             {
-                taskList.CheckTask(task.Id);
-            }
-            else
-            {
-                taskList.UncheckTask(task.Id);
+                // Task was deleted externally — full refresh to reflect reality
+                RefreshTasks();
+                return;
             }
 
-            // Delayed refresh to allow animation to complete
-            await Task.Delay(150);
-            Dispatcher.UIThread.Post(() => RefreshTasks(), DispatcherPriority.Background);
+            // Update visuals in-place without reordering
+            UpdateTaskStatusInPlace(task, newStatus);
         }
         catch (Exception ex)
         {
             StatusText.Text = $"Error: {ex.Message}";
         }
+    }
+
+    private void OnSetInProgress(TodoTaskViewModel task)
+    {
+        OnSetStatus(task, task.Status == TaskStatus.InProgress ? TaskStatus.Pending : TaskStatus.InProgress);
+    }
+
+    private void UpdateTaskStatusInPlace(TodoTaskViewModel task, TaskStatus newStatus)
+    {
+        // Update the ViewModel
+        task.Status = newStatus;
+
+        // Update checkbox
+        if (_taskCheckboxes.TryGetValue(task.Id, out var checkbox))
+        {
+            checkbox.IsChecked = newStatus switch
+            {
+                TaskStatus.Done => true,
+                TaskStatus.InProgress => null,
+                _ => false
+            };
+        }
+
+        // Update border CSS class
+        if (_taskBorders.TryGetValue(task.Id, out var border))
+        {
+            if (newStatus == TaskStatus.Done)
+                border.Classes.Add("checked");
+            else
+                border.Classes.Remove("checked");
+        }
+
+        // Update title color
+        if (_taskTitles.TryGetValue(task.Id, out var title))
+        {
+            title.Foreground = new SolidColorBrush(
+                Color.Parse(newStatus == TaskStatus.Done ? "#666" : "#FFF"));
+        }
+
+        // Update status bar counts
+        UpdateStatus();
     }
 
     private void OnMoveTask(TodoTaskViewModel task, string targetList)
@@ -1348,8 +1418,11 @@ public partial class TaskListPopup : Window
     private void UpdateStatus()
     {
         var total = _tasks.Count;
-        var pending = _tasks.Count(t => !t.IsChecked);
-        StatusText.Text = $"{pending} pending / {total} total";
+        var pending = _tasks.Count(t => t.Status != TaskStatus.Done);
+        var wip = _tasks.Count(t => t.Status == TaskStatus.InProgress);
+        StatusText.Text = wip > 0
+            ? $"{wip} active / {pending} pending / {total} total"
+            : $"{pending} pending / {total} total";
     }
 
     private async Task CopyTaskIdToClipboard(string taskId)
@@ -1636,11 +1709,14 @@ public partial class TaskListPopup : Window
         // Checkbox (visual only)
         var checkbox = new CheckBox
         {
-            IsChecked = task.IsChecked,
+            IsChecked = task.Status == TaskStatus.Done,
+            IsThreeState = true,
             Margin = new Thickness(0, 0, 10, 0),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
             IsEnabled = false
         };
+        if (task.Status == TaskStatus.InProgress)
+            checkbox.IsChecked = null;
         Grid.SetColumn(checkbox, 0);
         grid.Children.Add(checkbox);
 
@@ -1708,7 +1784,7 @@ public partial class TaskListPopup : Window
             titleRow.Children.Add(priorityIndicator);
         }
 
-        var titleColor = task.IsChecked ? "#666" : "#FFF";
+        var titleColor = task.Status == TaskStatus.Done ? "#666" : "#FFF";
         var title = new TextBlock
         {
             Text = task.DisplayText,
@@ -2009,7 +2085,7 @@ public partial class TaskListPopup : Window
         });
 
         var taskCount = _tasks.Count(t => t.ListName == listName);
-        var pendingCount = _tasks.Count(t => t.ListName == listName && !t.IsChecked);
+        var pendingCount = _tasks.Count(t => t.ListName == listName && t.Status != TaskStatus.Done);
         headerStack.Children.Add(new TextBlock
         {
             Text = $"{taskCount} tasks, {pendingCount} pending",

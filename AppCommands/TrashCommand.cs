@@ -3,6 +3,7 @@ namespace cli_tasker;
 using System.CommandLine;
 using Spectre.Console;
 using TaskerCore.Config;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 using TaskerCore.Data;
 using TaskerCore.Models;
 
@@ -69,7 +70,12 @@ static class TrashCommand
                 ? "\n" + indent + "[dim]" + string.Join("\n" + indent, lines.Skip(1).Select(Markup.Escape)) + "[/]"
                 : "";
 
-            var checkbox = td.IsChecked ? "[green][[x]][/]" : "[grey][[ ]][/]";
+            var checkbox = td.Status switch
+            {
+                TaskStatus.Done => "[green][[x]][/]",
+                TaskStatus.InProgress => "[yellow][[-]][/]",
+                _ => "[grey][[ ]][/]"
+            };
             var taskId = $"[dim]({td.Id})[/]";
             Output.Markup($"{taskId} {checkbox} - {firstLine}{restLines}");
         }

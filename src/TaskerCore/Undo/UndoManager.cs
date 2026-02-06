@@ -146,7 +146,7 @@ public sealed class UndoManager
             var cutoffStr = cutoff.ToString("o");
 
             _undoStack = _db.Query(
-                "SELECT command_json FROM undo_history WHERE stack_type = 'undo' AND created_at > @cutoff ORDER BY id DESC",
+                "SELECT command_json FROM undo_history WHERE stack_type = 'undo' AND created_at > @cutoff ORDER BY id ASC",
                 reader =>
                 {
                     var json = reader.GetString(0);
@@ -156,7 +156,7 @@ public sealed class UndoManager
                 .ToList();
 
             _redoStack = _db.Query(
-                "SELECT command_json FROM undo_history WHERE stack_type = 'redo' AND created_at > @cutoff ORDER BY id DESC",
+                "SELECT command_json FROM undo_history WHERE stack_type = 'redo' AND created_at > @cutoff ORDER BY id ASC",
                 reader =>
                 {
                     var json = reader.GetString(0);

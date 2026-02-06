@@ -5,7 +5,7 @@ using TaskerCore.Parsing;
 public record TodoTask(
     string Id,
     string Description,
-    bool IsChecked,
+    TaskStatus Status,
     DateTime CreatedAt,
     string ListName,
     DateOnly? DueDate = null,
@@ -20,7 +20,7 @@ public record TodoTask(
         return new TodoTask(
             Guid.NewGuid().ToString()[..3],
             trimmed,
-            false,
+            TaskStatus.Pending,
             DateTime.Now,
             listName,
             parsed.DueDate,
@@ -35,9 +35,7 @@ public record TodoTask(
     public bool IsDueSoon => DueDate.HasValue && DueDate.Value <= DateOnly.FromDateTime(DateTime.Today.AddDays(3));
     public bool HasTags => Tags is { Length: > 0 };
 
-    public TodoTask Check() => this with { IsChecked = true };
-
-    public TodoTask UnCheck() => this with { IsChecked = false };
+    public TodoTask WithStatus(TaskStatus status) => this with { Status = status };
 
     public TodoTask Rename(string newDescription)
     {

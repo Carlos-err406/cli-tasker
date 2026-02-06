@@ -3,6 +3,7 @@ namespace TaskerCore.Data;
 using System.Text.Json;
 using TaskerCore.Models;
 using TaskerCore.Undo;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 /// <summary>
 /// Migrates data from old JSON file storage to the new SQLite database.
@@ -81,12 +82,12 @@ public static class JsonMigrator
                         : null;
 
                     db.Execute("""
-                        INSERT OR IGNORE INTO tasks (id, description, is_checked, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
-                        VALUES (@id, @desc, @checked, @created, @list, @due, @priority, @tags, @trashed, @order)
+                        INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
+                        VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, @trashed, @order)
                         """,
                         ("@id", task.Id),
                         ("@desc", task.Description),
-                        ("@checked", task.IsChecked ? 1 : 0),
+                        ("@status", (int)task.Status),
                         ("@created", task.CreatedAt.ToString("o")),
                         ("@list", task.ListName),
                         ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
@@ -105,24 +106,38 @@ public static class JsonMigrator
 
     /// <summary>
     /// Deserializes task lists from JSON, handling both new list-first format
-    /// and legacy flat TodoTask[] format.
+    /// and legacy flat TodoTask[] format. Maps old IsChecked bool to TaskStatus.
     /// </summary>
     private static TaskList[] DeserializeTaskLists(string json)
     {
-        // Try new list-first format: [{ListName: "tasks", Tasks: [...]}]
+        // Parse as raw JSON to handle old IsChecked → Status mapping
         try
         {
-            var lists = JsonSerializer.Deserialize<TaskList[]>(json);
-            if (lists != null) return lists;
-        }
-        catch { /* Try legacy format */ }
+            var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
 
-        // Try legacy flat format: [{Id: "abc", Description: "...", ...}]
-        try
-        {
-            var tasks = JsonSerializer.Deserialize<TodoTask[]>(json);
-            if (tasks != null)
+            if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() == 0)
+                return [];
+
+            // Detect format: list-first has "ListName" + "Tasks", legacy has "Id" + "Description"
+            var first = root[0];
+            if (first.TryGetProperty("ListName", out _) && first.TryGetProperty("Tasks", out _))
             {
+                // List-first format
+                return root.EnumerateArray().Select(listEl =>
+                {
+                    var listName = listEl.GetProperty("ListName").GetString() ?? "tasks";
+                    var collapsed = listEl.TryGetProperty("IsCollapsed", out var c) && c.GetBoolean();
+                    var tasks = listEl.GetProperty("Tasks").EnumerateArray()
+                        .Select(MapJsonTask)
+                        .ToArray();
+                    return new TaskList(listName, tasks, collapsed);
+                }).ToArray();
+            }
+            else if (first.TryGetProperty("Id", out _))
+            {
+                // Legacy flat format
+                var tasks = root.EnumerateArray().Select(MapJsonTask).ToArray();
                 return tasks
                     .GroupBy(t => t.ListName)
                     .Select(g => new TaskList(g.Key, g.ToArray()))
@@ -132,6 +147,57 @@ public static class JsonMigrator
         catch { /* Malformed data */ }
 
         return [];
+    }
+
+    /// <summary>
+    /// Maps a JSON task element to a TodoTask, handling old IsChecked bool → TaskStatus.
+    /// </summary>
+    private static TodoTask MapJsonTask(JsonElement el)
+    {
+        var id = el.GetProperty("Id").GetString() ?? "";
+        var desc = el.GetProperty("Description").GetString() ?? "";
+        var createdAt = el.GetProperty("CreatedAt").GetDateTime();
+        var listName = el.GetProperty("ListName").GetString() ?? "tasks";
+
+        // Handle IsChecked (old) vs Status (new)
+        TaskStatus status;
+        if (el.TryGetProperty("Status", out var statusEl))
+        {
+            status = (TaskStatus)statusEl.GetInt32();
+        }
+        else if (el.TryGetProperty("IsChecked", out var checkedEl))
+        {
+            status = checkedEl.GetBoolean() ? TaskStatus.Done : TaskStatus.Pending;
+        }
+        else
+        {
+            status = TaskStatus.Pending;
+        }
+
+        DateOnly? dueDate = null;
+        if (el.TryGetProperty("DueDate", out var dueDateEl) && dueDateEl.ValueKind == JsonValueKind.String)
+        {
+            if (DateOnly.TryParse(dueDateEl.GetString(), out var dd))
+                dueDate = dd;
+        }
+
+        Priority? priority = null;
+        if (el.TryGetProperty("Priority", out var priorityEl) && priorityEl.ValueKind != JsonValueKind.Null)
+        {
+            priority = (Priority)priorityEl.GetInt32();
+        }
+
+        string[]? tags = null;
+        if (el.TryGetProperty("Tags", out var tagsEl) && tagsEl.ValueKind == JsonValueKind.Array)
+        {
+            tags = tagsEl.EnumerateArray()
+                .Select(t => t.GetString() ?? "")
+                .Where(t => t.Length > 0)
+                .ToArray();
+            if (tags.Length == 0) tags = null;
+        }
+
+        return new TodoTask(id, desc, status, createdAt, listName, dueDate, priority, tags);
     }
 
     private static void MigrateConfig(TaskerDb db, string configPath)

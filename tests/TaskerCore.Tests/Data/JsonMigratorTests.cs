@@ -4,6 +4,7 @@ using System.Text.Json;
 using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 [Collection("IsolatedTests")]
 public class JsonMigratorTests : IDisposable
@@ -35,22 +36,33 @@ public class JsonMigratorTests : IDisposable
         return services;
     }
 
+    /// <summary>
+    /// Writes old-format JSON with IsChecked bool (pre-TaskStatus migration).
+    /// </summary>
+    private static string OldFormatJson(params (string listName, (string id, string desc, bool isChecked, string listName)[] tasks)[] lists)
+    {
+        var arr = lists.Select(l => new
+        {
+            ListName = l.listName,
+            Tasks = l.tasks.Select(t => new
+            {
+                Id = t.id,
+                Description = t.desc,
+                IsChecked = t.isChecked,
+                CreatedAt = DateTime.Now,
+                ListName = t.listName
+            }).ToArray()
+        }).ToArray();
+        return JsonSerializer.Serialize(arr);
+    }
+
     [Fact]
     public void MigratesTasks_FromListFirstFormat()
     {
-        // Arrange - write old-format JSON file
-        var tasks = new[]
-        {
-            new TaskList("tasks", [
-                new TodoTask("abc", "Task one", false, DateTime.Now.AddHours(-2), "tasks"),
-                new TodoTask("def", "Task two", true, DateTime.Now.AddHours(-1), "tasks"),
-            ]),
-            new TaskList("work", [
-                new TodoTask("ghi", "Work task", false, DateTime.Now, "work"),
-            ])
-        };
-
-        var json = JsonSerializer.Serialize(tasks);
+        // Arrange - write old-format JSON file with IsChecked booleans
+        var json = OldFormatJson(
+            ("tasks", [("abc", "Task one", false, "tasks"), ("def", "Task two", true, "tasks")]),
+            ("work", [("ghi", "Work task", false, "work")]));
         File.WriteAllText(Path.Combine(_testDir, "all-tasks.json"), json);
 
         // Act
@@ -60,6 +72,14 @@ public class JsonMigratorTests : IDisposable
         var taskList = new TodoTaskList(services, "tasks");
         var allTasks = taskList.GetAllTasks();
         Assert.Equal(2, allTasks.Count);
+
+        // Verify IsChecked=true maps to Status=Done
+        var doneTask = allTasks.First(t => t.Id == "def");
+        Assert.Equal(TaskStatus.Done, doneTask.Status);
+
+        // Verify IsChecked=false maps to Status=Pending
+        var pendingTask = allTasks.First(t => t.Id == "abc");
+        Assert.Equal(TaskStatus.Pending, pendingTask.Status);
 
         var workList = new TodoTaskList(services, "work");
         Assert.Single(workList.GetAllTasks());
@@ -73,16 +93,8 @@ public class JsonMigratorTests : IDisposable
     public void MigratesTrash_FromJson()
     {
         // Arrange - write trash JSON file
-        var trash = new[]
-        {
-            new TaskList("tasks", [
-                new TodoTask("xyz", "Deleted task", false, DateTime.Now, "tasks"),
-            ])
-        };
-
-        File.WriteAllText(
-            Path.Combine(_testDir, "all-tasks.trash.json"),
-            JsonSerializer.Serialize(trash));
+        var json = OldFormatJson(("tasks", [("xyz", "Deleted task", false, "tasks")]));
+        File.WriteAllText(Path.Combine(_testDir, "all-tasks.trash.json"), json);
 
         // Act
         var services = CreateServicesWithJsonFiles();
@@ -149,19 +161,11 @@ public class JsonMigratorTests : IDisposable
     public void PreservesSortOrder_NewestFirst()
     {
         // Arrange - tasks in array order (newest first in old format)
-        var now = DateTime.Now;
-        var tasks = new[]
-        {
-            new TaskList("tasks", [
-                new TodoTask("new", "Newest", false, now, "tasks"),
-                new TodoTask("mid", "Middle", false, now.AddHours(-1), "tasks"),
-                new TodoTask("old", "Oldest", false, now.AddHours(-2), "tasks"),
-            ])
-        };
-
-        File.WriteAllText(
-            Path.Combine(_testDir, "all-tasks.json"),
-            JsonSerializer.Serialize(tasks));
+        var json = OldFormatJson(("tasks", [
+            ("new", "Newest", false, "tasks"),
+            ("mid", "Middle", false, "tasks"),
+            ("old", "Oldest", false, "tasks")]));
+        File.WriteAllText(Path.Combine(_testDir, "all-tasks.json"), json);
 
         // Act
         var services = CreateServicesWithJsonFiles();
@@ -177,20 +181,30 @@ public class JsonMigratorTests : IDisposable
     [Fact]
     public void MigratesTasksWithMetadata()
     {
-        // Arrange - tasks with due dates, priority, and tags
-        var tasks = new[]
+        // Arrange - tasks with due dates, priority, and tags (as raw JSON to include metadata)
+        var json = JsonSerializer.Serialize(new[]
         {
-            new TaskList("tasks", [
-                new TodoTask("abc", "Important task", false, DateTime.Now, "tasks",
-                    DueDate: new DateOnly(2026, 3, 15),
-                    Priority: Priority.High,
-                    Tags: ["urgent", "review"]),
-            ])
-        };
+            new
+            {
+                ListName = "tasks",
+                Tasks = new[]
+                {
+                    new
+                    {
+                        Id = "abc",
+                        Description = "Important task",
+                        IsChecked = false,
+                        CreatedAt = DateTime.Now,
+                        ListName = "tasks",
+                        DueDate = "2026-03-15",
+                        Priority = (int)Priority.High,
+                        Tags = new[] { "urgent", "review" }
+                    }
+                }
+            }
+        });
 
-        File.WriteAllText(
-            Path.Combine(_testDir, "all-tasks.json"),
-            JsonSerializer.Serialize(tasks));
+        File.WriteAllText(Path.Combine(_testDir, "all-tasks.json"), json);
 
         // Act
         var services = CreateServicesWithJsonFiles();
