@@ -478,18 +478,15 @@ public partial class TaskListPopup : Window
         };
         headerStack.Children.Add(header);
 
-        // Show summary when collapsed
-        if (isCollapsed)
+        // Task count summary (always visible)
+        var summary = new TextBlock
         {
-            var summary = new TextBlock
-            {
-                Text = $"{totalCount} tasks, {pendingCount} pending",
-                FontSize = 10,
-                Foreground = new SolidColorBrush(Color.Parse("#555")),
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
-            };
-            headerStack.Children.Add(summary);
-        }
+            Text = $"{totalCount} tasks, {pendingCount} pending",
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.Parse("#555")),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+        headerStack.Children.Add(summary);
 
         if (!showChevron) headerStack.Margin = new Thickness(4, 0, 0, 0);
         Grid.SetColumn(headerStack, colOffset + 1);
