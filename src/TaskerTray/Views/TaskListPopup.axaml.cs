@@ -1619,7 +1619,39 @@ public partial class TaskListPopup : Window
 
     private void CreateDragGhost(Border original, TodoTaskViewModel task)
     {
-        // Create a simple ghost representation
+        var grid = new Grid
+        {
+            ColumnDefinitions = ColumnDefinitions.Parse("Auto,*,Auto")
+        };
+
+        // Checkbox (visual only)
+        var checkbox = new CheckBox
+        {
+            IsChecked = task.IsChecked,
+            Margin = new Thickness(0, 0, 10, 0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            IsEnabled = false
+        };
+        Grid.SetColumn(checkbox, 0);
+        grid.Children.Add(checkbox);
+
+        // Content panel (title + description + due + tags)
+        var contentPanel = BuildTaskGhostContent(task);
+        Grid.SetColumn(contentPanel, 1);
+        grid.Children.Add(contentPanel);
+
+        // Menu placeholder (visual only)
+        var menuPlaceholder = new TextBlock
+        {
+            Text = "•••",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.Parse("#888")),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            Margin = new Thickness(4, 4, 0, 0)
+        };
+        Grid.SetColumn(menuPlaceholder, 2);
+        grid.Children.Add(menuPlaceholder);
+
         _dragGhost = new Border
         {
             Width = original.Bounds.Width,
@@ -1627,16 +1659,9 @@ public partial class TaskListPopup : Window
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(10, 8),
             Opacity = 0.9,
+            IsHitTestVisible = false,
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 16, OffsetY = 4, Color = Color.Parse("#60000000") }),
-            Child = new TextBlock
-            {
-                Text = task.DisplayText,
-                Foreground = Brushes.White,
-                FontWeight = FontWeight.SemiBold,
-                FontSize = 13,
-                MaxWidth = original.Bounds.Width - 20,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            }
+            Child = grid
         };
 
         // Add to a canvas overlay
@@ -1647,6 +1672,104 @@ public partial class TaskListPopup : Window
         var pos = original.TranslatePoint(new Point(0, 0), this) ?? new Point(0, 0);
         Canvas.SetLeft(_dragGhost, pos.X);
         Canvas.SetTop(_dragGhost, pos.Y);
+    }
+
+    private StackPanel BuildTaskGhostContent(TodoTaskViewModel task)
+    {
+        var contentPanel = new StackPanel { Spacing = 2 };
+
+        // Title row with priority indicator
+        var titleRow = new Grid
+        {
+            ColumnDefinitions = ColumnDefinitions.Parse("Auto,*")
+        };
+
+        if (task.HasPriority)
+        {
+            var priorityIndicator = new TextBlock
+            {
+                Text = task.PriorityDisplay,
+                FontWeight = FontWeight.Bold,
+                FontSize = 13,
+                Foreground = task.PriorityColor,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            Grid.SetColumn(priorityIndicator, 0);
+            titleRow.Children.Add(priorityIndicator);
+        }
+
+        var titleColor = task.IsChecked ? "#666" : "#FFF";
+        var title = new TextBlock
+        {
+            Text = task.DisplayText,
+            FontWeight = FontWeight.SemiBold,
+            FontSize = 13,
+            Foreground = new SolidColorBrush(Color.Parse(titleColor)),
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top
+        };
+        Grid.SetColumn(title, task.HasPriority ? 1 : 0);
+        if (!task.HasPriority)
+            Grid.SetColumnSpan(title, 2);
+        titleRow.Children.Add(title);
+        contentPanel.Children.Add(titleRow);
+
+        if (task.HasDescription)
+        {
+            var desc = new TextBlock
+            {
+                Text = task.DescriptionPreview,
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse("#888")),
+                TextWrapping = TextWrapping.Wrap
+            };
+            contentPanel.Children.Add(desc);
+        }
+
+        if (task.HasDueDate)
+        {
+            var dueDate = new TextBlock
+            {
+                Text = task.DueDateDisplay,
+                FontSize = 10,
+                Foreground = task.DueDateColor,
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+            contentPanel.Children.Add(dueDate);
+        }
+
+        if (task.HasTags)
+        {
+            var tagsPanel = new WrapPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+
+            foreach (var tag in task.Tags!)
+            {
+                var tagPill = new Border
+                {
+                    Background = new SolidColorBrush(GetTagColor(tag)),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(6, 2),
+                    Margin = new Thickness(0, 0, 4, 2),
+                    Child = new TextBlock
+                    {
+                        Text = $"#{tag}",
+                        FontSize = 10,
+                        FontWeight = FontWeight.Medium,
+                        Foreground = new SolidColorBrush(Color.Parse("#FFFFFF"))
+                    }
+                };
+                tagsPanel.Children.Add(tagPill);
+            }
+
+            contentPanel.Children.Add(tagsPanel);
+        }
+
+        return contentPanel;
     }
 
     private Canvas GetOrCreateDragCanvas()
@@ -1854,6 +1977,53 @@ public partial class TaskListPopup : Window
 
     private void CreateListDragGhost(Border original, string listName)
     {
+        var headerPanel = new Grid
+        {
+            ColumnDefinitions = ColumnDefinitions.Parse("Auto,*")
+        };
+
+        // Chevron (visual only)
+        var chevron = new TextBlock
+        {
+            Text = "▼",
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.Parse("#666")),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 6, 0)
+        };
+        Grid.SetColumn(chevron, 0);
+        headerPanel.Children.Add(chevron);
+
+        // List name + summary
+        var headerStack = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        };
+
+        headerStack.Children.Add(new TextBlock
+        {
+            Text = listName,
+            FontWeight = FontWeight.SemiBold,
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.Parse("#888")),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        });
+
+        var taskCount = _tasks.Count(t => t.ListName == listName);
+        var pendingCount = _tasks.Count(t => t.ListName == listName && !t.IsChecked);
+        headerStack.Children.Add(new TextBlock
+        {
+            Text = $"{taskCount} tasks, {pendingCount} pending",
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.Parse("#555")),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        });
+
+        Grid.SetColumn(headerStack, 1);
+        headerPanel.Children.Add(headerStack);
+
         _dragGhost = new Border
         {
             Width = original.Bounds.Width,
@@ -1861,14 +2031,9 @@ public partial class TaskListPopup : Window
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8, 6),
             Opacity = 0.9,
+            IsHitTestVisible = false,
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 16, OffsetY = 4, Color = Color.Parse("#60000000") }),
-            Child = new TextBlock
-            {
-                Text = listName,
-                Foreground = new SolidColorBrush(Color.Parse("#888")),
-                FontWeight = FontWeight.SemiBold,
-                FontSize = 11
-            }
+            Child = headerPanel
         };
 
         var canvas = GetOrCreateDragCanvas();
