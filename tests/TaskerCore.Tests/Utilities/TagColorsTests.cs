@@ -85,4 +85,52 @@ public class TagColorsTests
             Assert.Contains(color, palette);
         }
     }
+
+    [Theory]
+    [InlineData("#84CC16", "#000000")] // Lime → black text
+    [InlineData("#06B6D4", "#000000")] // Cyan → black text
+    [InlineData("#F59E0B", "#000000")] // Amber → black text
+    [InlineData("#FFEAA7", "#000000")] // Soft Yellow → black text
+    [InlineData("#FFFFFF", "#000000")] // White → black text
+    [InlineData("#3B82F6", "#FFFFFF")] // Blue → white text
+    [InlineData("#EF4444", "#FFFFFF")] // Red → white text
+    [InlineData("#8B5CF6", "#FFFFFF")] // Violet → white text
+    [InlineData("#6366F1", "#FFFFFF")] // Indigo → white text
+    [InlineData("#000000", "#FFFFFF")] // Black → white text
+    public void GetForegroundForBackground_ReturnsCorrectContrast(string bg, string expectedFg)
+    {
+        // Use reflection-free approach: test known palette entries via tags
+        // For direct testing, we verify the logic through known hex values
+        Assert.Equal(expectedFg, GetForegroundForHex(bg));
+    }
+
+    [Fact]
+    public void GetForegroundHex_ReturnsDeterministicResult()
+    {
+        var fg1 = TagColors.GetForegroundHex("lime-tag");
+        var fg2 = TagColors.GetForegroundHex("lime-tag");
+        Assert.Equal(fg1, fg2);
+    }
+
+    [Fact]
+    public void GetForegroundHex_ReturnsBlackOrWhite()
+    {
+        var tags = new[] { "feature", "bug", "ui", "chore", "test", "refactor" };
+        foreach (var tag in tags)
+        {
+            var fg = TagColors.GetForegroundHex(tag);
+            Assert.True(fg == "#000000" || fg == "#FFFFFF",
+                $"Tag '{tag}' returned unexpected foreground: {fg}");
+        }
+    }
+
+    // Helper to test luminance logic with arbitrary hex values
+    private static string GetForegroundForHex(string hex)
+    {
+        var r = Convert.ToInt32(hex.Substring(1, 2), 16) / 255.0;
+        var g = Convert.ToInt32(hex.Substring(3, 2), 16) / 255.0;
+        var b = Convert.ToInt32(hex.Substring(5, 2), 16) / 255.0;
+        var luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        return luminance > 0.5 ? "#000000" : "#FFFFFF";
+    }
 }

@@ -29,6 +29,23 @@ public static class TagColors
         return $"[{hex}]";
     }
 
+    public static string GetForegroundHex(string tag)
+    {
+        var hex = GetHexColor(tag);
+        return IsLightColor(hex) ? "#000000" : "#FFFFFF";
+    }
+
+    private static bool IsLightColor(string hex)
+    {
+        var r = Convert.ToInt32(hex.Substring(1, 2), 16) / 255.0;
+        var g = Convert.ToInt32(hex.Substring(3, 2), 16) / 255.0;
+        var b = Convert.ToInt32(hex.Substring(5, 2), 16) / 255.0;
+
+        // Relative luminance (WCAG formula)
+        var luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        return luminance > 0.5;
+    }
+
     /// <summary>
     /// Returns a deterministic hash that's consistent across process restarts.
     /// string.GetHashCode() is randomized per-process in .NET Core for security.

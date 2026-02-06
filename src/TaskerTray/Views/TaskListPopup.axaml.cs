@@ -1213,7 +1213,7 @@ public partial class TaskListPopup : Window
                     Text = $"#{tag}",
                     FontSize = 10,
                     FontWeight = FontWeight.Medium,
-                    Foreground = new SolidColorBrush(Color.Parse("#FFF"))
+                    Foreground = new SolidColorBrush(Color.Parse(TagColors.GetForegroundHex(tag)))
                 };
 
                 tagPill.Child = tagText;
