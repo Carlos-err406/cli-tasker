@@ -1,21 +1,20 @@
 namespace TaskerCore.Undo;
 
-using System.Security.Cryptography;
 using System.Text.Json;
+using TaskerCore.Data;
 using TaskerCore.Undo.Commands;
 
 public sealed class UndoManager
 {
-    private readonly StoragePaths _paths;
-    private static readonly object SaveLock = new();
+    private readonly TaskerDb _db;
 
     private List<IUndoableCommand> _undoStack = [];
     private List<IUndoableCommand> _redoStack = [];
     private CompositeCommand? _currentBatch;
 
-    public UndoManager(StoragePaths paths)
+    public UndoManager(TaskerDb db)
     {
-        _paths = paths;
+        _db = db;
         LoadHistory();
     }
 
@@ -41,7 +40,6 @@ public sealed class UndoManager
             _undoStack.Insert(0, command);
             _redoStack.Clear();
             EnforceSizeLimit();
-            // Don't save immediately - wait for SaveHistory() call after task file is saved
         }
     }
 
@@ -66,7 +64,6 @@ public sealed class UndoManager
             _undoStack.Insert(0, _currentBatch);
             _redoStack.Clear();
             EnforceSizeLimit();
-            // Don't save immediately - wait for SaveHistory() call after task file is saved
         }
         _currentBatch = null;
     }
@@ -116,7 +113,7 @@ public sealed class UndoManager
     }
 
     /// <summary>
-    /// Reloads history from disk. Use this when external changes are detected
+    /// Reloads history from database. Use this when external changes are detected
     /// to sync with history saved by another process (e.g., CLI).
     /// </summary>
     public void ReloadHistory()
@@ -140,89 +137,82 @@ public sealed class UndoManager
 
     private void LoadHistory()
     {
-        var historyPath = _paths.UndoHistoryPath;
-        if (!UndoConfig.PersistAcrossSessions || !File.Exists(historyPath))
-        {
+        if (!UndoConfig.PersistAcrossSessions)
             return;
-        }
 
         try
         {
-            var json = File.ReadAllText(historyPath);
-            var history = JsonSerializer.Deserialize<UndoHistory>(json, GetJsonOptions());
+            var cutoff = DateTime.Now.AddDays(-UndoConfig.HistoryRetentionDays);
+            var cutoffStr = cutoff.ToString("o");
 
-            if (history == null)
-            {
-                return;
-            }
+            _undoStack = _db.Query(
+                "SELECT command_json FROM undo_history WHERE stack_type = 'undo' AND created_at > @cutoff ORDER BY id DESC",
+                reader =>
+                {
+                    var json = reader.GetString(0);
+                    return JsonSerializer.Deserialize<IUndoableCommand>(json, GetJsonOptions())!;
+                },
+                ("@cutoff", cutoffStr))
+                .ToList();
 
-            if (!ValidateChecksum(history))
-            {
-                // Tasks changed externally - history is invalid
-                return;
-            }
-
-            _undoStack = history.UndoStack.ToList();
-            _redoStack = history.RedoStack.ToList();
-            CleanupOldHistory();
+            _redoStack = _db.Query(
+                "SELECT command_json FROM undo_history WHERE stack_type = 'redo' AND created_at > @cutoff ORDER BY id DESC",
+                reader =>
+                {
+                    var json = reader.GetString(0);
+                    return JsonSerializer.Deserialize<IUndoableCommand>(json, GetJsonOptions())!;
+                },
+                ("@cutoff", cutoffStr))
+                .ToList();
         }
-        catch (JsonException)
+        catch
         {
-            // Corrupted history file - start fresh
+            // Corrupted history — start fresh
+            _undoStack = [];
+            _redoStack = [];
         }
     }
 
     private void Save()
     {
-        _paths.EnsureDirectory();
-
-        var history = new UndoHistory
+        using var transaction = _db.BeginTransaction();
+        try
         {
-            UndoStack = _undoStack,
-            RedoStack = _redoStack,
-            TasksChecksum = ComputeChecksum(),
-            TasksFileSize = GetTasksFileSize()
-        };
+            // Clear existing history
+            _db.Execute("DELETE FROM undo_history");
 
-        lock (SaveLock)
-        {
-            var json = JsonSerializer.Serialize(history, GetJsonOptions());
-            File.WriteAllText(_paths.UndoHistoryPath, json);
+            // Write undo stack (newest first = highest id)
+            for (var i = 0; i < _undoStack.Count; i++)
+            {
+                var cmd = _undoStack[i];
+                var json = JsonSerializer.Serialize<IUndoableCommand>(cmd, GetJsonOptions());
+                _db.Execute(
+                    "INSERT INTO undo_history (stack_type, command_json, created_at) VALUES ('undo', @json, @created)",
+                    ("@json", json),
+                    ("@created", cmd.ExecutedAt.ToString("o")));
+            }
+
+            // Write redo stack
+            for (var i = 0; i < _redoStack.Count; i++)
+            {
+                var cmd = _redoStack[i];
+                var json = JsonSerializer.Serialize<IUndoableCommand>(cmd, GetJsonOptions());
+                _db.Execute(
+                    "INSERT INTO undo_history (stack_type, command_json, created_at) VALUES ('redo', @json, @created)",
+                    ("@json", json),
+                    ("@created", cmd.ExecutedAt.ToString("o")));
+            }
+
+            transaction.Commit();
         }
-    }
-
-    private bool ValidateChecksum(UndoHistory history)
-    {
-        return ComputeChecksum() == history.TasksChecksum
-            && GetTasksFileSize() == history.TasksFileSize;
-    }
-
-    private string ComputeChecksum()
-    {
-        var tasksPath = _paths.AllTasksPath;
-        if (!File.Exists(tasksPath))
-            return "";
-
-        using var md5 = MD5.Create();
-        using var stream = File.OpenRead(tasksPath);
-        return Convert.ToHexString(md5.ComputeHash(stream));
-    }
-
-    private long GetTasksFileSize()
-    {
-        var tasksPath = _paths.AllTasksPath;
-        return File.Exists(tasksPath) ? new FileInfo(tasksPath).Length : 0;
-    }
-
-    private void CleanupOldHistory()
-    {
-        var cutoff = DateTime.Now.AddDays(-UndoConfig.HistoryRetentionDays);
-        _undoStack = _undoStack.Where(c => c.ExecutedAt > cutoff).ToList();
-        _redoStack = _redoStack.Where(c => c.ExecutedAt > cutoff).ToList();
+        catch
+        {
+            transaction.Rollback();
+        }
     }
 
     private static JsonSerializerOptions GetJsonOptions() => new()
     {
-        WriteIndented = true
+        WriteIndented = false
     };
 }

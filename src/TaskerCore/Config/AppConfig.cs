@@ -1,54 +1,35 @@
 namespace TaskerCore.Config;
 
-using System.Text.Json;
 using TaskerCore.Data;
 
 /// <summary>
-/// Application configuration management.
+/// Application configuration management backed by SQLite config table.
 /// </summary>
 public class AppConfig
 {
     /// <summary>Length of the task display prefix "(xxx) [ ] - " for formatting.</summary>
     public const int TaskPrefixLength = 12;
 
-    private readonly StoragePaths _paths;
+    private readonly TaskerDb _db;
 
-    public AppConfig(StoragePaths paths)
+    public AppConfig(TaskerDb db)
     {
-        _paths = paths;
+        _db = db;
     }
 
     /// <summary>Gets the default list name for adding new tasks.</summary>
     public string GetDefaultList()
     {
-        if (!File.Exists(_paths.ConfigPath))
-        {
-            return ListManager.DefaultListName;
-        }
-
-        try
-        {
-            var json = File.ReadAllText(_paths.ConfigPath);
-            var config = JsonSerializer.Deserialize<ConfigData>(json);
-            return config?.DefaultList ?? ListManager.DefaultListName;
-        }
-        catch
-        {
-            return ListManager.DefaultListName;
-        }
+        return _db.ExecuteScalar<string>(
+            "SELECT value FROM config WHERE key = 'default_list'")
+            ?? ListManager.DefaultListName;
     }
 
     /// <summary>Sets the default list name for adding new tasks.</summary>
     public void SetDefaultList(string name)
     {
-        _paths.EnsureDirectory();
-        var config = new ConfigData { DefaultList = name };
-        var json = JsonSerializer.Serialize(config);
-        File.WriteAllText(_paths.ConfigPath, json);
-    }
-
-    private sealed class ConfigData
-    {
-        public string? DefaultList { get; set; }
+        _db.Execute(
+            "INSERT INTO config (key, value) VALUES ('default_list', @value) ON CONFLICT(key) DO UPDATE SET value = @value",
+            ("@value", name));
     }
 }

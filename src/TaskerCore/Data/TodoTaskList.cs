@@ -1,6 +1,7 @@
 namespace TaskerCore.Data;
 
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
 using TaskerCore.Results;
@@ -8,18 +9,15 @@ using TaskerCore.Undo.Commands;
 
 public class TodoTaskList
 {
-    private static readonly object SaveLock = new();
-
     private readonly TaskerServices _services;
-    private TaskList[] TaskLists { get; set; } = [TaskList.Create(ListManager.DefaultListName)];
-    private TaskList[] TrashLists { get; set; } = [];
+    private readonly TaskerDb _db;
     private readonly string? listNameFilter;
 
     public TodoTaskList(TaskerServices services, string? listName = null)
     {
         _services = services;
+        _db = services.Db;
         listNameFilter = listName;
-        Load();
     }
 
     /// <summary>
@@ -29,116 +27,75 @@ public class TodoTaskList
     {
     }
 
-    private void Load()
+    // --- SQL → TodoTask mapping ---
+
+    private static TodoTask ReadTask(SqliteDataReader reader)
     {
-        _services.Paths.EnsureDirectory();
-
-        // Load all tasks
-        if (File.Exists(_services.Paths.AllTasksPath))
+        var tagsJson = reader.IsDBNull(7) ? null : reader.GetString(7);
+        string[]? tags = null;
+        if (tagsJson != null)
         {
-            try
-            {
-                var raw = File.ReadAllText(_services.Paths.AllTasksPath);
-                TaskLists = DeserializeWithMigration(raw);
-            }
-            catch (JsonException)
-            {
-                TaskLists = [TaskList.Create(ListManager.DefaultListName)];
-            }
+            try { tags = JsonSerializer.Deserialize<string[]>(tagsJson); }
+            catch { /* ignore malformed tags */ }
         }
 
-        // Load all trash
-        if (File.Exists(_services.Paths.AllTrashPath))
-        {
-            try
-            {
-                var trashRaw = File.ReadAllText(_services.Paths.AllTrashPath);
-                TrashLists = DeserializeWithMigration(trashRaw);
-            }
-            catch (JsonException)
-            {
-                TrashLists = [];
-            }
-        }
+        var dueDateStr = reader.IsDBNull(5) ? null : reader.GetString(5);
+        DateOnly? dueDate = null;
+        if (dueDateStr != null && DateOnly.TryParse(dueDateStr, out var parsed))
+            dueDate = parsed;
 
-        EnsureDefaultListExists();
+        var priorityVal = reader.IsDBNull(6) ? (int?)null : reader.GetInt32(6);
+        Priority? priority = priorityVal.HasValue ? (Priority)priorityVal.Value : null;
+
+        return new TodoTask(
+            Id: reader.GetString(0),
+            Description: reader.GetString(1),
+            IsChecked: reader.GetInt32(2) != 0,
+            CreatedAt: DateTime.Parse(reader.GetString(3)),
+            ListName: reader.GetString(4),
+            DueDate: dueDate,
+            Priority: priority,
+            Tags: tags is { Length: > 0 } ? tags : null
+        );
     }
 
-    /// <summary>
-    /// Deserializes JSON, automatically detecting and migrating from old format if needed.
-    /// </summary>
-    private static TaskList[] DeserializeWithMigration(string json)
+    private static string TaskSelectColumns =>
+        "id, description, is_checked, created_at, list_name, due_date, priority, tags";
+
+    // --- Query helpers ---
+
+    private List<TodoTask> QueryTasks(string whereClause, params (string name, object? value)[] parameters)
     {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return [];
-        }
-
-        // Try to detect format by checking if it's an array of objects with ListName and Tasks properties
-        // or an array of TodoTask objects directly
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() == 0)
-        {
-            return [];
-        }
-
-        var firstElement = root[0];
-
-        // New format: objects with "ListName" and "Tasks" properties (note: JSON uses PascalCase by default)
-        if (firstElement.TryGetProperty("ListName", out _) && firstElement.TryGetProperty("Tasks", out _))
-        {
-            return JsonSerializer.Deserialize<TaskList[]>(json) ?? [];
-        }
-
-        // Old format: flat array of TodoTask objects with "ListName" on each task
-        // Check for task-specific properties
-        if (firstElement.TryGetProperty("Id", out _) && firstElement.TryGetProperty("Description", out _))
-        {
-            var oldTasks = JsonSerializer.Deserialize<TodoTask[]>(json) ?? [];
-            return MigrateFromFlatTasks(oldTasks);
-        }
-
-        return [];
+        return _db.Query(
+            $"SELECT {TaskSelectColumns} FROM tasks {whereClause}",
+            ReadTask, parameters);
     }
 
-    /// <summary>
-    /// Converts flat TodoTask[] to TaskList[] grouped by ListName.
-    /// </summary>
-    private static TaskList[] MigrateFromFlatTasks(TodoTask[] tasks)
+    private TodoTask? QuerySingleTask(string whereClause, params (string name, object? value)[] parameters)
     {
-        return tasks
-            .GroupBy(t => t.ListName)
-            .Select(g => new TaskList(g.Key, g.ToArray()))
-            .ToArray();
+        return _db.QuerySingle(
+            $"SELECT {TaskSelectColumns} FROM tasks {whereClause}",
+            ReadTask, parameters);
     }
 
-    private void EnsureDefaultListExists()
+    // --- Filter helpers ---
+
+    private List<TodoTask> GetFilteredTasks()
     {
-        if (!TaskLists.Any(l => l.ListName == ListManager.DefaultListName))
-        {
-            TaskLists = [TaskList.Create(ListManager.DefaultListName), ..TaskLists];
-        }
+        if (listNameFilter == null)
+            return QueryTasks("WHERE is_trashed = 0 ORDER BY sort_order DESC");
+        return QueryTasks("WHERE is_trashed = 0 AND list_name = @list ORDER BY sort_order DESC", ("@list", listNameFilter));
     }
 
-    // Flat task accessors (for operations that need to work across all tasks)
-    private IEnumerable<TodoTask> AllTasks => TaskLists.SelectMany(l => l.Tasks);
-    private IEnumerable<TodoTask> AllTrash => TrashLists.SelectMany(l => l.Tasks);
-
-    // Filter helpers
-    private TodoTask[] GetFilteredTasks() =>
-        listNameFilter == null
-            ? AllTasks.ToArray()
-            : TaskLists.FirstOrDefault(l => l.ListName == listNameFilter)?.Tasks ?? [];
-
-    private TodoTask[] GetFilteredTrash() =>
-        listNameFilter == null
-            ? AllTrash.ToArray()
-            : TrashLists.FirstOrDefault(l => l.ListName == listNameFilter)?.Tasks ?? [];
+    private List<TodoTask> GetFilteredTrash()
+    {
+        if (listNameFilter == null)
+            return QueryTasks("WHERE is_trashed = 1 ORDER BY sort_order DESC");
+        return QueryTasks("WHERE is_trashed = 1 AND list_name = @list ORDER BY sort_order DESC", ("@list", listNameFilter));
+    }
 
     // Public accessor for TUI and GUI
-    public List<TodoTask> GetAllTasks() => GetFilteredTasks().ToList();
+    public List<TodoTask> GetAllTasks() => GetFilteredTasks();
 
     /// <summary>
     /// Gets tasks sorted for display: unchecked first (by priority, then due date), then checked.
@@ -176,6 +133,68 @@ public class TodoTaskList
         return days < 0 ? 0 : days;
     }
 
+    // --- Write helpers ---
+
+    private void InsertTask(TodoTask task, bool isTrashed = false)
+    {
+        // Get the current max sort_order for the list to insert at top
+        var maxOrder = _db.ExecuteScalar<long?>(
+            "SELECT MAX(sort_order) FROM tasks WHERE list_name = @list AND is_trashed = @trashed",
+            ("@list", task.ListName), ("@trashed", isTrashed ? 1 : 0)) ?? -1;
+
+        var tagsJson = task.Tags is { Length: > 0 }
+            ? JsonSerializer.Serialize(task.Tags)
+            : null;
+
+        _db.Execute("""
+            INSERT INTO tasks (id, description, is_checked, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
+            VALUES (@id, @desc, @checked, @created, @list, @due, @priority, @tags, @trashed, @order)
+            """,
+            ("@id", task.Id),
+            ("@desc", task.Description),
+            ("@checked", task.IsChecked ? 1 : 0),
+            ("@created", task.CreatedAt.ToString("o")),
+            ("@list", task.ListName),
+            ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
+            ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
+            ("@tags", (object?)tagsJson ?? DBNull.Value),
+            ("@trashed", isTrashed ? 1 : 0),
+            ("@order", maxOrder + 1));
+    }
+
+    private void UpdateTask(TodoTask task)
+    {
+        var tagsJson = task.Tags is { Length: > 0 }
+            ? JsonSerializer.Serialize(task.Tags)
+            : null;
+
+        _db.Execute("""
+            UPDATE tasks SET description = @desc, is_checked = @checked, list_name = @list,
+                due_date = @due, priority = @priority, tags = @tags
+            WHERE id = @id
+            """,
+            ("@id", task.Id),
+            ("@desc", task.Description),
+            ("@checked", task.IsChecked ? 1 : 0),
+            ("@list", task.ListName),
+            ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
+            ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
+            ("@tags", (object?)tagsJson ?? DBNull.Value));
+    }
+
+    private void DeleteTaskById(string taskId)
+    {
+        _db.Execute("DELETE FROM tasks WHERE id = @id", ("@id", taskId));
+    }
+
+    private void CreateBackup()
+    {
+        try { _services.Backup.CreateBackup(); }
+        catch { /* Ignore backup failures */ }
+    }
+
+    // --- Public operations ---
+
     public void AddTodoTask(TodoTask todoTask, bool recordUndo = true)
     {
         if (recordUndo)
@@ -184,8 +203,11 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
-        AddTaskToList(todoTask);
-        Save();
+        // Ensure the list exists
+        EnsureListExists(todoTask.ListName);
+
+        CreateBackup();
+        InsertTask(todoTask);
 
         if (recordUndo)
         {
@@ -193,42 +215,17 @@ public class TodoTaskList
         }
     }
 
-    private void AddTaskToList(TodoTask task)
+    private void EnsureListExists(string listName)
     {
-        var listName = task.ListName;
-        var existingList = TaskLists.FirstOrDefault(l => l.ListName == listName);
-
-        if (existingList != null)
-        {
-            TaskLists = TaskLists
-                .Select(l => l.ListName == listName ? l.AddTask(task) : l)
-                .ToArray();
-        }
-        else
-        {
-            // Create new list with the task
-            TaskLists = [..TaskLists, new TaskList(listName, [task])];
-        }
-    }
-
-    private void RemoveTaskFromTaskLists(string taskId)
-    {
-        TaskLists = TaskLists
-            .Select(l => l.RemoveTask(taskId))
-            .ToArray();
-    }
-
-    private void RemoveTaskFromTrashLists(string taskId)
-    {
-        TrashLists = TrashLists
-            .Select(l => l.RemoveTask(taskId))
-            .ToArray();
+        _db.Execute(
+            "INSERT OR IGNORE INTO lists (name, sort_order) VALUES (@name, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM lists))",
+            ("@name", listName));
     }
 
     public TodoTask? GetTodoTaskById(string taskId)
     {
-        // Always search globally by ID
-        return AllTasks.FirstOrDefault(task => task.Id == taskId);
+        // Always search globally by ID (not trashed)
+        return QuerySingleTask("WHERE id = @id AND is_trashed = 0", ("@id", taskId));
     }
 
     public TaskResult CheckTask(string taskId, bool recordUndo = true)
@@ -245,10 +242,11 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
-        DeleteTask(taskId, save: false, moveToTrash: false, recordUndo: false);
+        CreateBackup();
         var checkedTask = todoTask.Check();
-        AddTaskToList(checkedTask);
-        Save();
+        UpdateTask(checkedTask);
+        // Move to top of sort order
+        BumpSortOrder(taskId, checkedTask.ListName);
 
         if (recordUndo)
         {
@@ -272,10 +270,10 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
-        DeleteTask(taskId, save: false, moveToTrash: false, recordUndo: false);
+        CreateBackup();
         var uncheckedTask = todoTask.UnCheck();
-        AddTaskToList(uncheckedTask);
-        Save();
+        UpdateTask(uncheckedTask);
+        BumpSortOrder(taskId, uncheckedTask.ListName);
 
         if (recordUndo)
         {
@@ -283,6 +281,18 @@ public class TodoTaskList
         }
 
         return new TaskResult.Success($"Unchecked task: {taskId}");
+    }
+
+    /// <summary>
+    /// Moves a task to the top of its list's sort order.
+    /// </summary>
+    private void BumpSortOrder(string taskId, string listName)
+    {
+        var maxOrder = _db.ExecuteScalar<long?>(
+            "SELECT MAX(sort_order) FROM tasks WHERE list_name = @list AND is_trashed = 0",
+            ("@list", listName)) ?? 0;
+        _db.Execute("UPDATE tasks SET sort_order = @order WHERE id = @id",
+            ("@order", maxOrder + 1), ("@id", taskId));
     }
 
     public TaskResult DeleteTask(string taskId, bool save = true, bool moveToTrash = true, bool recordUndo = true)
@@ -299,40 +309,26 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
-        RemoveTaskFromTaskLists(taskId);
+        if (save)
+            CreateBackup();
 
         if (moveToTrash)
         {
-            AddTaskToTrash(task);
-        }
-
-        if (save)
-        {
-            Save();
-            if (recordUndo && moveToTrash)
-            {
-                _services.Undo.SaveHistory();
-            }
-        }
-
-        return new TaskResult.Success($"Deleted task: {taskId}");
-    }
-
-    private void AddTaskToTrash(TodoTask task)
-    {
-        var listName = task.ListName;
-        var existingList = TrashLists.FirstOrDefault(l => l.ListName == listName);
-
-        if (existingList != null)
-        {
-            TrashLists = TrashLists
-                .Select(l => l.ListName == listName ? l.AddTask(task) : l)
-                .ToArray();
+            // Set is_trashed flag
+            _db.Execute("UPDATE tasks SET is_trashed = 1 WHERE id = @id", ("@id", taskId));
         }
         else
         {
-            TrashLists = [..TrashLists, new TaskList(listName, [task])];
+            // Actually delete (used internally by check/uncheck re-insertion — not needed with SQLite update approach)
+            DeleteTaskById(taskId);
         }
+
+        if (save && recordUndo && moveToTrash)
+        {
+            _services.Undo.SaveHistory();
+        }
+
+        return new TaskResult.Success($"Deleted task: {taskId}");
     }
 
     public BatchTaskResult DeleteTasks(string[] taskIds, bool recordUndo = true)
@@ -342,37 +338,42 @@ public class TodoTaskList
             _services.Undo.BeginBatch($"Delete {taskIds.Length} tasks");
         }
 
+        CreateBackup();
         var results = new List<TaskResult>();
 
-        foreach (var taskId in taskIds)
+        using var transaction = _db.BeginTransaction();
+        try
         {
-            var task = GetTodoTaskById(taskId);
-            if (task == null)
+            foreach (var taskId in taskIds)
             {
-                results.Add(new TaskResult.NotFound(taskId));
-                continue;
+                var task = GetTodoTaskById(taskId);
+                if (task == null)
+                {
+                    results.Add(new TaskResult.NotFound(taskId));
+                    continue;
+                }
+
+                if (recordUndo)
+                {
+                    var cmd = new DeleteTaskCommand { DeletedTask = task };
+                    _services.Undo.RecordCommand(cmd);
+                }
+
+                _db.Execute("UPDATE tasks SET is_trashed = 1 WHERE id = @id", ("@id", taskId));
+                results.Add(new TaskResult.Success($"Deleted task: {taskId}"));
             }
 
-            if (recordUndo)
-            {
-                var cmd = new DeleteTaskCommand { DeletedTask = task };
-                _services.Undo.RecordCommand(cmd);
-            }
-
-            RemoveTaskFromTaskLists(taskId);
-            AddTaskToTrash(task);
-            results.Add(new TaskResult.Success($"Deleted task: {taskId}"));
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
         }
 
         if (recordUndo)
         {
             _services.Undo.EndBatch();
-        }
-
-        Save();
-
-        if (recordUndo)
-        {
             _services.Undo.SaveHistory();
         }
 
@@ -386,38 +387,44 @@ public class TodoTaskList
             _services.Undo.BeginBatch($"Check {taskIds.Length} tasks");
         }
 
+        CreateBackup();
         var results = new List<TaskResult>();
 
-        foreach (var taskId in taskIds)
+        using var transaction = _db.BeginTransaction();
+        try
         {
-            var todoTask = GetTodoTaskById(taskId);
-            if (todoTask == null)
+            foreach (var taskId in taskIds)
             {
-                results.Add(new TaskResult.NotFound(taskId));
-                continue;
+                var todoTask = GetTodoTaskById(taskId);
+                if (todoTask == null)
+                {
+                    results.Add(new TaskResult.NotFound(taskId));
+                    continue;
+                }
+
+                if (recordUndo)
+                {
+                    var cmd = new CheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
+                    _services.Undo.RecordCommand(cmd);
+                }
+
+                var checkedTask = todoTask.Check();
+                UpdateTask(checkedTask);
+                BumpSortOrder(taskId, checkedTask.ListName);
+                results.Add(new TaskResult.Success($"Checked task: {taskId}"));
             }
 
-            if (recordUndo)
-            {
-                var cmd = new CheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
-                _services.Undo.RecordCommand(cmd);
-            }
-
-            RemoveTaskFromTaskLists(taskId);
-            var checkedTask = todoTask.Check();
-            AddTaskToList(checkedTask);
-            results.Add(new TaskResult.Success($"Checked task: {taskId}"));
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
         }
 
         if (recordUndo)
         {
             _services.Undo.EndBatch();
-        }
-
-        Save();
-
-        if (recordUndo)
-        {
             _services.Undo.SaveHistory();
         }
 
@@ -431,38 +438,44 @@ public class TodoTaskList
             _services.Undo.BeginBatch($"Uncheck {taskIds.Length} tasks");
         }
 
+        CreateBackup();
         var results = new List<TaskResult>();
 
-        foreach (var taskId in taskIds)
+        using var transaction = _db.BeginTransaction();
+        try
         {
-            var todoTask = GetTodoTaskById(taskId);
-            if (todoTask == null)
+            foreach (var taskId in taskIds)
             {
-                results.Add(new TaskResult.NotFound(taskId));
-                continue;
+                var todoTask = GetTodoTaskById(taskId);
+                if (todoTask == null)
+                {
+                    results.Add(new TaskResult.NotFound(taskId));
+                    continue;
+                }
+
+                if (recordUndo)
+                {
+                    var cmd = new UncheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
+                    _services.Undo.RecordCommand(cmd);
+                }
+
+                var uncheckedTask = todoTask.UnCheck();
+                UpdateTask(uncheckedTask);
+                BumpSortOrder(taskId, uncheckedTask.ListName);
+                results.Add(new TaskResult.Success($"Unchecked task: {taskId}"));
             }
 
-            if (recordUndo)
-            {
-                var cmd = new UncheckTaskCommand { TaskId = taskId, WasChecked = todoTask.IsChecked };
-                _services.Undo.RecordCommand(cmd);
-            }
-
-            RemoveTaskFromTaskLists(taskId);
-            var uncheckedTask = todoTask.UnCheck();
-            AddTaskToList(uncheckedTask);
-            results.Add(new TaskResult.Success($"Unchecked task: {taskId}"));
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
         }
 
         if (recordUndo)
         {
             _services.Undo.EndBatch();
-        }
-
-        Save();
-
-        if (recordUndo)
-        {
             _services.Undo.SaveHistory();
         }
 
@@ -471,29 +484,40 @@ public class TodoTaskList
 
     public int ClearTasks(bool recordUndo = true)
     {
-        // Only clear tasks matching the filter
         var tasksToMove = GetFilteredTasks();
 
-        if (recordUndo && tasksToMove.Length > 0)
+        if (recordUndo && tasksToMove.Count > 0)
         {
-            var cmd = new ClearTasksCommand { ListName = listNameFilter, ClearedTasks = tasksToMove };
+            var cmd = new ClearTasksCommand { ListName = listNameFilter, ClearedTasks = tasksToMove.ToArray() };
             _services.Undo.RecordCommand(cmd);
         }
 
-        foreach (var task in tasksToMove)
+        if (tasksToMove.Count == 0)
+            return 0;
+
+        CreateBackup();
+
+        using var transaction = _db.BeginTransaction();
+        try
         {
-            RemoveTaskFromTaskLists(task.Id);
-            AddTaskToTrash(task);
+            foreach (var task in tasksToMove)
+            {
+                _db.Execute("UPDATE tasks SET is_trashed = 1 WHERE id = @id", ("@id", task.Id));
+            }
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
         }
 
-        Save();
-
-        if (recordUndo && tasksToMove.Length > 0)
+        if (recordUndo && tasksToMove.Count > 0)
         {
             _services.Undo.SaveHistory();
         }
 
-        return tasksToMove.Length;
+        return tasksToMove.Count;
     }
 
     public TaskResult RenameTask(string taskId, string newDescription, bool recordUndo = true)
@@ -515,10 +539,10 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
-        RemoveTaskFromTaskLists(taskId);
+        CreateBackup();
         var renamedTask = todoTask.Rename(newDescription);
-        AddTaskToList(renamedTask);
-        Save();
+        UpdateTask(renamedTask);
+        BumpSortOrder(taskId, renamedTask.ListName);
 
         if (recordUndo)
         {
@@ -554,10 +578,11 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
-        RemoveTaskFromTaskLists(taskId);
+        CreateBackup();
+        EnsureListExists(targetList);
         var movedTask = todoTask.MoveToList(targetList);
-        AddTaskToList(movedTask);
-        Save();
+        UpdateTask(movedTask);
+        BumpSortOrder(taskId, targetList);
 
         if (recordUndo)
         {
@@ -588,16 +613,15 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
-        RemoveTaskFromTaskLists(taskId);
+        CreateBackup();
         var updatedTask = dueDate.HasValue ? todoTask.SetDueDate(dueDate.Value) : todoTask.ClearDueDate();
 
-        // Sync the metadata back to description
         var syncedDescription = TaskDescriptionParser.SyncMetadataToDescription(
             updatedTask.Description, updatedTask.Priority, updatedTask.DueDate, updatedTask.Tags);
         updatedTask = updatedTask.Rename(syncedDescription);
 
-        AddTaskToList(updatedTask);
-        Save();
+        UpdateTask(updatedTask);
+        BumpSortOrder(taskId, updatedTask.ListName);
 
         if (recordUndo)
         {
@@ -631,16 +655,15 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
-        RemoveTaskFromTaskLists(taskId);
+        CreateBackup();
         var updatedTask = priority.HasValue ? todoTask.SetPriority(priority.Value) : todoTask.ClearPriority();
 
-        // Sync the metadata back to description
         var syncedDescription = TaskDescriptionParser.SyncMetadataToDescription(
             updatedTask.Description, updatedTask.Priority, updatedTask.DueDate, updatedTask.Tags);
         updatedTask = updatedTask.Rename(syncedDescription);
 
-        AddTaskToList(updatedTask);
-        Save();
+        UpdateTask(updatedTask);
+        BumpSortOrder(taskId, updatedTask.ListName);
 
         if (recordUndo)
         {
@@ -657,20 +680,19 @@ public class TodoTaskList
 
     public List<TodoTask> GetTrash()
     {
-        return GetFilteredTrash().ToList();
+        return GetFilteredTrash();
     }
 
     public TaskResult RestoreFromTrash(string taskId)
     {
-        var task = AllTrash.FirstOrDefault(t => t.Id == taskId);
+        var task = QuerySingleTask("WHERE id = @id AND is_trashed = 1", ("@id", taskId));
         if (task == null)
         {
             return new TaskResult.NotFound(taskId);
         }
 
-        RemoveTaskFromTrashLists(taskId);
-        AddTaskToList(task);
-        Save();
+        CreateBackup();
+        _db.Execute("UPDATE tasks SET is_trashed = 0 WHERE id = @id", ("@id", taskId));
 
         return new TaskResult.Success($"Restored task: {taskId}");
     }
@@ -678,17 +700,22 @@ public class TodoTaskList
     public int ClearTrash()
     {
         var trashToClear = GetFilteredTrash();
-        var count = trashToClear.Length;
+        var count = trashToClear.Count;
 
-        foreach (var task in trashToClear)
+        if (count == 0) return 0;
+
+        CreateBackup();
+
+        if (listNameFilter == null)
         {
-            RemoveTaskFromTrashLists(task.Id);
+            _db.Execute("DELETE FROM tasks WHERE is_trashed = 1");
+        }
+        else
+        {
+            _db.Execute("DELETE FROM tasks WHERE is_trashed = 1 AND list_name = @list",
+                ("@list", listNameFilter));
         }
 
-        // Clean up empty trash lists
-        TrashLists = TrashLists.Where(l => l.Tasks.Length > 0).ToArray();
-
-        Save();
         return count;
     }
 
@@ -698,250 +725,178 @@ public class TodoTaskList
         var trash = GetFilteredTrash();
         return new TaskStats
         {
-            Total = tasks.Length,
+            Total = tasks.Count,
             Checked = tasks.Count(t => t.IsChecked),
             Unchecked = tasks.Count(t => !t.IsChecked),
-            Trash = trash.Length
+            Trash = trash.Count
         };
     }
 
-    // Static methods for list management - these take TaskerServices as parameter
+    // --- Static methods for list management ---
 
     public static string[] GetAllListNames(TaskerServices services)
     {
-        services.Paths.EnsureDirectory();
-        if (!File.Exists(services.Paths.AllTasksPath))
+        var names = services.Db.Query(
+            "SELECT name FROM lists ORDER BY sort_order",
+            reader => reader.GetString(0));
+
+        if (names.Count == 0 || !names.Contains(ListManager.DefaultListName))
         {
-            return [ListManager.DefaultListName];
+            return [ListManager.DefaultListName, .. names.Where(n => n != ListManager.DefaultListName)];
         }
 
-        try
-        {
-            var raw = File.ReadAllText(services.Paths.AllTasksPath);
-            var taskLists = DeserializeWithMigration(raw);
-
-            // Preserve array order (supports manual reordering in TaskerTray)
-            var listNames = taskLists
-                .Select(l => l.ListName)
-                .Distinct()
-                .ToArray();
-
-            // Ensure default list is present (but don't force it to first position)
-            if (listNames.Length == 0 || !listNames.Contains(ListManager.DefaultListName))
-            {
-                return [ListManager.DefaultListName, .. listNames.Where(n => n != ListManager.DefaultListName)];
-            }
-
-            return listNames;
-        }
-        catch (JsonException)
-        {
-            return [ListManager.DefaultListName];
-        }
+        return names.ToArray();
     }
 
-    /// <summary>
-    /// Gets all list names using default services.
-    /// </summary>
     public static string[] GetAllListNames() => GetAllListNames(TaskerServices.Default);
 
     public static bool ListHasTasks(TaskerServices services, string listName)
     {
-        if (!File.Exists(services.Paths.AllTasksPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            var raw = File.ReadAllText(services.Paths.AllTasksPath);
-            var taskLists = DeserializeWithMigration(raw);
-            return taskLists.Any(l => l.ListName == listName && l.Tasks.Length > 0);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
+        var count = services.Db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM tasks WHERE list_name = @list AND is_trashed = 0",
+            ("@list", listName));
+        return count > 0;
     }
 
     public static bool ListHasTasks(string listName) => ListHasTasks(TaskerServices.Default, listName);
 
-    /// <summary>
-    /// Checks if a list exists (with or without tasks).
-    /// </summary>
     public static bool ListExists(TaskerServices services, string listName)
     {
-        if (listName == ListManager.DefaultListName)
-        {
-            return true;
-        }
+        if (listName == ListManager.DefaultListName) return true;
 
-        if (!File.Exists(services.Paths.AllTasksPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            var raw = File.ReadAllText(services.Paths.AllTasksPath);
-            var taskLists = DeserializeWithMigration(raw);
-            return taskLists.Any(l => l.ListName == listName);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
+        var count = services.Db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM lists WHERE name = @name",
+            ("@name", listName));
+        return count > 0;
     }
 
     public static bool ListExists(string listName) => ListExists(TaskerServices.Default, listName);
 
-    /// <summary>
-    /// Creates an empty list.
-    /// </summary>
     public static void CreateList(TaskerServices services, string listName)
     {
-        services.Paths.EnsureDirectory();
+        var maxOrder = services.Db.ExecuteScalar<long?>(
+            "SELECT MAX(sort_order) FROM lists") ?? -1;
 
-        TaskList[] taskLists;
-        if (File.Exists(services.Paths.AllTasksPath))
-        {
-            var raw = File.ReadAllText(services.Paths.AllTasksPath);
-            taskLists = DeserializeWithMigration(raw);
-        }
-        else
-        {
-            taskLists = [TaskList.Create(ListManager.DefaultListName)];
-        }
-
-        // Add the new empty list
-        taskLists = [..taskLists, TaskList.Create(listName)];
-
-        lock (SaveLock)
-        {
-            File.WriteAllText(services.Paths.AllTasksPath, JsonSerializer.Serialize(taskLists));
-        }
+        services.Db.Execute(
+            "INSERT INTO lists (name, sort_order) VALUES (@name, @order)",
+            ("@name", listName), ("@order", maxOrder + 1));
     }
 
     public static void CreateList(string listName) => CreateList(TaskerServices.Default, listName);
 
     public static void DeleteList(TaskerServices services, string listName)
     {
-        services.Paths.EnsureDirectory();
-        if (!File.Exists(services.Paths.AllTasksPath))
-        {
-            return;
-        }
-
-        var raw = File.ReadAllText(services.Paths.AllTasksPath);
-        var taskLists = DeserializeWithMigration(raw);
-        var remainingLists = taskLists.Where(l => l.ListName != listName).ToArray();
-
-        lock (SaveLock)
-        {
-            File.WriteAllText(services.Paths.AllTasksPath, JsonSerializer.Serialize(remainingLists));
-        }
-
-        // Also remove from trash
-        if (File.Exists(services.Paths.AllTrashPath))
-        {
-            var trashRaw = File.ReadAllText(services.Paths.AllTrashPath);
-            var trashLists = DeserializeWithMigration(trashRaw);
-            var remainingTrash = trashLists.Where(l => l.ListName != listName).ToArray();
-            lock (SaveLock)
-            {
-                File.WriteAllText(services.Paths.AllTrashPath, JsonSerializer.Serialize(remainingTrash));
-            }
-        }
+        // CASCADE will delete all tasks in the list
+        services.Db.Execute("DELETE FROM lists WHERE name = @name", ("@name", listName));
     }
 
     public static void DeleteList(string listName) => DeleteList(TaskerServices.Default, listName);
 
-    /// <summary>
-    /// Gets a list by name from the active tasks file.
-    /// </summary>
     public static TaskList GetListByName(TaskerServices services, string listName)
     {
-        services.Paths.EnsureDirectory();
-        if (!File.Exists(services.Paths.AllTasksPath))
+        var exists = services.Db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM lists WHERE name = @name",
+            ("@name", listName));
+
+        if (exists == 0)
             throw new Exceptions.ListNotFoundException(listName);
 
-        var raw = File.ReadAllText(services.Paths.AllTasksPath);
-        var taskLists = DeserializeWithMigration(raw);
-        return taskLists.FirstOrDefault(l => l.ListName == listName)
-            ?? throw new Exceptions.ListNotFoundException(listName);
+        var isCollapsed = services.Db.ExecuteScalar<long>(
+            "SELECT is_collapsed FROM lists WHERE name = @name",
+            ("@name", listName));
+
+        var tasks = services.Db.Query(
+            $"SELECT {TaskSelectColumns} FROM tasks WHERE list_name = @list AND is_trashed = 0",
+            ReadTask, ("@list", listName));
+
+        return new TaskList(listName, tasks.ToArray(), isCollapsed != 0);
     }
 
     public static TaskList GetListByName(string listName) => GetListByName(TaskerServices.Default, listName);
 
-    /// <summary>
-    /// Gets a list by name from the trash file, or null if not found.
-    /// </summary>
     public static TaskList? GetTrashedListByName(TaskerServices services, string listName)
     {
-        if (!File.Exists(services.Paths.AllTrashPath))
-            return null;
+        var tasks = services.Db.Query(
+            $"SELECT {TaskSelectColumns} FROM tasks WHERE list_name = @list AND is_trashed = 1",
+            ReadTask, ("@list", listName));
 
-        var raw = File.ReadAllText(services.Paths.AllTrashPath);
-        var trashLists = DeserializeWithMigration(raw);
-        return trashLists.FirstOrDefault(l => l.ListName == listName);
+        return tasks.Count > 0 ? new TaskList(listName, tasks.ToArray()) : null;
     }
 
     public static TaskList? GetTrashedListByName(string listName) => GetTrashedListByName(TaskerServices.Default, listName);
 
-    /// <summary>
-    /// Gets the index of a list in the TaskLists array.
-    /// </summary>
     public static int GetListIndex(TaskerServices services, string listName)
     {
-        services.Paths.EnsureDirectory();
-        if (!File.Exists(services.Paths.AllTasksPath))
-            return -1;
-
-        var raw = File.ReadAllText(services.Paths.AllTasksPath);
-        var taskLists = DeserializeWithMigration(raw);
-        return Array.FindIndex(taskLists, l => l.ListName == listName);
+        var names = GetAllListNames(services);
+        return Array.IndexOf(names, listName);
     }
 
     public static int GetListIndex(string listName) => GetListIndex(TaskerServices.Default, listName);
 
-    /// <summary>
-    /// Restores a previously deleted list at the specified index.
-    /// Used by undo to restore deleted lists.
-    /// </summary>
     public static void RestoreList(TaskerServices services, TaskList activeList, TaskList? trashedList, int originalIndex)
     {
-        services.Paths.EnsureDirectory();
+        var db = services.Db;
 
-        lock (SaveLock)
+        using var transaction = db.BeginTransaction();
+        try
         {
-            // Restore active list
-            TaskList[] taskLists = [];
-            if (File.Exists(services.Paths.AllTasksPath))
+            // Determine sort_order for the restored list
+            var allNames = GetAllListNames(services);
+            var sortOrder = originalIndex;
+
+            // Insert the list
+            db.Execute("INSERT OR IGNORE INTO lists (name, is_collapsed, sort_order) VALUES (@name, @collapsed, @order)",
+                ("@name", activeList.ListName),
+                ("@collapsed", activeList.IsCollapsed ? 1 : 0),
+                ("@order", sortOrder));
+
+            // Insert active tasks
+            foreach (var task in activeList.Tasks)
             {
-                var raw = File.ReadAllText(services.Paths.AllTasksPath);
-                taskLists = DeserializeWithMigration(raw);
+                var tagsJson = task.Tags is { Length: > 0 } ? JsonSerializer.Serialize(task.Tags) : null;
+                db.Execute("""
+                    INSERT OR IGNORE INTO tasks (id, description, is_checked, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
+                    VALUES (@id, @desc, @checked, @created, @list, @due, @priority, @tags, 0, @order)
+                    """,
+                    ("@id", task.Id),
+                    ("@desc", task.Description),
+                    ("@checked", task.IsChecked ? 1 : 0),
+                    ("@created", task.CreatedAt.ToString("o")),
+                    ("@list", task.ListName),
+                    ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
+                    ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
+                    ("@tags", (object?)tagsJson ?? DBNull.Value),
+                    ("@order", 0));
             }
 
-            var listsList = taskLists.ToList();
-            var clampedIndex = Math.Clamp(originalIndex, 0, listsList.Count);
-            listsList.Insert(clampedIndex, activeList);
-
-            File.WriteAllText(services.Paths.AllTasksPath, JsonSerializer.Serialize(listsList.ToArray()));
-
-            // Restore trashed list if it existed
+            // Insert trashed tasks
             if (trashedList != null)
             {
-                TaskList[] trashLists = [];
-                if (File.Exists(services.Paths.AllTrashPath))
+                foreach (var task in trashedList.Tasks)
                 {
-                    var trashRaw = File.ReadAllText(services.Paths.AllTrashPath);
-                    trashLists = DeserializeWithMigration(trashRaw);
+                    var tagsJson = task.Tags is { Length: > 0 } ? JsonSerializer.Serialize(task.Tags) : null;
+                    db.Execute("""
+                        INSERT OR IGNORE INTO tasks (id, description, is_checked, created_at, list_name, due_date, priority, tags, is_trashed, sort_order)
+                        VALUES (@id, @desc, @checked, @created, @list, @due, @priority, @tags, 1, @order)
+                        """,
+                        ("@id", task.Id),
+                        ("@desc", task.Description),
+                        ("@checked", task.IsChecked ? 1 : 0),
+                        ("@created", task.CreatedAt.ToString("o")),
+                        ("@list", task.ListName),
+                        ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
+                        ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
+                        ("@tags", (object?)tagsJson ?? DBNull.Value),
+                        ("@order", 0));
                 }
-
-                var trashList = trashLists.ToList();
-                trashList.Add(trashedList);
-                File.WriteAllText(services.Paths.AllTrashPath, JsonSerializer.Serialize(trashList.ToArray()));
             }
+
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
         }
     }
 
@@ -950,248 +905,142 @@ public class TodoTaskList
 
     public static void RenameList(TaskerServices services, string oldName, string newName)
     {
-        services.Paths.EnsureDirectory();
-        if (!File.Exists(services.Paths.AllTasksPath))
-        {
-            return;
-        }
-
-        var raw = File.ReadAllText(services.Paths.AllTasksPath);
-        var taskLists = DeserializeWithMigration(raw);
-        var updatedLists = taskLists.Select(l =>
-            l.ListName == oldName
-                ? l with
-                {
-                    ListName = newName,
-                    // Also update ListName on each task within the list
-                    Tasks = l.Tasks.Select(t => t with { ListName = newName }).ToArray()
-                }
-                : l
-        ).ToArray();
-
-        lock (SaveLock)
-        {
-            File.WriteAllText(services.Paths.AllTasksPath, JsonSerializer.Serialize(updatedLists));
-        }
-
-        // Also update in trash
-        if (File.Exists(services.Paths.AllTrashPath))
-        {
-            var trashRaw = File.ReadAllText(services.Paths.AllTrashPath);
-            var trashLists = DeserializeWithMigration(trashRaw);
-            var updatedTrash = trashLists.Select(l =>
-                l.ListName == oldName
-                    ? l with
-                    {
-                        ListName = newName,
-                        Tasks = l.Tasks.Select(t => t with { ListName = newName }).ToArray()
-                    }
-                    : l
-            ).ToArray();
-            lock (SaveLock)
-            {
-                File.WriteAllText(services.Paths.AllTrashPath, JsonSerializer.Serialize(updatedTrash));
-            }
-        }
+        // ON UPDATE CASCADE handles updating list_name on tasks
+        services.Db.Execute("UPDATE lists SET name = @new WHERE name = @old",
+            ("@new", newName), ("@old", oldName));
     }
 
     public static void RenameList(string oldName, string newName) => RenameList(TaskerServices.Default, oldName, newName);
 
-    /// <summary>
-    /// Gets the collapse state for a list. Returns false if list doesn't exist.
-    /// Used by TaskerTray for UI state; CLI versions ignore this.
-    /// </summary>
     public static bool IsListCollapsed(TaskerServices services, string listName)
     {
-        if (!File.Exists(services.Paths.AllTasksPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            var raw = File.ReadAllText(services.Paths.AllTasksPath);
-            var taskLists = DeserializeWithMigration(raw);
-            var list = taskLists.FirstOrDefault(l => l.ListName == listName);
-            return list?.IsCollapsed ?? false;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
+        var result = services.Db.ExecuteScalar<long?>(
+            "SELECT is_collapsed FROM lists WHERE name = @name",
+            ("@name", listName));
+        return result == 1;
     }
 
     public static bool IsListCollapsed(string listName) => IsListCollapsed(TaskerServices.Default, listName);
 
-    /// <summary>
-    /// Sets the collapse state for a list.
-    /// Used by TaskerTray for UI state; CLI versions ignore this.
-    /// </summary>
     public static void SetListCollapsed(TaskerServices services, string listName, bool collapsed)
     {
-        services.Paths.EnsureDirectory();
-        if (!File.Exists(services.Paths.AllTasksPath))
-        {
-            return;
-        }
-
-        var raw = File.ReadAllText(services.Paths.AllTasksPath);
-        var taskLists = DeserializeWithMigration(raw);
-        var updatedLists = taskLists.Select(l =>
-            l.ListName == listName ? l.SetCollapsed(collapsed) : l
-        ).ToArray();
-
-        lock (SaveLock)
-        {
-            File.WriteAllText(services.Paths.AllTasksPath, JsonSerializer.Serialize(updatedLists));
-        }
+        services.Db.Execute("UPDATE lists SET is_collapsed = @collapsed WHERE name = @name",
+            ("@collapsed", collapsed ? 1 : 0), ("@name", listName));
     }
 
     public static void SetListCollapsed(string listName, bool collapsed) =>
         SetListCollapsed(TaskerServices.Default, listName, collapsed);
 
-    private void Save()
-    {
-        _services.Paths.EnsureDirectory();
-
-        // Create backup BEFORE writing (captures current state)
-        // Backup failure should not block save
-        try { _services.Backup.CreateBackup(); }
-        catch { /* Ignore backup failures */ }
-
-        lock (SaveLock)
-        {
-            // Atomic write for tasks: write to temp, then rename
-            var tasksTempPath = _services.Paths.AllTasksPath + ".tmp";
-            var tasksJson = JsonSerializer.Serialize(TaskLists);
-            File.WriteAllText(tasksTempPath, tasksJson);
-            File.Move(tasksTempPath, _services.Paths.AllTasksPath, overwrite: true);
-
-            // Atomic write for trash
-            var trashTempPath = _services.Paths.AllTrashPath + ".tmp";
-            var trashJson = JsonSerializer.Serialize(TrashLists);
-            File.WriteAllText(trashTempPath, trashJson);
-            File.Move(trashTempPath, _services.Paths.AllTrashPath, overwrite: true);
-        }
-    }
-
-    /// <summary>
-    /// Reorders a task within its list by moving it to a new index.
-    /// </summary>
     public static void ReorderTask(TaskerServices services, string taskId, int newIndex, bool recordUndo = true)
     {
-        services.Paths.EnsureDirectory();
-        if (!File.Exists(services.Paths.AllTasksPath))
-            return;
+        var db = services.Db;
 
-        lock (SaveLock)
+        // Find the task and its list
+        var task = db.QuerySingle(
+            "SELECT id, list_name, sort_order FROM tasks WHERE id = @id AND is_trashed = 0",
+            reader => new { Id = reader.GetString(0), ListName = reader.GetString(1), SortOrder = reader.GetInt32(2) },
+            ("@id", taskId));
+
+        if (task == null) return;
+
+        // Get all tasks in this list ordered by sort_order DESC (matching display order)
+        var tasksInList = db.Query(
+            "SELECT id FROM tasks WHERE list_name = @list AND is_trashed = 0 ORDER BY sort_order DESC",
+            reader => reader.GetString(0),
+            ("@list", task.ListName));
+
+        var currentIndex = tasksInList.IndexOf(taskId);
+        if (currentIndex < 0) return;
+
+        var clampedNewIndex = Math.Max(0, Math.Min(newIndex, tasksInList.Count - 1));
+        if (currentIndex == clampedNewIndex) return;
+
+        if (recordUndo)
         {
-            var raw = File.ReadAllText(services.Paths.AllTasksPath);
-            var taskLists = DeserializeWithMigration(raw);
-
-            // Find the list containing this task
-            var listIndex = -1;
-            var taskIndex = -1;
-            for (var i = 0; i < taskLists.Length; i++)
+            services.Undo.RecordCommand(new Undo.Commands.ReorderTaskCommand
             {
-                var idx = Array.FindIndex(taskLists[i].Tasks, t => t.Id == taskId);
-                if (idx >= 0)
-                {
-                    listIndex = i;
-                    taskIndex = idx;
-                    break;
-                }
-            }
+                TaskId = taskId,
+                ListName = task.ListName,
+                OldIndex = currentIndex,
+                NewIndex = clampedNewIndex
+            });
+        }
 
-            if (listIndex < 0 || taskIndex < 0)
-                return;
+        // Reorder: remove from old position, insert at new
+        tasksInList.RemoveAt(currentIndex);
+        tasksInList.Insert(clampedNewIndex, taskId);
 
-            var list = taskLists[listIndex];
-            var tasks = list.Tasks.ToList();
-
-            // Clamp newIndex to valid range
-            var clampedNewIndex = Math.Max(0, Math.Min(newIndex, tasks.Count - 1));
-
-            if (taskIndex == clampedNewIndex)
-                return;
-
-            // Record undo command before modification
-            if (recordUndo)
+        // Update sort_order: index 0 (first in display) gets highest sort_order
+        using var transaction = db.BeginTransaction();
+        try
+        {
+            for (var i = 0; i < tasksInList.Count; i++)
             {
-                services.Undo.RecordCommand(new Undo.Commands.ReorderTaskCommand
-                {
-                    TaskId = taskId,
-                    ListName = list.ListName,
-                    OldIndex = taskIndex,
-                    NewIndex = clampedNewIndex
-                });
+                db.Execute("UPDATE tasks SET sort_order = @order WHERE id = @id",
+                    ("@order", tasksInList.Count - 1 - i), ("@id", tasksInList[i]));
             }
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
 
-            // Remove from old position and insert at new position
-            var task = tasks[taskIndex];
-            tasks.RemoveAt(taskIndex);
-            tasks.Insert(clampedNewIndex, task);
-
-            taskLists[listIndex] = list.ReplaceTasks(tasks.ToArray());
-
-            File.WriteAllText(services.Paths.AllTasksPath, JsonSerializer.Serialize(taskLists));
-
-            if (recordUndo)
-            {
-                services.Undo.SaveHistory();
-            }
+        if (recordUndo)
+        {
+            services.Undo.SaveHistory();
         }
     }
 
     public static void ReorderTask(string taskId, int newIndex, bool recordUndo = true) =>
         ReorderTask(TaskerServices.Default, taskId, newIndex, recordUndo);
 
-    /// <summary>
-    /// Reorders a list by moving it to a new index in the TaskLists array.
-    /// </summary>
     public static void ReorderList(TaskerServices services, string listName, int newIndex, bool recordUndo = true)
     {
-        services.Paths.EnsureDirectory();
-        if (!File.Exists(services.Paths.AllTasksPath))
-            return;
+        var db = services.Db;
 
-        lock (SaveLock)
+        var allNames = GetAllListNames(services).ToList();
+        var currentIndex = allNames.IndexOf(listName);
+        if (currentIndex < 0) return;
+
+        var clampedNewIndex = Math.Max(0, Math.Min(newIndex, allNames.Count - 1));
+        if (currentIndex == clampedNewIndex) return;
+
+        if (recordUndo)
         {
-            var raw = File.ReadAllText(services.Paths.AllTasksPath);
-            var taskLists = DeserializeWithMigration(raw).ToList();
-
-            var currentIndex = taskLists.FindIndex(l => l.ListName == listName);
-            if (currentIndex < 0)
-                return;
-
-            // Clamp newIndex to valid range
-            var clampedNewIndex = Math.Max(0, Math.Min(newIndex, taskLists.Count - 1));
-
-            if (currentIndex == clampedNewIndex)
-                return;
-
-            // Record undo command before modification
-            if (recordUndo)
+            services.Undo.RecordCommand(new Undo.Commands.ReorderListCommand
             {
-                services.Undo.RecordCommand(new Undo.Commands.ReorderListCommand
-                {
-                    ListName = listName,
-                    OldIndex = currentIndex,
-                    NewIndex = clampedNewIndex
-                });
-            }
+                ListName = listName,
+                OldIndex = currentIndex,
+                NewIndex = clampedNewIndex
+            });
+        }
 
-            // Remove from old position and insert at new position
-            var list = taskLists[currentIndex];
-            taskLists.RemoveAt(currentIndex);
-            taskLists.Insert(clampedNewIndex, list);
+        // Reorder
+        allNames.RemoveAt(currentIndex);
+        allNames.Insert(clampedNewIndex, listName);
 
-            File.WriteAllText(services.Paths.AllTasksPath, JsonSerializer.Serialize(taskLists.ToArray()));
-
-            if (recordUndo)
+        // Update sort_order for all lists
+        using var transaction = db.BeginTransaction();
+        try
+        {
+            for (var i = 0; i < allNames.Count; i++)
             {
-                services.Undo.SaveHistory();
+                db.Execute("UPDATE lists SET sort_order = @order WHERE name = @name",
+                    ("@order", i), ("@name", allNames[i]));
             }
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+
+        if (recordUndo)
+        {
+            services.Undo.SaveHistory();
         }
     }
 

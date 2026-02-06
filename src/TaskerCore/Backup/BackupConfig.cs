@@ -12,7 +12,7 @@ public static class BackupConfig
     public const int MaxDailyBackupDays = 7;
 
     /// <summary>File extension for backup files.</summary>
-    public const string BackupExtension = ".backup.json";
+    public const string BackupExtension = ".backup.db";
 
     /// <summary>Prefix for daily backup files.</summary>
     public const string DailyPrefix = "daily.";

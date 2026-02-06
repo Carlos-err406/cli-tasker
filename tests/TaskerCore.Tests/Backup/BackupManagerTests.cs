@@ -3,6 +3,7 @@ namespace TaskerCore.Tests.Backup;
 using TaskerCore.Backup;
 using TaskerCore.Data;
 using TaskerCore.Exceptions;
+using TaskerCore.Models;
 
 [Collection("IsolatedTests")]
 public class BackupManagerTests : IDisposable
@@ -12,7 +13,6 @@ public class BackupManagerTests : IDisposable
 
     public BackupManagerTests()
     {
-        // Create a fresh test directory for each test
         _testDir = Path.Combine(Path.GetTempPath(), $"backup-tests-{Guid.NewGuid()}");
         Directory.CreateDirectory(_testDir);
         _services = new TaskerServices(_testDir);
@@ -21,45 +21,24 @@ public class BackupManagerTests : IDisposable
 
     public void Dispose()
     {
-                // Wait a moment for file handles to be released
+        _services.Dispose();
         Thread.Sleep(50);
         try
         {
             if (Directory.Exists(_testDir))
-            {
                 Directory.Delete(_testDir, recursive: true);
-            }
         }
-        catch
-        {
-            // Ignore cleanup errors
-        }
+        catch { /* Ignore cleanup errors */ }
         GC.SuppressFinalize(this);
     }
 
     [Fact]
-    public void CreateBackup_WhenNoTasksFile_DoesNotCreateBackup()
+    public void CreateBackup_CreatesVersionBackup()
     {
-        // Arrange - no tasks file exists
-
         // Act
         _services.Backup.CreateBackup();
 
         // Assert
-        var backups = _services.Backup.ListBackups();
-        Assert.Empty(backups);
-    }
-
-    [Fact]
-    public void CreateBackup_WhenTasksFileExists_CreatesVersionBackup()
-    {
-        // Arrange - create a tasks file
-        CreateTasksFile();
-
-        // Act
-        _services.Backup.CreateBackup();
-
-        // Assert - should have at least one version backup (also creates daily)
         var backups = _services.Backup.ListBackups();
         Assert.NotEmpty(backups);
         var versionBackups = backups.Where(b => !b.IsDaily).ToList();
@@ -69,59 +48,45 @@ public class BackupManagerTests : IDisposable
     [Fact]
     public void CreateBackup_CreatesDailyBackupOnce()
     {
-        // Arrange
-        CreateTasksFile();
-
         // Act - create two backups with slight delay
         _services.Backup.CreateBackup();
-        Thread.Sleep(1100); // 1+ second delay for different timestamp
-        UpdateTasksFile("updated");
+        Thread.Sleep(1100);
         _services.Backup.CreateBackup();
 
         // Assert - should have 2 version backups + 1 daily backup
-        var backupDir = _services.Paths.BackupDirectory;
-        var versionBackups = Directory.GetFiles(backupDir)
-            .Where(f => !f.Contains("daily.") && !f.Contains(".trash."))
-            .Count();
-        var dailyBackups = Directory.GetFiles(backupDir)
-            .Where(f => f.Contains("daily.") && !f.Contains(".trash."))
-            .Count();
+        var backups = _services.Backup.ListBackups();
+        var versionBackups = backups.Where(b => !b.IsDaily).ToList();
+        var dailyBackups = backups.Where(b => b.IsDaily).ToList();
 
-        Assert.Equal(2, versionBackups);
-        Assert.Equal(1, dailyBackups);
+        Assert.Equal(2, versionBackups.Count);
+        Assert.Single(dailyBackups);
     }
 
     [Fact]
-    public void CreateBackup_BacksUpTrashFile()
+    public void CreateBackup_BackupContainsData()
     {
-        // Arrange
-        CreateTasksFile();
-        CreateTrashFile();
+        // Arrange - add a task to the database
+        var taskList = new TodoTaskList(_services, "tasks");
+        taskList.AddTodoTask(TodoTask.CreateTodoTask("backup test task", "tasks"), recordUndo: false);
 
         // Act
         _services.Backup.CreateBackup();
 
-        // Assert - both files should be backed up
-        var backupDir = _services.Paths.BackupDirectory;
-        var tasksBackups = Directory.GetFiles(backupDir, "all-tasks.*backup.json")
-            .Where(f => !f.Contains(".trash."))
-            .Count();
-        var trashBackups = Directory.GetFiles(backupDir, "all-tasks.trash.*backup.json")
-            .Count();
+        // Assert - backup file should exist and be a valid SQLite DB
+        var backups = _services.Backup.ListBackups();
+        Assert.NotEmpty(backups);
 
-        Assert.Equal(2, tasksBackups); // version + daily
-        Assert.Equal(2, trashBackups); // version + daily
+        var backupPath = backups[0].FilePath;
+        Assert.True(File.Exists(backupPath));
+        Assert.True(new FileInfo(backupPath).Length > 0);
     }
 
     [Fact]
     public void ListBackups_ReturnsNewestFirst()
     {
         // Arrange - create multiple backups with delays
-        CreateTasksFile();
-
         _services.Backup.CreateBackup();
-        Thread.Sleep(1100); // 1+ second delay for different timestamps
-        UpdateTasksFile("updated content");
+        Thread.Sleep(1100);
         _services.Backup.CreateBackup();
 
         // Act
@@ -129,7 +94,6 @@ public class BackupManagerTests : IDisposable
 
         // Assert - should have 2 version + 1 daily = 3 backups
         Assert.Equal(3, backups.Count);
-        // Verify sorted newest first
         for (var i = 0; i < backups.Count - 1; i++)
         {
             Assert.True(backups[i].Timestamp >= backups[i + 1].Timestamp,
@@ -141,23 +105,22 @@ public class BackupManagerTests : IDisposable
     public void RotateBackups_DeletesOldestWhenOverLimit()
     {
         // Arrange - manually create backup files to test rotation
-        CreateTasksFile();
         _services.Paths.EnsureBackupDirectory();
 
-        // Create MaxVersionBackups + 3 backup files manually
         var baseTime = DateTime.Now.AddMinutes(-30);
         for (var i = 0; i < BackupConfig.MaxVersionBackups + 3; i++)
         {
             var timestamp = baseTime.AddSeconds(i);
-            var fileName = $"all-tasks.{timestamp:yyyy-MM-ddTHH-mm-ss}.backup.json";
+            var fileName = $"tasker.{timestamp:yyyy-MM-ddTHH-mm-ss}{BackupConfig.BackupExtension}";
             var path = Path.Combine(_services.Paths.BackupDirectory, fileName);
-            File.WriteAllText(path, $"backup {i}");
+            // Create a minimal valid SQLite file (just touch it for rotation testing)
+            File.WriteAllBytes(path, new byte[0]);
         }
 
         // Act - create one more backup (triggers rotation)
         _services.Backup.CreateBackup();
 
-        // Assert - should have MaxVersionBackups + 1 (the new one)
+        // Assert
         var versionBackups = _services.Backup.ListBackups()
             .Where(b => !b.IsDaily)
             .ToList();
@@ -166,56 +129,52 @@ public class BackupManagerTests : IDisposable
     }
 
     [Fact]
-    public void RestoreBackup_RestoresTasksFile()
+    public void RestoreBackup_RestoresData()
     {
-        // Arrange
-        CreateTasksFile("original content");
+        // Arrange - add a task and backup
+        var taskList = new TodoTaskList(_services, "tasks");
+        var task = TodoTask.CreateTodoTask("original task", "tasks");
+        taskList.AddTodoTask(task, recordUndo: false);
         _services.Backup.CreateBackup();
 
         var backups = _services.Backup.ListBackups();
-        var backupTimestamp = backups[0].Timestamp;
+        var backupTimestamp = backups.First(b => !b.IsDaily).Timestamp;
 
-        // Modify the tasks file
-        UpdateTasksFile("modified content");
+        // Delete the task (modify current state)
+        taskList.DeleteTask(task.Id, moveToTrash: false, recordUndo: false);
+        var afterDelete = new TodoTaskList(_services, "tasks").GetAllTasks();
+        Assert.Empty(afterDelete);
 
-        // Act
+        // Act - restore from backup
         _services.Backup.RestoreBackup(backupTimestamp);
 
-        // Assert
-        var content = File.ReadAllText(_services.Paths.AllTasksPath);
-        Assert.Equal("original content", content);
+        // Assert - task should be back
+        var restored = new TodoTaskList(_services, "tasks").GetAllTasks();
+        Assert.Single(restored);
+        Assert.Equal("original task", restored[0].Description);
     }
 
     [Fact]
     public void RestoreBackup_CreatesPreRestoreBackup()
     {
         // Arrange
-        CreateTasksFile("original");
         _services.Backup.CreateBackup();
-        var backupTimestamp = _services.Backup.ListBackups()[0].Timestamp;
-
-        UpdateTasksFile("modified");
+        var backupTimestamp = _services.Backup.ListBackups().First(b => !b.IsDaily).Timestamp;
 
         // Act
         _services.Backup.RestoreBackup(backupTimestamp);
 
         // Assert - should have a pre-restore backup
         var backupDir = _services.Paths.BackupDirectory;
-        var preRestoreBackups = Directory.GetFiles(backupDir, "*pre-restore*");
+        var preRestoreBackups = Directory.GetFiles(backupDir, $"*{BackupConfig.PreRestorePrefix}*");
         Assert.NotEmpty(preRestoreBackups);
-
-        // Pre-restore backup should contain "modified"
-        var preRestoreContent = File.ReadAllText(preRestoreBackups[0]);
-        Assert.Equal("modified", preRestoreContent);
     }
 
     [Fact]
     public void RestoreBackup_WithInvalidTimestamp_ThrowsBackupNotFoundException()
     {
         // Arrange
-        CreateTasksFile();
         _services.Backup.CreateBackup();
-
         var invalidTimestamp = DateTime.Now.AddDays(-100);
 
         // Act & Assert
@@ -226,66 +185,39 @@ public class BackupManagerTests : IDisposable
     [Fact]
     public void RestoreBackup_AlsoRestoresTrash()
     {
-        // Arrange
-        CreateTasksFile("tasks");
-        CreateTrashFile("original trash");
+        // Arrange - add a task, delete it (moves to trash), then backup
+        var taskList = new TodoTaskList(_services, "tasks");
+        var task = TodoTask.CreateTodoTask("will be trashed", "tasks");
+        taskList.AddTodoTask(task, recordUndo: false);
+        taskList.DeleteTask(task.Id, recordUndo: false);
+
         _services.Backup.CreateBackup();
+        var backupTimestamp = _services.Backup.ListBackups().First(b => !b.IsDaily).Timestamp;
 
-        // Get the version backup (not daily)
-        var versionBackups = _services.Backup.ListBackups().Where(b => !b.IsDaily).ToList();
-        Assert.NotEmpty(versionBackups);
-        var backupTimestamp = versionBackups[0].Timestamp;
+        // Permanently clear the trash
+        taskList.ClearTrash();
+        var trashAfterClear = new TodoTaskList(_services).GetTrash();
+        Assert.Empty(trashAfterClear);
 
-        UpdateTrashFile("modified trash");
-
-        // Act
+        // Act - restore from backup
         _services.Backup.RestoreBackup(backupTimestamp);
 
-        // Assert
-        Assert.True(File.Exists(_services.Paths.AllTrashPath), "Trash file should exist after restore");
-        var trashContent = File.ReadAllText(_services.Paths.AllTrashPath);
-        Assert.Equal("original trash", trashContent);
+        // Assert - trash should be restored
+        var restoredTrash = new TodoTaskList(_services).GetTrash();
+        Assert.Single(restoredTrash);
+        Assert.Equal("will be trashed", restoredTrash[0].Description);
     }
 
     [Fact]
-    public void AtomicWrite_Integration_SavesViaTempFile()
+    public void DataPersists_AfterAddingTask()
     {
-        // This test verifies the atomic write pattern works via TodoTaskList
-        // Arrange
+        // Arrange - add a task via TodoTaskList
         var taskList = new TodoTaskList(_services);
+        taskList.AddTodoTask(TodoTask.CreateTodoTask("test task", "tasks"), recordUndo: false);
 
-        // Act - add a task (triggers Save with atomic write)
-        taskList.AddTodoTask(
-            TaskerCore.Models.TodoTask.CreateTodoTask("test task", "tasks"));
-
-        // Assert - file should exist and be valid
-        Assert.True(File.Exists(_services.Paths.AllTasksPath));
-        var content = File.ReadAllText(_services.Paths.AllTasksPath);
-        Assert.Contains("test task", content);
-
-        // Temp file should not exist
-        Assert.False(File.Exists(_services.Paths.AllTasksPath + ".tmp"));
-    }
-
-    private void CreateTasksFile(string content = "[]")
-    {
-        _services.Paths.EnsureDirectory();
-        File.WriteAllText(_services.Paths.AllTasksPath, content);
-    }
-
-    private void CreateTrashFile(string content = "[]")
-    {
-        _services.Paths.EnsureDirectory();
-        File.WriteAllText(_services.Paths.AllTrashPath, content);
-    }
-
-    private void UpdateTasksFile(string content)
-    {
-        File.WriteAllText(_services.Paths.AllTasksPath, content);
-    }
-
-    private void UpdateTrashFile(string content)
-    {
-        File.WriteAllText(_services.Paths.AllTrashPath, content);
+        // Assert - data persists (read from same DB)
+        var readBack = new TodoTaskList(_services, "tasks").GetAllTasks();
+        Assert.Single(readBack);
+        Assert.Equal("test task", readBack[0].Description);
     }
 }

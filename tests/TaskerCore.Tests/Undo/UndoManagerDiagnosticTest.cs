@@ -21,7 +21,8 @@ public class UndoManagerDiagnosticTest : IDisposable
     public void Dispose()
     {
         _services.Undo.ClearHistory();
-                if (Directory.Exists(_testDir))
+        _services.Dispose();
+        if (Directory.Exists(_testDir))
         {
             Directory.Delete(_testDir, recursive: true);
         }
@@ -66,12 +67,12 @@ public class UndoManagerDiagnosticTest : IDisposable
         // Verify it was recorded
         Assert.Equal(1, _services.Undo.UndoCount);
 
-        // Check the history file exists and has content
-        var historyPath = Path.Combine(_testDir, "undo-history.json");
-        Assert.True(File.Exists(historyPath), "History file should exist");
+        // Verify history persists in SQLite by reloading
+        _services.Undo.ReloadHistory();
+        Assert.Equal(1, _services.Undo.UndoCount);
 
-        var historyContent = File.ReadAllText(historyPath);
-        Assert.Contains("UndoStack", historyContent);
-        Assert.Contains("add", historyContent); // Should contain the "add" type discriminator
+        // Verify the command type is preserved
+        var history = _services.Undo.UndoHistory;
+        Assert.Contains("add", history[0].Description.ToLower());
     }
 }

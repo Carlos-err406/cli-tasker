@@ -21,6 +21,9 @@ public class StoragePaths
     /// <summary>Path to the undo history JSON file.</summary>
     public string UndoHistoryPath => Path.Combine(Directory, "undo-history.json");
 
+    /// <summary>Path to the SQLite database file.</summary>
+    public string DatabasePath => Path.Combine(Directory, "tasker.db");
+
     /// <summary>Directory for backup files.</summary>
     public string BackupDirectory => Path.Combine(Directory, "backups");
 

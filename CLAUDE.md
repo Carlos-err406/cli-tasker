@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-cli-tasker is a lightweight CLI task manager built with C# and .NET 10.0. It's packaged as a .NET global tool (`tasker` command) and uses a single unified JSON file for persistent storage.
+cli-tasker is a lightweight CLI task manager built with C# and .NET 10.0. It's packaged as a .NET global tool (`tasker` command) and uses SQLite for persistent storage.
 
 ## Building and Testing
 
@@ -35,7 +35,7 @@ dotnet test --filter "FullyQualifiedName~TaskDescriptionParserTests"
 dotnet test -v n
 ```
 
-Tests use isolated storage (temp directory) to avoid affecting real tasks.
+Tests use isolated storage (temp directory or in-memory SQLite) to avoid affecting real tasks.
 
 **Important:** When verifying new functionality, write tests instead of using `dotnet run --` commands. Tests are repeatable, don't affect real data, and serve as documentation.
 
@@ -68,26 +68,45 @@ The script automatically bumps the version in `cli-tasker.csproj`, then:
 3. Builds and installs TaskerTray to /Applications
 4. Relaunches TaskerTray
 
-## Architecture (v2.3)
+## Architecture (v3.0)
 
-### List-First Storage
-All tasks are stored in a list-first structure where lists are first-class entities:
-- `~/Library/Application Support/cli-tasker/all-tasks.json` - lists with their tasks
-- `~/Library/Application Support/cli-tasker/all-tasks.trash.json` - soft-deleted tasks (same format)
-- `~/Library/Application Support/cli-tasker/config.json` - default list setting
+### SQLite Storage
+All data is stored in a single SQLite database with WAL mode for concurrent CLI + tray access:
+- `~/Library/Application Support/cli-tasker/tasker.db` - single database file
 
-**JSON Structure:**
-```json
-[
-  {"ListName": "tasks", "Tasks": [...]},
-  {"ListName": "work", "Tasks": []}
-]
+**Schema:**
+```sql
+lists (name TEXT PK, is_collapsed INTEGER, sort_order INTEGER)
+tasks (id TEXT PK, description, is_checked, created_at, list_name FK→lists, due_date, priority, tags, is_trashed, sort_order)
+config (key TEXT PK, value TEXT)
+undo_history (id INTEGER PK, stack_type TEXT, command_json TEXT, created_at TEXT)
 ```
 
-This structure allows:
-- Empty lists (lists can exist without tasks)
-- Pre-creating lists before adding tasks
-- Lists persist even after all tasks are deleted
+**Key design decisions:**
+- Trash is a flag (`is_trashed`) on the tasks table, not a separate table
+- Tags stored as JSON string array
+- Foreign keys with `ON UPDATE CASCADE ON DELETE CASCADE` for list operations
+- Sort order: highest `sort_order` = newest (display uses `ORDER BY sort_order DESC`)
+- WAL journal mode enables concurrent reads from CLI + tray
+
+**Migration from JSON:** On first launch, `JsonMigrator` detects old JSON files (`all-tasks.json`, `all-tasks.trash.json`, `config.json`, `undo-history.json`), imports data into SQLite, and renames originals to `.bak`.
+
+### Service Container (TaskerServices)
+Central dependency injection container:
+```csharp
+TaskerServices {
+    Paths: StoragePaths      // File system paths
+    Db: TaskerDb             // SQLite connection + helpers
+    Config: AppConfig        // Default list setting (config table)
+    Backup: BackupManager    // SQLite hot backup API
+    Undo: UndoManager        // Undo/redo stacks (undo_history table)
+}
+```
+
+**Factory methods:**
+- `new TaskerServices()` - production (default paths)
+- `new TaskerServices(baseDir)` - file-based tests (backup tests need real files)
+- `TaskerServices.CreateInMemory()` - in-memory SQLite for fast unit tests
 
 ### Command Flow
 ```
@@ -101,7 +120,7 @@ Command.SetAction() + CommandHelper.WithErrorHandling()
     ↓
 Data Layer (TodoTaskList, ListManager)
     ↓
-Persistent Storage (JSON files)
+TaskerDb (SQLite)
 ```
 
 ### Command Behavior
@@ -133,22 +152,19 @@ All command actions are wrapped with `CommandHelper.WithErrorHandling()` which c
 
 ## Data Layer
 
-### TaskList (List Container)
-```csharp
-record TaskList(string ListName, TodoTask[] Tasks)
-```
-
-**Factory method**: `TaskList.Create(string listName)` creates an empty list.
-
-**Methods** (all return new instances - functional style):
-- `AddTask(task)` - add task to list
-- `RemoveTask(taskId)` - remove task from list
-- `UpdateTask(task)` - update a task in place
-- `ReplaceTasks(tasks)` - replace all tasks
+### TaskerDb (Database Connection)
+Wraps `SqliteConnection` with helper methods:
+- `Execute(sql, params)` - run non-query SQL
+- `ExecuteScalar<T>(sql, params)` - single value (handles nullable types)
+- `Query<T>(sql, mapper, params)` - read multiple rows
+- `QuerySingle<T>(sql, mapper, params)` - read one row
+- `BeginTransaction()` - for multi-step operations
+- `CreateInMemory()` - isolated in-memory DB for tests
 
 ### TodoTask (Immutable Record)
 ```csharp
-record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedAt, string ListName)
+record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedAt, string ListName,
+    DateOnly? DueDate, Priority? Priority, string[]? Tags)
 ```
 
 **Factory method**: `CreateTodoTask(string description, string listName)` creates a new task with 3-char GUID ID.
@@ -159,42 +175,37 @@ record TodoTask(string Id, string Description, bool IsChecked, DateTime CreatedA
 - `MoveToList(listName)` - change list assignment
 
 ### TodoTaskList (Main Data Manager)
-Manages all tasks with optional list filtering:
+Manages all tasks with optional list filtering via direct SQL:
 
-**Constructor**: `TodoTaskList(string? listName = null)` - null means all tasks, string filters to specific list.
+**Constructor**: `TodoTaskList(services, listName?)` - null means all tasks, string filters to specific list.
 
 **Instance Operations**:
 | Operation | Behavior | Scope |
 |-----------|----------|-------|
-| `AddTodoTask(task)` | Inserts at top of array | Global |
+| `AddTodoTask(task)` | Inserts with highest sort_order | Global |
 | `GetTodoTaskById(id)` | Returns task or null | Always global |
-| `CheckTask(id)` | Toggles checked, re-inserts at top | Global |
-| `UncheckTask(id)` | Toggles unchecked, re-inserts at top | Global |
-| `DeleteTask(id)` | Moves to trash | Global |
+| `CheckTask(id)` | Toggles checked, bumps sort_order | Global |
+| `UncheckTask(id)` | Toggles unchecked, bumps sort_order | Global |
+| `DeleteTask(id)` | Sets is_trashed = 1 | Global |
 | `DeleteTasks(ids[])` | Batch delete with per-task feedback | Global |
-| `RenameTask(id, desc)` | Updates description, re-inserts at top | Global |
-| `MoveTask(id, targetList)` | Changes list, re-inserts at top | Global |
-| `ClearTasks()` | Moves all filtered tasks to trash | Respects filter |
+| `RenameTask(id, desc)` | Updates description, bumps sort_order | Global |
+| `MoveTask(id, targetList)` | Changes list_name, bumps sort_order | Global |
+| `ClearTasks()` | Trashes all filtered tasks | Respects filter |
 | `ListTodoTasks(filter?)` | Displays tasks | Respects filter |
-| `RestoreFromTrash(id)` | Moves task from trash to active | Global |
-| `ListTrash()` | Displays deleted tasks | Respects filter |
-| `ClearTrash()` | Permanently deletes | Respects filter |
+| `RestoreFromTrash(id)` | Sets is_trashed = 0 | Global |
+| `GetTrash()` | Returns deleted tasks | Respects filter |
+| `ClearTrash()` | DELETE from tasks | Respects filter |
 | `GetStats()` | Returns TaskStats record | Respects filter |
 
 **Static Methods** (for list management):
-- `GetAllListNames()` - returns distinct list names (default first, then alphabetical)
-- `ListHasTasks(listName)` - checks if list has any tasks
-- `ListExists(listName)` - checks if list exists (with or without tasks)
-- `CreateList(listName)` - creates a new empty list
-- `DeleteList(listName)` - removes list and all tasks/trash
-- `RenameList(oldName, newName)` - updates ListName on list object
-
-**Migration**: When loading old format (flat TodoTask array), automatically migrates to new list-first format on save.
-
-**Persistence**:
-- `Save()` - serializes TaskList[] to JSON
-- Uses `SaveLock` for thread-safe file writes
-- `EnsureDirectory()` - creates config directory if missing
+- `GetAllListNames()` - returns list names ordered by sort_order
+- `ListHasTasks(listName)` - checks if list has any active tasks
+- `ListExists(listName)` - checks if list exists in lists table
+- `CreateList(listName)` - INSERT into lists
+- `DeleteList(listName)` - DELETE from lists (cascades to tasks)
+- `RenameList(oldName, newName)` - UPDATE lists (cascades to tasks via FK)
+- `ReorderTask(taskId, newIndex)` - reorder within a list
+- `ReorderList(listName, newIndex)` - reorder lists
 
 ### ListManager (Static Utility)
 **Constants**:
@@ -213,17 +224,25 @@ Manages all tasks with optional list filtering:
 - `GetTaskList(listName?)` - returns filtered or unfiltered TodoTaskList
 - `GetTaskListForAdding(listName?)` - returns TodoTaskList for specified or default list
 
-### TaskStats (Record)
-```csharp
-record TaskStats { int Total; int Checked; int Unchecked; int Trash; }
-```
-Used by `TodoTaskList.GetStats()` for system status display.
-
-### AppConfig (Static Utility)
-Manages the default list in `config.json`:
+### AppConfig
+Manages the default list via `config` table:
 - `GetDefaultList()` - returns default list for adding new tasks
 - `SetDefaultList()` - persists default list preference
 - `TaskPrefixLength = 12` - width of "(xxx) [ ] - " for display formatting
+
+### BackupManager
+Uses SQLite hot backup API (`SqliteConnection.BackupDatabase()`):
+- `CreateBackup()` - creates version + daily backup files (`.backup.db`)
+- `RestoreBackup(timestamp)` - restores from backup with pre-restore safety copy
+- `ListBackups()` - lists available backups, newest first
+- Automatic rotation: keeps last 10 version backups, 7 days of dailies
+
+### UndoManager
+Persists undo/redo stacks to `undo_history` table:
+- `RecordCommand(cmd)` - push to undo stack
+- `Undo()` / `Redo()` - execute and swap between stacks
+- `BeginBatch()` / `EndBatch()` - group multiple commands
+- Commands use `IUndoableCommand` interface with JSON polymorphic serialization
 
 ## Output Formatting
 
@@ -237,7 +256,7 @@ Manages the default list in `config.json`:
 - First line: `[bold]...[/]`
 - Continuation lines: `[dim]...[/]` with 12-char indent
 
-**Task ordering**: Unchecked first, then checked. Within each group, newest first (descending by `CreatedAt`).
+**Task ordering**: Unchecked first, then checked. Within each group, by priority, due date, then newest first.
 
 ## Exception Hierarchy
 
@@ -249,6 +268,7 @@ Base class: `TaskerException(string message)`
 - `InvalidListNameException` - invalid characters in name
 - `CannotModifyDefaultListException` - attempt to delete/rename "tasks"
 - `TaskNotFoundException` - task ID not found
+- `BackupNotFoundException` - backup timestamp not found
 
 All exceptions caught by `CommandHelper.WithErrorHandling()` and displayed via `Output.Error()`.
 
@@ -269,8 +289,8 @@ All exceptions caught by `CommandHelper.WithErrorHandling()` and displayed via `
 
 ## Important Implementation Details
 
-### Task Re-insertion Pattern
-When checking, unchecking, renaming, or moving a task, the task is removed from its current position and re-inserted at the top of the array. This ensures modified tasks appear at the top of their section.
+### Sort Order Convention
+Newest tasks get the highest `sort_order` value. Display queries use `ORDER BY sort_order DESC` so newest appears first. `BumpSortOrder()` sets `sort_order = MAX(sort_order) + 1` to move a task to the top after modification.
 
 ### Multi-line Task Formatting
 Tasks can have newlines in descriptions:
@@ -286,9 +306,16 @@ The "tasks" list cannot be deleted or renamed. Enforced via `CannotModifyDefault
 When renaming a list that is currently the default, `AppConfig` is updated automatically in `ListManager.RenameList()`.
 
 ### Batch Operations
-`check`, `uncheck`, and `delete` commands accept multiple task IDs. Each ID is processed individually with per-task success/error feedback.
+`check`, `uncheck`, and `delete` commands accept multiple task IDs. Each ID is processed individually with per-task success/error feedback, wrapped in a transaction.
+
+### Undo System
+- Commands implement `IUndoableCommand` with `Execute()` and `Undo()` methods
+- Use `recordUndo: false` parameter when calling from undo/redo to prevent recursion
+- Register new commands in `IUndoableCommand.cs` with `[JsonDerivedType]` attribute
+- Commands use `TaskerServices.Default` internally for storage operations
 
 ## Key Dependencies
 
 - **System.CommandLine 2.0.2**: Modern CLI parsing with type-safe options
 - **Spectre.Console 0.54.0**: Terminal formatting and markup rendering
+- **Microsoft.Data.Sqlite 10.0.2**: SQLite database access (raw ADO.NET, no ORM)
