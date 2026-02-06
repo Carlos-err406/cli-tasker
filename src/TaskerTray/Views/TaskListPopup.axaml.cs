@@ -358,7 +358,8 @@ public partial class TaskListPopup : Window
 
         var isDefaultList = listName == ListManager.DefaultListName;
         var allListNames = TodoTaskList.GetAllListNames().ToList();
-        var canReorder = allListNames.Count > 1;
+        var canReorder = allListNames.Count > 1 && _currentListFilter == null;
+        var showChevron = _currentListFilter == null;
 
         // Get task counts for summary display when collapsed
         var tasksInList = _tasks.Where(t => t.ListName == listName).ToList();
@@ -373,45 +374,54 @@ public partial class TaskListPopup : Window
             Classes = { "listHeader" }
         };
 
-        // Columns: chevron + name + add + menu (if not default)
-        var columnDef = isDefaultList ? "Auto,*,Auto" : "Auto,*,Auto,Auto";
+        // Columns: [chevron +] name + add + menu (if not default)
+        // Skip chevron column when viewing a single filtered list
+        string columnDef;
+        if (showChevron)
+            columnDef = isDefaultList ? "Auto,*,Auto" : "Auto,*,Auto,Auto";
+        else
+            columnDef = isDefaultList ? "*,Auto" : "*,Auto,Auto";
+
         var headerPanel = new Grid
         {
             ColumnDefinitions = ColumnDefinitions.Parse(columnDef)
         };
 
-        var colOffset = 0;
+        var colOffset = showChevron ? 0 : -1;
 
-        // Set up drag from the entire list header (only if multiple lists)
+        // Set up drag from the entire list header (only if multiple lists and not filtered)
         if (canReorder)
         {
             headerBorder.Cursor = new Cursor(StandardCursorType.DragMove);
             SetupListDragHandlers(headerBorder, listName);
         }
 
-        // Collapse chevron button - uses rotation animation
-        var chevronBtn = new Button
+        if (showChevron)
         {
-            Content = "▼",
-            Width = 18,
-            Height = 18,
-            FontSize = 10,
-            Padding = new Thickness(0),
-            Background = Brushes.Transparent,
-            Foreground = new SolidColorBrush(Color.Parse("#666")),
-            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            Cursor = new Cursor(StandardCursorType.Arrow),
-            Classes = { "chevron" }
-        };
-        if (isCollapsed)
-        {
-            chevronBtn.Classes.Add("collapsed");
+            // Collapse chevron button - uses rotation animation
+            var chevronBtn = new Button
+            {
+                Content = "▼",
+                Width = 18,
+                Height = 18,
+                FontSize = 10,
+                Padding = new Thickness(0),
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.Parse("#666")),
+                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Cursor = new Cursor(StandardCursorType.Arrow),
+                Classes = { "chevron" }
+            };
+            if (isCollapsed)
+            {
+                chevronBtn.Classes.Add("collapsed");
+            }
+            ToolTip.SetTip(chevronBtn, isCollapsed ? "Expand list" : "Collapse list");
+            chevronBtn.Click += (_, _) => OnToggleListCollapsed(listName, !isCollapsed);
+            Grid.SetColumn(chevronBtn, colOffset);
+            headerPanel.Children.Add(chevronBtn);
         }
-        ToolTip.SetTip(chevronBtn, isCollapsed ? "Expand list" : "Collapse list");
-        chevronBtn.Click += (_, _) => OnToggleListCollapsed(listName, !isCollapsed);
-        Grid.SetColumn(chevronBtn, colOffset);
-        headerPanel.Children.Add(chevronBtn);
 
         // List name + summary
         var headerStack = new StackPanel
@@ -444,6 +454,7 @@ public partial class TaskListPopup : Window
             headerStack.Children.Add(summary);
         }
 
+        if (!showChevron) headerStack.Margin = new Thickness(4, 0, 0, 0);
         Grid.SetColumn(headerStack, colOffset + 1);
         headerPanel.Children.Add(headerStack);
 
