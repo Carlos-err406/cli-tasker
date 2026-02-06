@@ -384,7 +384,7 @@ public partial class TaskListPopup : Window
         // Set up drag from the entire list header (only if multiple lists)
         if (canReorder)
         {
-            headerBorder.Cursor = new Cursor(StandardCursorType.Hand);
+            headerBorder.Cursor = new Cursor(StandardCursorType.DragMove);
             SetupListDragHandlers(headerBorder, listName);
         }
 
@@ -400,6 +400,7 @@ public partial class TaskListPopup : Window
             Foreground = new SolidColorBrush(Color.Parse("#666")),
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Arrow),
             Classes = { "chevron" }
         };
         if (isCollapsed)
@@ -456,7 +457,8 @@ public partial class TaskListPopup : Window
             Background = Brushes.Transparent,
             Foreground = new SolidColorBrush(Color.Parse("#888")),
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Arrow)
         };
         ToolTip.SetTip(addBtn, $"Add task to {listName}");
         addBtn.Click += (_, _) => StartInlineAdd(listName);
@@ -476,7 +478,8 @@ public partial class TaskListPopup : Window
                 Background = Brushes.Transparent,
                 Foreground = new SolidColorBrush(Color.Parse("#666")),
                 HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center
+                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Cursor = new Cursor(StandardCursorType.Arrow)
             };
 
             var contextMenu = new ContextMenu();
@@ -1058,46 +1061,43 @@ public partial class TaskListPopup : Window
             _newlyAddedTaskId = null;
         }
 
-        // Click on task content area copies ID to clipboard
-        border.PointerPressed += async (sender, e) =>
-        {
-            // Only handle left click, and not if it originated from checkbox or menu button
-            var point = e.GetCurrentPoint(border);
-            if (point.Properties.IsLeftButtonPressed)
-            {
-                // Check if click is in the content area (column 1), not checkbox (0) or menu (2)
-                var pos = e.GetPosition(border);
-                var checkboxWidth = 40; // approximate checkbox + margin width
-                var menuWidth = 40; // approximate menu button width
-                var borderWidth = border.Bounds.Width;
-
-                if (pos.X > checkboxWidth && pos.X < borderWidth - menuWidth)
-                {
-                    await CopyTaskIdToClipboard(task.Id);
-                    e.Handled = true;
-                }
-            }
-        };
-
         var grid = new Grid
         {
             ColumnDefinitions = ColumnDefinitions.Parse("Auto,*,Auto")
         };
 
-        // Set up drag from the entire task container
+        // Set up drag from the entire task container (must be registered BEFORE clipboard handler)
         var tasksInSameList = _tasks.Count(t => t.ListName == task.ListName);
         if (tasksInSameList > 1)
         {
-            border.Cursor = new Cursor(StandardCursorType.Hand);
+            border.Cursor = new Cursor(StandardCursorType.DragMove);
             SetupTaskDragHandlers(border, task);
         }
+
+        // Click on task content area copies ID to clipboard (on release, so it doesn't conflict with drag)
+        border.PointerReleased += async (sender, e) =>
+        {
+            // Skip if a drag just occurred
+            if (_isDragging || _state == PopupState.DroppingInProgress) return;
+
+            var pos = e.GetPosition(border);
+            var checkboxWidth = 40; // approximate checkbox + margin width
+            var menuWidth = 40; // approximate menu button width
+            var borderWidth = border.Bounds.Width;
+
+            if (pos.X > checkboxWidth && pos.X < borderWidth - menuWidth)
+            {
+                await CopyTaskIdToClipboard(task.Id);
+            }
+        };
 
         // Checkbox
         var checkbox = new CheckBox
         {
             IsChecked = task.IsChecked,
             Margin = new Thickness(0, 0, 10, 0),
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            Cursor = new Cursor(StandardCursorType.Arrow)
         };
         Grid.SetColumn(checkbox, 0);
         checkbox.Click += (_, _) => OnCheckboxClicked(task, checkbox);
@@ -1221,7 +1221,8 @@ public partial class TaskListPopup : Window
             Foreground = new SolidColorBrush(Color.Parse("#888")),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Arrow)
         };
 
         var contextMenu = new ContextMenu();
