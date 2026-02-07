@@ -1294,6 +1294,12 @@ public partial class TaskListPopup : Window
                 AddRelationshipLabel(contentPanel, $"⊘ {line}", "#D4A054");
         }
 
+        if (task.HasRelated)
+        {
+            foreach (var line in task.RelatedDisplay!)
+                AddRelationshipLabel(contentPanel, $"~ {line}", "#5FB3B3");
+        }
+
         // Due date display
         if (task.HasDueDate)
         {

@@ -42,7 +42,9 @@ public partial class TodoTaskViewModel : ObservableObject
     public bool HasBlocks => BlocksDisplay is { Length: > 0 };
     public string[]? BlockedByDisplay { get; private set; }
     public bool HasBlockedBy => BlockedByDisplay is { Length: > 0 };
-    public bool HasRelationships => HasParent || HasSubtasks || HasBlocks || HasBlockedBy;
+    public string[]? RelatedDisplay { get; private set; }
+    public bool HasRelated => RelatedDisplay is { Length: > 0 };
+    public bool HasRelationships => HasParent || HasSubtasks || HasBlocks || HasBlockedBy || HasRelated;
 
     /// <summary>
     /// Relative time display for completed tasks (e.g., "2h ago").
@@ -283,6 +285,17 @@ public partial class TodoTaskViewModel : ObservableObject
             {
                 var title = TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0];
                 return $"Blocked by ({b.Id}) {title}";
+            }).ToArray();
+        }
+
+        // Related with id + title
+        var related = taskList.GetRelated(_task.Id);
+        if (related.Count > 0)
+        {
+            RelatedDisplay = related.Select(r =>
+            {
+                var title = TaskDescriptionParser.GetDisplayDescription(r.Description).Split('\n')[0];
+                return $"Related to ({r.Id}) {title}";
             }).ToArray();
         }
     }

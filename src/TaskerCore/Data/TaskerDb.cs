@@ -91,6 +91,14 @@ public sealed class TaskerDb : IDisposable
                 CHECK (task_id != blocks_task_id)
             );
 
+            CREATE TABLE IF NOT EXISTS task_relations (
+                task_id_1 TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                task_id_2 TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                PRIMARY KEY (task_id_1, task_id_2),
+                CHECK (task_id_1 < task_id_2),
+                CHECK (task_id_1 != task_id_2)
+            );
+
             CREATE TABLE IF NOT EXISTS config (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -118,6 +126,9 @@ public sealed class TaskerDb : IDisposable
 
         // Add parent_id column and task_dependencies table
         MigrateAddDependencies();
+
+        // Add task_relations table
+        MigrateAddRelations();
 
         // Ensure default list exists
         EnsureDefaultList();
@@ -226,6 +237,30 @@ public sealed class TaskerDb : IDisposable
 
         // Always ensure index exists (safe for both fresh and migrated databases)
         Execute("CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id)");
+    }
+
+    private void MigrateAddRelations()
+    {
+        // Check if task_relations table exists
+        var tableExists = Query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='task_relations'",
+            reader => reader.GetString(0),
+            []).Any();
+
+        if (tableExists) return;
+
+        Execute("""
+            CREATE TABLE IF NOT EXISTS task_relations (
+                task_id_1 TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                task_id_2 TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                PRIMARY KEY (task_id_1, task_id_2),
+                CHECK (task_id_1 < task_id_2),
+                CHECK (task_id_1 != task_id_2)
+            )
+            """);
+
+        // Clear undo history — old serialized commands lack related fields
+        Execute("DELETE FROM undo_history");
     }
 
     private void EnsureDefaultList()

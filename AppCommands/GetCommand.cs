@@ -63,6 +63,7 @@ static class GetCommand
         var subtasks = taskList.GetSubtasks(task.Id);
         var blocks = taskList.GetBlocks(task.Id);
         var blockedBy = taskList.GetBlockedBy(task.Id);
+        var related = taskList.GetRelated(task.Id);
 
         TodoTask? parent = null;
         if (task.ParentId != null)
@@ -88,7 +89,8 @@ static class GetCommand
             parentId = task.ParentId,
             subtasks = subtasks.Select(s => new { id = s.Id, description = StringHelpers.Truncate(s.Description, 50) }).ToArray(),
             blocks = blocks.Select(b => new { id = b.Id, description = StringHelpers.Truncate(b.Description, 50) }).ToArray(),
-            blockedBy = blockedBy.Select(b => new { id = b.Id, description = StringHelpers.Truncate(b.Description, 50) }).ToArray()
+            blockedBy = blockedBy.Select(b => new { id = b.Id, description = StringHelpers.Truncate(b.Description, 50) }).ToArray(),
+            related = related.Select(r => new { id = r.Id, description = StringHelpers.Truncate(r.Description, 50) }).ToArray()
         };
         Console.WriteLine(JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -145,6 +147,14 @@ static class GetCommand
             Output.Markup($"[bold]Blocked by:[/]");
             foreach (var b in blockedBy)
                 Output.Markup($"               [dim]({b.Id}) {Spectre.Console.Markup.Escape(StringHelpers.Truncate(b.Description, 40))}[/]");
+        }
+
+        var related = taskList.GetRelated(task.Id);
+        if (related.Count > 0)
+        {
+            Output.Markup($"[bold]Related:[/]");
+            foreach (var r in related)
+                Output.Markup($"               [dim]({r.Id}) {Spectre.Console.Markup.Escape(StringHelpers.Truncate(r.Description, 40))}[/]");
         }
 
         Output.Markup($"[bold]Description:[/]");

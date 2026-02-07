@@ -301,6 +301,31 @@ public class TodoTaskList
             }
         }
 
+        // Process related references
+        if (parsed.RelatedIds is { Length: > 0 })
+        {
+            foreach (var relatedId in parsed.RelatedIds)
+            {
+                var related = GetTodoTaskById(relatedId);
+                if (related == null)
+                {
+                    warnings.Add($"Related task ({relatedId}) not found, skipping related relationship");
+                    continue;
+                }
+                if (relatedId == task.Id)
+                {
+                    warnings.Add("A task cannot be related to itself, skipping");
+                    continue;
+                }
+                var id1 = string.CompareOrdinal(task.Id, relatedId) < 0 ? task.Id : relatedId;
+                var id2 = string.CompareOrdinal(task.Id, relatedId) < 0 ? relatedId : task.Id;
+                _db.Execute("INSERT OR IGNORE INTO task_relations (task_id_1, task_id_2) VALUES (@id1, @id2)",
+                    ("@id1", id1), ("@id2", id2));
+                // Sync the other task's metadata to include ~taskId
+                SyncRelatedMetadata(relatedId);
+            }
+        }
+
         if (recordUndo)
         {
             _services.Undo.SaveHistory();
@@ -686,6 +711,9 @@ public class TodoTaskList
         {
             var currentBlocksIds = GetBlocksIds(taskId).ToArray();
             SyncBlockingRelationships(taskId, currentBlocksIds, newParsed.BlocksIds);
+
+            var currentRelatedIds = GetRelatedIds(taskId).ToArray();
+            SyncRelatedRelationships(taskId, currentRelatedIds, newParsed.RelatedIds);
         }
 
         if (recordUndo)
@@ -1304,7 +1332,7 @@ public class TodoTaskList
         var parsed = TaskDescriptionParser.Parse(task.Description);
         var synced = TaskDescriptionParser.SyncMetadataToDescription(
             task.Description, task.Priority, task.DueDate, task.Tags, parentId,
-            parsed.BlocksIds);
+            parsed.BlocksIds, parsed.RelatedIds);
         if (synced != task.Description)
             _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
                 ("@desc", synced), ("@id", taskId));
@@ -1334,7 +1362,7 @@ public class TodoTaskList
         var parsed = TaskDescriptionParser.Parse(task.Description);
         var synced = TaskDescriptionParser.SyncMetadataToDescription(
             task.Description, task.Priority, task.DueDate, task.Tags, null,
-            parsed.BlocksIds);
+            parsed.BlocksIds, parsed.RelatedIds);
         if (synced != task.Description)
             _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
                 ("@desc", synced), ("@id", taskId));
@@ -1472,6 +1500,156 @@ public class TodoTaskList
             "SELECT task_id FROM task_dependencies WHERE blocks_task_id = @id",
             reader => reader.GetString(0),
             ("@id", taskId));
+    }
+
+    // --- Related relationships ---
+
+    public TaskResult AddRelated(string taskId1, string taskId2, bool recordUndo = true)
+    {
+        if (taskId1 == taskId2)
+            return new TaskResult.Error("A task cannot be related to itself");
+
+        var task1 = GetTodoTaskById(taskId1);
+        if (task1 == null) return new TaskResult.NotFound(taskId1);
+
+        var task2 = GetTodoTaskById(taskId2);
+        if (task2 == null) return new TaskResult.Error($"Related task not found: {taskId2}");
+
+        // Canonical ordering: smaller ID first
+        var id1 = string.CompareOrdinal(taskId1, taskId2) < 0 ? taskId1 : taskId2;
+        var id2 = string.CompareOrdinal(taskId1, taskId2) < 0 ? taskId2 : taskId1;
+
+        // Check if already exists
+        var exists = _db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM task_relations WHERE task_id_1 = @id1 AND task_id_2 = @id2",
+            ("@id1", id1), ("@id2", id2));
+        if (exists > 0)
+            return new TaskResult.NoChange($"({taskId1}) is already related to ({taskId2})");
+
+        if (recordUndo)
+        {
+            var cmd = new AddRelatedCommand { TaskId1 = taskId1, TaskId2 = taskId2 };
+            _services.Undo.RecordCommand(cmd);
+        }
+
+        CreateBackup();
+        _db.Execute("INSERT INTO task_relations (task_id_1, task_id_2) VALUES (@id1, @id2)",
+            ("@id1", id1), ("@id2", id2));
+
+        // Sync metadata on both tasks
+        SyncRelatedMetadata(taskId1);
+        SyncRelatedMetadata(taskId2);
+
+        if (recordUndo) _services.Undo.SaveHistory();
+        return new TaskResult.Success($"({taskId1}) is now related to ({taskId2})");
+    }
+
+    public TaskResult RemoveRelated(string taskId1, string taskId2, bool recordUndo = true)
+    {
+        // Canonical ordering
+        var id1 = string.CompareOrdinal(taskId1, taskId2) < 0 ? taskId1 : taskId2;
+        var id2 = string.CompareOrdinal(taskId1, taskId2) < 0 ? taskId2 : taskId1;
+
+        var exists = _db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM task_relations WHERE task_id_1 = @id1 AND task_id_2 = @id2",
+            ("@id1", id1), ("@id2", id2));
+        if (exists == 0)
+            return new TaskResult.NoChange($"({taskId1}) is not related to ({taskId2})");
+
+        if (recordUndo)
+        {
+            var cmd = new RemoveRelatedCommand { TaskId1 = taskId1, TaskId2 = taskId2 };
+            _services.Undo.RecordCommand(cmd);
+        }
+
+        CreateBackup();
+        _db.Execute("DELETE FROM task_relations WHERE task_id_1 = @id1 AND task_id_2 = @id2",
+            ("@id1", id1), ("@id2", id2));
+
+        // Sync metadata on both tasks
+        SyncRelatedMetadata(taskId1);
+        SyncRelatedMetadata(taskId2);
+
+        if (recordUndo) _services.Undo.SaveHistory();
+        return new TaskResult.Success($"({taskId1}) is no longer related to ({taskId2})");
+    }
+
+    public List<TodoTask> GetRelated(string taskId)
+    {
+        return _db.Query(
+            $"""
+            SELECT {TaskSelectColumns} FROM tasks t
+            WHERE t.id IN (
+                SELECT task_id_2 FROM task_relations WHERE task_id_1 = @id
+                UNION
+                SELECT task_id_1 FROM task_relations WHERE task_id_2 = @id
+            ) AND t.is_trashed = 0
+            """,
+            ReadTask,
+            ("@id", taskId));
+    }
+
+    public List<string> GetRelatedIds(string taskId)
+    {
+        return _db.Query(
+            """
+            SELECT task_id_2 FROM task_relations WHERE task_id_1 = @id
+            UNION
+            SELECT task_id_1 FROM task_relations WHERE task_id_2 = @id
+            """,
+            reader => reader.GetString(0),
+            ("@id", taskId));
+    }
+
+    /// <summary>
+    /// Syncs the related IDs in a task's metadata description to match the DB state.
+    /// </summary>
+    private void SyncRelatedMetadata(string taskId)
+    {
+        var task = GetTodoTaskById(taskId);
+        if (task == null) return;
+
+        var relatedIds = GetRelatedIds(taskId).ToArray();
+        var parsed = TaskDescriptionParser.Parse(task.Description);
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            task.Description, task.Priority, task.DueDate, task.Tags,
+            task.ParentId, parsed.BlocksIds,
+            relatedIds.Length > 0 ? relatedIds : null);
+        if (synced != task.Description)
+            _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                ("@desc", synced), ("@id", taskId));
+    }
+
+    private void SyncRelatedRelationships(string taskId, string[]? oldRelatedIds, string[]? newRelatedIds)
+    {
+        var oldRelated = new HashSet<string>(oldRelatedIds ?? []);
+        var newRelated = new HashSet<string>(newRelatedIds ?? []);
+
+        // Remove relations no longer in metadata
+        foreach (var removedId in oldRelated.Except(newRelated))
+        {
+            var id1 = string.CompareOrdinal(taskId, removedId) < 0 ? taskId : removedId;
+            var id2 = string.CompareOrdinal(taskId, removedId) < 0 ? removedId : taskId;
+            _db.Execute("DELETE FROM task_relations WHERE task_id_1 = @id1 AND task_id_2 = @id2",
+                ("@id1", id1), ("@id2", id2));
+            // Sync the other task's metadata
+            SyncRelatedMetadata(removedId);
+        }
+
+        // Add new relations from metadata
+        foreach (var addedId in newRelated.Except(oldRelated))
+        {
+            var related = GetTodoTaskById(addedId);
+            if (related != null && addedId != taskId)
+            {
+                var id1 = string.CompareOrdinal(taskId, addedId) < 0 ? taskId : addedId;
+                var id2 = string.CompareOrdinal(taskId, addedId) < 0 ? addedId : taskId;
+                _db.Execute("INSERT OR IGNORE INTO task_relations (task_id_1, task_id_2) VALUES (@id1, @id2)",
+                    ("@id1", id1), ("@id2", id2));
+                // Sync the other task's metadata
+                SyncRelatedMetadata(addedId);
+            }
+        }
     }
 
     // --- Search ---

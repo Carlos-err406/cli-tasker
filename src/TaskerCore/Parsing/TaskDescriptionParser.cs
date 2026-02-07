@@ -18,7 +18,8 @@ public static partial class TaskDescriptionParser
         string[] Tags,
         bool LastLineIsMetadataOnly,
         string? ParentId = null,
-        string[]? BlocksIds = null);
+        string[]? BlocksIds = null,
+        string[]? RelatedIds = null);
 
     public static ParsedTask Parse(string input)
     {
@@ -35,6 +36,7 @@ public static partial class TaskDescriptionParser
         strippedLine = TagRegex().Replace(strippedLine, " ");
         strippedLine = ParentRefRegex().Replace(strippedLine, " ");
         strippedLine = BlocksRefRegex().Replace(strippedLine, " ");
+        strippedLine = RelatedRefRegex().Replace(strippedLine, " ");
         var isMetadataOnly = string.IsNullOrWhiteSpace(strippedLine);
 
         // Only parse if the last line is metadata-only
@@ -46,6 +48,7 @@ public static partial class TaskDescriptionParser
         var tags = new List<string>();
         string? parentId = null;
         var blocksIds = new List<string>();
+        var relatedIds = new List<string>();
 
         // Extract priority: p1 (high), p2 (medium), p3 (low)
         var priorityMatch = PriorityRegex().Match(lastLine);
@@ -89,9 +92,17 @@ public static partial class TaskDescriptionParser
             blocksIds.Add(match.Groups[1].Value);
         }
 
+        // Extract related references: ~abc (can have multiple)
+        var relatedMatches = RelatedRefRegex().Matches(lastLine);
+        foreach (Match match in relatedMatches)
+        {
+            relatedIds.Add(match.Groups[1].Value);
+        }
+
         // Keep original description intact
         return new ParsedTask(input, priority, dueDate, tags.ToArray(), true,
-            parentId, blocksIds.Count > 0 ? blocksIds.ToArray() : null);
+            parentId, blocksIds.Count > 0 ? blocksIds.ToArray() : null,
+            relatedIds.Count > 0 ? relatedIds.ToArray() : null);
     }
 
     /// <summary>
@@ -112,6 +123,7 @@ public static partial class TaskDescriptionParser
             strippedLine = TagRegex().Replace(strippedLine, " ");
             strippedLine = ParentRefRegex().Replace(strippedLine, " ");
             strippedLine = BlocksRefRegex().Replace(strippedLine, " ");
+            strippedLine = RelatedRefRegex().Replace(strippedLine, " ");
             // If single line is metadata-only, still show it (otherwise task would be empty)
             return description;
         }
@@ -124,6 +136,7 @@ public static partial class TaskDescriptionParser
         stripped = TagRegex().Replace(stripped, " ");
         stripped = ParentRefRegex().Replace(stripped, " ");
         stripped = BlocksRefRegex().Replace(stripped, " ");
+        stripped = RelatedRefRegex().Replace(stripped, " ");
 
         if (string.IsNullOrWhiteSpace(stripped))
         {
@@ -138,7 +151,7 @@ public static partial class TaskDescriptionParser
     /// Updates the description to sync metadata changes. Updates existing metadata line or appends new one.
     /// </summary>
     public static string SyncMetadataToDescription(string description, Priority? priority, DateOnly? dueDate, string[]? tags,
-        string? parentId = null, string[]? blocksIds = null)
+        string? parentId = null, string[]? blocksIds = null, string[]? relatedIds = null)
     {
         var lines = description.Split('\n').ToList();
         var lastLine = lines[^1];
@@ -150,6 +163,7 @@ public static partial class TaskDescriptionParser
         stripped = TagRegex().Replace(stripped, " ");
         stripped = ParentRefRegex().Replace(stripped, " ");
         stripped = BlocksRefRegex().Replace(stripped, " ");
+        stripped = RelatedRefRegex().Replace(stripped, " ");
         var hasMetadataLine = string.IsNullOrWhiteSpace(stripped);
 
         // Build the new metadata line
@@ -161,6 +175,10 @@ public static partial class TaskDescriptionParser
         if (blocksIds is { Length: > 0 })
         {
             metaParts.AddRange(blocksIds.Select(id => $"!{id}"));
+        }
+        if (relatedIds is { Length: > 0 })
+        {
+            metaParts.AddRange(relatedIds.Select(id => $"~{id}"));
         }
         if (priority.HasValue)
         {
@@ -225,4 +243,8 @@ public static partial class TaskDescriptionParser
     // Match !abc for blocking reference (blocks task)
     [GeneratedRegex(@"(?:^|\s)!(\w{3})(?=\s|$)")]
     private static partial Regex BlocksRefRegex();
+
+    // Match ~abc for related reference (related to task)
+    [GeneratedRegex(@"(?:^|\s)~(\w{3})(?=\s|$)")]
+    private static partial Regex RelatedRefRegex();
 }

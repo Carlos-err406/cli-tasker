@@ -308,4 +308,64 @@ public class TaskDescriptionParserTests
         Assert.Null(renamed.Priority);
         Assert.Equal(["newtag"], renamed.Tags);
     }
+
+    // --- Related reference (~abc) tests ---
+
+    [Fact]
+    public void Parse_RelatedRef_ExtractsRelatedId()
+    {
+        var result = TaskDescriptionParser.Parse("task\n~abc");
+        Assert.NotNull(result.RelatedIds);
+        Assert.Single(result.RelatedIds);
+        Assert.Equal("abc", result.RelatedIds[0]);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    [Fact]
+    public void Parse_MultipleRelatedRefs_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("task\n~abc ~def");
+        Assert.NotNull(result.RelatedIds);
+        Assert.Equal(2, result.RelatedIds.Length);
+        Assert.Contains("abc", result.RelatedIds);
+        Assert.Contains("def", result.RelatedIds);
+    }
+
+    [Fact]
+    public void Parse_MixedRelatedAndOtherMetadata_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("build API\n~abc !h67 p1 #tag");
+        Assert.NotNull(result.RelatedIds);
+        Assert.Single(result.RelatedIds);
+        Assert.Equal("abc", result.RelatedIds[0]);
+        Assert.NotNull(result.BlocksIds);
+        Assert.Equal("h67", result.BlocksIds[0]);
+        Assert.Equal(Priority.High, result.Priority);
+        Assert.Contains("tag", result.Tags);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    [Fact]
+    public void GetDisplayDescription_HidesRelatedTokens()
+    {
+        var display = TaskDescriptionParser.GetDisplayDescription("My task\n~abc ~def");
+        Assert.Equal("My task", display);
+    }
+
+    [Fact]
+    public void SyncMetadataToDescription_IncludesRelatedIds()
+    {
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task", null, null, null, relatedIds: ["abc", "def"]);
+        Assert.Equal("task\n~abc ~def", result);
+    }
+
+    [Fact]
+    public void SyncMetadataToDescription_RelatedIds_CorrectOrder()
+    {
+        // Order: ^parent !blocks ~related p1 @date #tags
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task", Priority.High, null, ["tag"], parentId: "abc", blocksIds: ["h67"], relatedIds: ["xyz"]);
+        Assert.Equal("task\n^abc !h67 ~xyz p1 #tag", result);
+    }
 }

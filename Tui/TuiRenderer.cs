@@ -222,6 +222,15 @@ public class TuiRenderer
             linesRendered++;
         }
 
+        var related = _taskList.GetRelated(task.Id);
+        foreach (var r in related)
+        {
+            if (linesRendered >= maxLines) break;
+            var rTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(r.Description).Split('\n')[0], 40));
+            WriteLineCleared($"{indent}[cyan]~ Related to ({r.Id}) {rTitle}[/]");
+            linesRendered++;
+        }
+
         return linesRendered;
     }
 
@@ -238,6 +247,7 @@ public class TuiRenderer
         count += _taskList.GetSubtasks(task.Id).Count;
         count += _taskList.GetBlocks(task.Id).Count;
         count += _taskList.GetBlockedBy(task.Id).Count;
+        count += _taskList.GetRelated(task.Id).Count;
         return count;
     }
 
