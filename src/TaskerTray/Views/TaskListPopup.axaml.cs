@@ -699,6 +699,7 @@ public partial class TaskListPopup : Window
             }
             else if (e.Key == Key.Escape)
             {
+                e.Handled = true;
                 submitted = true;
                 CancelInlineEdit();
                 BuildTaskList();
@@ -773,8 +774,10 @@ public partial class TaskListPopup : Window
             }
             else if (e.Key == Key.Escape)
             {
+                e.Handled = true;
                 submitted = true;  // Mark as handled to prevent LostFocus submission
                 CancelInlineEdit();
+                BuildTaskList();
             }
         };
 
@@ -848,12 +851,17 @@ public partial class TaskListPopup : Window
             }
             else if (e.Key == Key.Escape)
             {
+                e.Handled = true;
                 CancelInlineEdit();
+                BuildTaskList();
             }
         };
 
         textBox.LostFocus += (_, _) =>
         {
+            // Skip if edit was already cancelled (e.g. by Escape key)
+            if (_editingTaskId == null) return;
+
             if (!string.IsNullOrWhiteSpace(textBox.Text))
             {
                 SubmitInlineEdit(task.Id, textBox.Text);
@@ -952,6 +960,7 @@ public partial class TaskListPopup : Window
             }
             else if (e.Key == Key.Escape)
             {
+                e.Handled = true;
                 submitted = true;  // Mark as handled to prevent LostFocus submission
                 CancelInlineEdit();
                 BuildTaskList();
