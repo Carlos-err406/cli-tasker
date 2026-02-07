@@ -62,6 +62,8 @@ When the task is complete (committed and merged), mark it as **done**:
 tasker check <taskId>
 ```
 
+**Important:** NEVER mark a task as done (`tasker check`) before running `update.sh` so the user can test the changes first. Always run `update.sh patch` (or appropriate level) before checking off a task.
+
 ### Updating CLI and TaskerTray
 To update both the global CLI tool and the menu bar app after making changes:
 
