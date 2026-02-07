@@ -28,6 +28,10 @@ dotnet run -- <cmd>       # Run during development
 
 **Important:** When verifying new functionality, write tests instead of using `dotnet run --` commands. Tests are repeatable, don't affect real data, and serve as documentation.
 
+### Interpreting task references
+
+When the user provides 3 hex characters (e.g. `0e0`, `a3f`, `1b2`), it's a tasker task ID. Run `tasker get <id>` to see the full task before proceeding.
+
 ### Working on tasks from the backlog
 
 Always read the **full task description** — tasks often have multi-line descriptions with important context:

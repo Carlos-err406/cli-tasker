@@ -298,6 +298,121 @@ public class TodoTaskList
                 }
                 _db.Execute("INSERT INTO task_dependencies (task_id, blocks_task_id) VALUES (@blocker, @blocked)",
                     ("@blocker", task.Id), ("@blocked", blockedId));
+                // Sync inverse marker on the blocked task
+                AddInverseMarker(blockedId, task.Id, isSubtask: false);
+            }
+        }
+
+        // Sync inverse marker on the parent (if child has ^parent)
+        if (task.ParentId != null)
+        {
+            AddInverseMarker(task.ParentId, task.Id, isSubtask: true);
+        }
+
+        // Process inverse parent markers: -^abc means "abc is my subtask"
+        if (parsed.HasSubtaskIds is { Length: > 0 })
+        {
+            foreach (var subtaskId in parsed.HasSubtaskIds)
+            {
+                var subtask = GetTodoTaskById(subtaskId);
+                if (subtask == null)
+                {
+                    warnings.Add($"Subtask ({subtaskId}) not found, skipping inverse parent relationship");
+                    continue;
+                }
+                if (subtaskId == task.Id)
+                {
+                    warnings.Add("A task cannot be its own subtask, skipping");
+                    continue;
+                }
+                if (subtask.ListName != task.ListName)
+                {
+                    warnings.Add($"Subtask ({subtaskId}) is in a different list, skipping inverse parent relationship");
+                    continue;
+                }
+                var descendants = GetAllDescendantIds(subtaskId);
+                if (descendants.Contains(task.Id))
+                {
+                    warnings.Add($"Circular reference with ({subtaskId}), skipping inverse parent relationship");
+                    continue;
+                }
+                // Set the subtask's parent to this task
+                _db.Execute("UPDATE tasks SET parent_id = @parent WHERE id = @id",
+                    ("@parent", task.Id), ("@id", subtaskId));
+                // Add ^thisTask to the subtask's metadata
+                var subParsed = TaskDescriptionParser.Parse(subtask.Description);
+                var subSynced = TaskDescriptionParser.SyncMetadataToDescription(
+                    subtask.Description, subtask.Priority, subtask.DueDate, subtask.Tags,
+                    task.Id, subParsed.BlocksIds, subParsed.HasSubtaskIds, subParsed.BlockedByIds, subParsed.RelatedIds);
+                if (subSynced != subtask.Description)
+                    _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                        ("@desc", subSynced), ("@id", subtaskId));
+            }
+        }
+
+        // Process inverse blocker markers: -!abc means "abc blocks me"
+        if (parsed.BlockedByIds is { Length: > 0 })
+        {
+            foreach (var blockerId in parsed.BlockedByIds)
+            {
+                var blocker = GetTodoTaskById(blockerId);
+                if (blocker == null)
+                {
+                    warnings.Add($"Blocker task ({blockerId}) not found, skipping inverse blocker relationship");
+                    continue;
+                }
+                if (blockerId == task.Id)
+                {
+                    warnings.Add("A task cannot block itself, skipping");
+                    continue;
+                }
+                if (HasCircularBlocking(blockerId, task.Id))
+                {
+                    warnings.Add($"Circular dependency with ({blockerId}), skipping inverse blocker relationship");
+                    continue;
+                }
+                // Insert dependency: blocker blocks this task
+                _db.Execute("INSERT OR IGNORE INTO task_dependencies (task_id, blocks_task_id) VALUES (@blocker, @blocked)",
+                    ("@blocker", blockerId), ("@blocked", task.Id));
+                // Add !thisTask to the blocker's metadata
+                var blockerParsed = TaskDescriptionParser.Parse(blocker.Description);
+                var blockerBlocksIds = blockerParsed.BlocksIds?.ToList() ?? [];
+                if (!blockerBlocksIds.Contains(task.Id))
+                {
+                    blockerBlocksIds.Add(task.Id);
+                    var blockerSynced = TaskDescriptionParser.SyncMetadataToDescription(
+                        blocker.Description, blocker.Priority, blocker.DueDate, blocker.Tags,
+                        blockerParsed.ParentId, blockerBlocksIds.ToArray(),
+                        blockerParsed.HasSubtaskIds, blockerParsed.BlockedByIds, blockerParsed.RelatedIds);
+                    if (blockerSynced != blocker.Description)
+                        _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                            ("@desc", blockerSynced), ("@id", blockerId));
+                }
+            }
+        }
+
+        // Process related references
+        if (parsed.RelatedIds is { Length: > 0 })
+        {
+            foreach (var relatedId in parsed.RelatedIds)
+            {
+                var related = GetTodoTaskById(relatedId);
+                if (related == null)
+                {
+                    warnings.Add($"Related task ({relatedId}) not found, skipping related relationship");
+                    continue;
+                }
+                if (relatedId == task.Id)
+                {
+                    warnings.Add("A task cannot be related to itself, skipping");
+                    continue;
+                }
+                var id1 = string.CompareOrdinal(task.Id, relatedId) < 0 ? task.Id : relatedId;
+                var id2 = string.CompareOrdinal(task.Id, relatedId) < 0 ? relatedId : task.Id;
+                _db.Execute("INSERT OR IGNORE INTO task_relations (task_id_1, task_id_2) VALUES (@id1, @id2)",
+                    ("@id1", id1), ("@id2", id2));
+                // Sync the other task's metadata to include ~taskId
+                SyncRelatedMetadata(relatedId);
             }
         }
 
@@ -680,12 +795,119 @@ public class TodoTaskList
         UpdateTask(renamedTask);
         BumpSortOrder(taskId, renamedTask.ListName);
 
-        // Sync blocking relationships if metadata line present
-        // Compare actual DB state (not old description) with desired state from new description
         if (newParsed.LastLineIsMetadataOnly)
         {
+            // Sync blocking relationships (forward: !abc)
             var currentBlocksIds = GetBlocksIds(taskId).ToArray();
             SyncBlockingRelationships(taskId, currentBlocksIds, newParsed.BlocksIds);
+
+            // Sync inverse markers on blocked tasks for forward blocker changes
+            var oldForwardBlocks = new HashSet<string>(oldParsed.BlocksIds ?? []);
+            var newForwardBlocks = new HashSet<string>(newParsed.BlocksIds ?? []);
+            foreach (var addedBlockedId in newForwardBlocks.Except(oldForwardBlocks))
+                AddInverseMarker(addedBlockedId, taskId, isSubtask: false);
+            foreach (var removedBlockedId in oldForwardBlocks.Except(newForwardBlocks))
+                RemoveInverseMarker(removedBlockedId, taskId, isSubtask: false);
+
+            // Sync parent change: update inverse markers on old/new parent
+            var oldParentId = oldParsed.ParentId;
+            var newParentId = renamedTask.ParentId; // Use the validated parent
+            if (oldParentId != newParentId)
+            {
+                if (oldParentId != null)
+                    RemoveInverseMarker(oldParentId, taskId, isSubtask: true);
+                if (newParentId != null)
+                    AddInverseMarker(newParentId, taskId, isSubtask: true);
+            }
+
+            // Sync inverse parent markers (-^abc): diff old vs new
+            var oldHasSubtaskIds = new HashSet<string>(oldParsed.HasSubtaskIds ?? []);
+            var newHasSubtaskIds = new HashSet<string>(newParsed.HasSubtaskIds ?? []);
+            foreach (var addedSubtaskId in newHasSubtaskIds.Except(oldHasSubtaskIds))
+            {
+                var subtask = GetTodoTaskById(addedSubtaskId);
+                if (subtask == null || addedSubtaskId == taskId) continue;
+                if (subtask.ListName != renamedTask.ListName) continue;
+                var descendants = GetAllDescendantIds(addedSubtaskId);
+                if (descendants.Contains(taskId)) continue;
+                // Set parent on the subtask
+                _db.Execute("UPDATE tasks SET parent_id = @parent WHERE id = @id",
+                    ("@parent", taskId), ("@id", addedSubtaskId));
+                // Add ^taskId to subtask's metadata
+                var subParsed = TaskDescriptionParser.Parse(subtask.Description);
+                var subSynced = TaskDescriptionParser.SyncMetadataToDescription(
+                    subtask.Description, subtask.Priority, subtask.DueDate, subtask.Tags,
+                    taskId, subParsed.BlocksIds, subParsed.HasSubtaskIds, subParsed.BlockedByIds, subParsed.RelatedIds);
+                if (subSynced != subtask.Description)
+                    _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                        ("@desc", subSynced), ("@id", addedSubtaskId));
+            }
+            foreach (var removedSubtaskId in oldHasSubtaskIds.Except(newHasSubtaskIds))
+            {
+                var subtask = GetTodoTaskById(removedSubtaskId);
+                if (subtask == null || subtask.ParentId != taskId) continue;
+                // Clear parent on the subtask
+                _db.Execute("UPDATE tasks SET parent_id = NULL WHERE id = @id", ("@id", removedSubtaskId));
+                // Remove ^taskId from subtask's metadata
+                var subParsed = TaskDescriptionParser.Parse(subtask.Description);
+                var subSynced = TaskDescriptionParser.SyncMetadataToDescription(
+                    subtask.Description, subtask.Priority, subtask.DueDate, subtask.Tags,
+                    null, subParsed.BlocksIds, subParsed.HasSubtaskIds, subParsed.BlockedByIds, subParsed.RelatedIds);
+                if (subSynced != subtask.Description)
+                    _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                        ("@desc", subSynced), ("@id", removedSubtaskId));
+            }
+
+            // Sync inverse blocker markers (-!abc): diff old vs new
+            var oldBlockedByIds = new HashSet<string>(oldParsed.BlockedByIds ?? []);
+            var newBlockedByIds = new HashSet<string>(newParsed.BlockedByIds ?? []);
+            foreach (var addedBlockerId in newBlockedByIds.Except(oldBlockedByIds))
+            {
+                var blocker = GetTodoTaskById(addedBlockerId);
+                if (blocker == null || addedBlockerId == taskId) continue;
+                if (HasCircularBlocking(addedBlockerId, taskId)) continue;
+                // Insert dependency
+                _db.Execute("INSERT OR IGNORE INTO task_dependencies (task_id, blocks_task_id) VALUES (@blocker, @blocked)",
+                    ("@blocker", addedBlockerId), ("@blocked", taskId));
+                // Add !taskId to blocker's metadata
+                var blockerParsed = TaskDescriptionParser.Parse(blocker.Description);
+                var blockerBlocksIds = blockerParsed.BlocksIds?.ToList() ?? [];
+                if (!blockerBlocksIds.Contains(taskId))
+                {
+                    blockerBlocksIds.Add(taskId);
+                    var blockerSynced = TaskDescriptionParser.SyncMetadataToDescription(
+                        blocker.Description, blocker.Priority, blocker.DueDate, blocker.Tags,
+                        blockerParsed.ParentId, blockerBlocksIds.ToArray(),
+                        blockerParsed.HasSubtaskIds, blockerParsed.BlockedByIds, blockerParsed.RelatedIds);
+                    if (blockerSynced != blocker.Description)
+                        _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                            ("@desc", blockerSynced), ("@id", addedBlockerId));
+                }
+            }
+            foreach (var removedBlockerId in oldBlockedByIds.Except(newBlockedByIds))
+            {
+                // Remove dependency
+                _db.Execute("DELETE FROM task_dependencies WHERE task_id = @blocker AND blocks_task_id = @blocked",
+                    ("@blocker", removedBlockerId), ("@blocked", taskId));
+                // Remove !taskId from blocker's metadata
+                var blocker = GetTodoTaskById(removedBlockerId);
+                if (blocker == null) continue;
+                var blockerParsed = TaskDescriptionParser.Parse(blocker.Description);
+                var blockerBlocksIds = blockerParsed.BlocksIds?.ToList() ?? [];
+                if (blockerBlocksIds.Remove(taskId))
+                {
+                    var blockerSynced = TaskDescriptionParser.SyncMetadataToDescription(
+                        blocker.Description, blocker.Priority, blocker.DueDate, blocker.Tags,
+                        blockerParsed.ParentId, blockerBlocksIds.Count > 0 ? blockerBlocksIds.ToArray() : null,
+                        blockerParsed.HasSubtaskIds, blockerParsed.BlockedByIds, blockerParsed.RelatedIds);
+                    if (blockerSynced != blocker.Description)
+                        _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                            ("@desc", blockerSynced), ("@id", removedBlockerId));
+                }
+            }
+
+            var currentRelatedIds = GetRelatedIds(taskId).ToArray();
+            SyncRelatedRelationships(taskId, currentRelatedIds, newParsed.RelatedIds);
         }
 
         if (recordUndo)
@@ -817,8 +1039,11 @@ public class TodoTaskList
         CreateBackup();
         var updatedTask = dueDate.HasValue ? todoTask.SetDueDate(dueDate.Value) : todoTask.ClearDueDate();
 
+        var parsedForSync = TaskDescriptionParser.Parse(updatedTask.Description);
         var syncedDescription = TaskDescriptionParser.SyncMetadataToDescription(
-            updatedTask.Description, updatedTask.Priority, updatedTask.DueDate, updatedTask.Tags);
+            updatedTask.Description, updatedTask.Priority, updatedTask.DueDate, updatedTask.Tags,
+            parsedForSync.ParentId, parsedForSync.BlocksIds,
+            parsedForSync.HasSubtaskIds, parsedForSync.BlockedByIds, parsedForSync.RelatedIds);
         updatedTask = updatedTask.Rename(syncedDescription);
 
         UpdateTask(updatedTask);
@@ -859,8 +1084,11 @@ public class TodoTaskList
         CreateBackup();
         var updatedTask = priority.HasValue ? todoTask.SetPriority(priority.Value) : todoTask.ClearPriority();
 
+        var parsedForSync = TaskDescriptionParser.Parse(updatedTask.Description);
         var syncedDescription = TaskDescriptionParser.SyncMetadataToDescription(
-            updatedTask.Description, updatedTask.Priority, updatedTask.DueDate, updatedTask.Tags);
+            updatedTask.Description, updatedTask.Priority, updatedTask.DueDate, updatedTask.Tags,
+            parsedForSync.ParentId, parsedForSync.BlocksIds,
+            parsedForSync.HasSubtaskIds, parsedForSync.BlockedByIds, parsedForSync.RelatedIds);
         updatedTask = updatedTask.Rename(syncedDescription);
 
         UpdateTask(updatedTask);
@@ -1272,6 +1500,59 @@ public class TodoTaskList
 
     // --- Dependency operations ---
 
+    /// <summary>
+    /// Adds an inverse marker to a task's metadata line (e.g., -^childId on parent, -!blockerId on blocked).
+    /// </summary>
+    private void AddInverseMarker(string taskId, string refId, bool isSubtask)
+    {
+        var task = GetTodoTaskById(taskId);
+        if (task == null) return;
+
+        var parsed = TaskDescriptionParser.Parse(task.Description);
+        var currentIds = isSubtask
+            ? parsed.HasSubtaskIds?.ToList() ?? []
+            : parsed.BlockedByIds?.ToList() ?? [];
+
+        if (currentIds.Contains(refId)) return; // Already present
+        currentIds.Add(refId);
+
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            task.Description, task.Priority, task.DueDate, task.Tags,
+            parsed.ParentId, parsed.BlocksIds,
+            isSubtask ? currentIds.ToArray() : parsed.HasSubtaskIds,
+            isSubtask ? parsed.BlockedByIds : currentIds.ToArray(),
+            parsed.RelatedIds);
+        if (synced != task.Description)
+            _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                ("@desc", synced), ("@id", taskId));
+    }
+
+    /// <summary>
+    /// Removes an inverse marker from a task's metadata line.
+    /// </summary>
+    private void RemoveInverseMarker(string taskId, string refId, bool isSubtask)
+    {
+        var task = GetTodoTaskById(taskId);
+        if (task == null) return;
+
+        var parsed = TaskDescriptionParser.Parse(task.Description);
+        var currentIds = isSubtask
+            ? parsed.HasSubtaskIds?.ToList() ?? []
+            : parsed.BlockedByIds?.ToList() ?? [];
+
+        if (!currentIds.Remove(refId)) return; // Not present
+
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            task.Description, task.Priority, task.DueDate, task.Tags,
+            parsed.ParentId, parsed.BlocksIds,
+            isSubtask ? (currentIds.Count > 0 ? currentIds.ToArray() : null) : parsed.HasSubtaskIds,
+            isSubtask ? parsed.BlockedByIds : (currentIds.Count > 0 ? currentIds.ToArray() : null),
+            parsed.RelatedIds);
+        if (synced != task.Description)
+            _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                ("@desc", synced), ("@id", taskId));
+    }
+
     public TaskResult SetParent(string taskId, string parentId, bool recordUndo = true)
     {
         var task = GetTodoTaskById(taskId);
@@ -1296,18 +1577,25 @@ public class TodoTaskList
             _services.Undo.RecordCommand(cmd);
         }
 
+        var oldParentId = task.ParentId;
+
         CreateBackup();
         _db.Execute("UPDATE tasks SET parent_id = @parent WHERE id = @id",
             ("@parent", parentId), ("@id", taskId));
 
-        // Sync metadata line
+        // Sync metadata line on the child
         var parsed = TaskDescriptionParser.Parse(task.Description);
         var synced = TaskDescriptionParser.SyncMetadataToDescription(
             task.Description, task.Priority, task.DueDate, task.Tags, parentId,
-            parsed.BlocksIds);
+            parsed.BlocksIds, parsed.HasSubtaskIds, parsed.BlockedByIds, parsed.RelatedIds);
         if (synced != task.Description)
             _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
                 ("@desc", synced), ("@id", taskId));
+
+        // Sync inverse marker: add -^child on new parent, remove from old parent
+        if (oldParentId != null && oldParentId != parentId)
+            RemoveInverseMarker(oldParentId, taskId, isSubtask: true);
+        AddInverseMarker(parentId, taskId, isSubtask: true);
 
         if (recordUndo) _services.Undo.SaveHistory();
         return new TaskResult.Success($"Set ({taskId}) as subtask of ({parentId})");
@@ -1321,23 +1609,28 @@ public class TodoTaskList
         if (task.ParentId == null)
             return new TaskResult.NoChange($"Task ({taskId}) has no parent");
 
+        var oldParentId = task.ParentId;
+
         if (recordUndo)
         {
-            var cmd = new SetParentCommand { TaskId = taskId, OldParentId = task.ParentId, NewParentId = null };
+            var cmd = new SetParentCommand { TaskId = taskId, OldParentId = oldParentId, NewParentId = null };
             _services.Undo.RecordCommand(cmd);
         }
 
         CreateBackup();
         _db.Execute("UPDATE tasks SET parent_id = NULL WHERE id = @id", ("@id", taskId));
 
-        // Sync metadata line
+        // Sync metadata line on the child
         var parsed = TaskDescriptionParser.Parse(task.Description);
         var synced = TaskDescriptionParser.SyncMetadataToDescription(
             task.Description, task.Priority, task.DueDate, task.Tags, null,
-            parsed.BlocksIds);
+            parsed.BlocksIds, parsed.HasSubtaskIds, parsed.BlockedByIds, parsed.RelatedIds);
         if (synced != task.Description)
             _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
                 ("@desc", synced), ("@id", taskId));
+
+        // Sync inverse marker: remove -^child from former parent
+        RemoveInverseMarker(oldParentId, taskId, isSubtask: true);
 
         if (recordUndo) _services.Undo.SaveHistory();
         return new TaskResult.Success($"Removed parent from ({taskId})");
@@ -1375,6 +1668,9 @@ public class TodoTaskList
         _db.Execute("INSERT INTO task_dependencies (task_id, blocks_task_id) VALUES (@blocker, @blocked)",
             ("@blocker", blockerId), ("@blocked", blockedId));
 
+        // Sync inverse marker: add -!blocker on blocked task
+        AddInverseMarker(blockedId, blockerId, isSubtask: false);
+
         if (recordUndo) _services.Undo.SaveHistory();
         return new TaskResult.Success($"({blockerId}) now blocks ({blockedId})");
     }
@@ -1396,6 +1692,9 @@ public class TodoTaskList
         CreateBackup();
         _db.Execute("DELETE FROM task_dependencies WHERE task_id = @blocker AND blocks_task_id = @blocked",
             ("@blocker", blockerId), ("@blocked", blockedId));
+
+        // Sync inverse marker: remove -!blocker from blocked task
+        RemoveInverseMarker(blockedId, blockerId, isSubtask: false);
 
         if (recordUndo) _services.Undo.SaveHistory();
         return new TaskResult.Success($"({blockerId}) no longer blocks ({blockedId})");
@@ -1472,6 +1771,157 @@ public class TodoTaskList
             "SELECT task_id FROM task_dependencies WHERE blocks_task_id = @id",
             reader => reader.GetString(0),
             ("@id", taskId));
+    }
+
+    // --- Related relationships ---
+
+    public TaskResult AddRelated(string taskId1, string taskId2, bool recordUndo = true)
+    {
+        if (taskId1 == taskId2)
+            return new TaskResult.Error("A task cannot be related to itself");
+
+        var task1 = GetTodoTaskById(taskId1);
+        if (task1 == null) return new TaskResult.NotFound(taskId1);
+
+        var task2 = GetTodoTaskById(taskId2);
+        if (task2 == null) return new TaskResult.Error($"Related task not found: {taskId2}");
+
+        // Canonical ordering: smaller ID first
+        var id1 = string.CompareOrdinal(taskId1, taskId2) < 0 ? taskId1 : taskId2;
+        var id2 = string.CompareOrdinal(taskId1, taskId2) < 0 ? taskId2 : taskId1;
+
+        // Check if already exists
+        var exists = _db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM task_relations WHERE task_id_1 = @id1 AND task_id_2 = @id2",
+            ("@id1", id1), ("@id2", id2));
+        if (exists > 0)
+            return new TaskResult.NoChange($"({taskId1}) is already related to ({taskId2})");
+
+        if (recordUndo)
+        {
+            var cmd = new AddRelatedCommand { TaskId1 = taskId1, TaskId2 = taskId2 };
+            _services.Undo.RecordCommand(cmd);
+        }
+
+        CreateBackup();
+        _db.Execute("INSERT INTO task_relations (task_id_1, task_id_2) VALUES (@id1, @id2)",
+            ("@id1", id1), ("@id2", id2));
+
+        // Sync metadata on both tasks
+        SyncRelatedMetadata(taskId1);
+        SyncRelatedMetadata(taskId2);
+
+        if (recordUndo) _services.Undo.SaveHistory();
+        return new TaskResult.Success($"({taskId1}) is now related to ({taskId2})");
+    }
+
+    public TaskResult RemoveRelated(string taskId1, string taskId2, bool recordUndo = true)
+    {
+        // Canonical ordering
+        var id1 = string.CompareOrdinal(taskId1, taskId2) < 0 ? taskId1 : taskId2;
+        var id2 = string.CompareOrdinal(taskId1, taskId2) < 0 ? taskId2 : taskId1;
+
+        var exists = _db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM task_relations WHERE task_id_1 = @id1 AND task_id_2 = @id2",
+            ("@id1", id1), ("@id2", id2));
+        if (exists == 0)
+            return new TaskResult.NoChange($"({taskId1}) is not related to ({taskId2})");
+
+        if (recordUndo)
+        {
+            var cmd = new RemoveRelatedCommand { TaskId1 = taskId1, TaskId2 = taskId2 };
+            _services.Undo.RecordCommand(cmd);
+        }
+
+        CreateBackup();
+        _db.Execute("DELETE FROM task_relations WHERE task_id_1 = @id1 AND task_id_2 = @id2",
+            ("@id1", id1), ("@id2", id2));
+
+        // Sync metadata on both tasks
+        SyncRelatedMetadata(taskId1);
+        SyncRelatedMetadata(taskId2);
+
+        if (recordUndo) _services.Undo.SaveHistory();
+        return new TaskResult.Success($"({taskId1}) is no longer related to ({taskId2})");
+    }
+
+    public List<TodoTask> GetRelated(string taskId)
+    {
+        return _db.Query(
+            $"""
+            SELECT {TaskSelectColumns} FROM tasks t
+            WHERE t.id IN (
+                SELECT task_id_2 FROM task_relations WHERE task_id_1 = @id
+                UNION
+                SELECT task_id_1 FROM task_relations WHERE task_id_2 = @id
+            ) AND t.is_trashed = 0
+            """,
+            ReadTask,
+            ("@id", taskId));
+    }
+
+    public List<string> GetRelatedIds(string taskId)
+    {
+        return _db.Query(
+            """
+            SELECT task_id_2 FROM task_relations WHERE task_id_1 = @id
+            UNION
+            SELECT task_id_1 FROM task_relations WHERE task_id_2 = @id
+            """,
+            reader => reader.GetString(0),
+            ("@id", taskId));
+    }
+
+    /// <summary>
+    /// Syncs the related IDs in a task's metadata description to match the DB state.
+    /// </summary>
+    private void SyncRelatedMetadata(string taskId)
+    {
+        var task = GetTodoTaskById(taskId);
+        if (task == null) return;
+
+        var relatedIds = GetRelatedIds(taskId).ToArray();
+        var parsed = TaskDescriptionParser.Parse(task.Description);
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            task.Description, task.Priority, task.DueDate, task.Tags,
+            parsed.ParentId, parsed.BlocksIds,
+            parsed.HasSubtaskIds, parsed.BlockedByIds,
+            relatedIds.Length > 0 ? relatedIds : null);
+        if (synced != task.Description)
+            _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                ("@desc", synced), ("@id", taskId));
+    }
+
+    private void SyncRelatedRelationships(string taskId, string[]? oldRelatedIds, string[]? newRelatedIds)
+    {
+        var oldRelated = new HashSet<string>(oldRelatedIds ?? []);
+        var newRelated = new HashSet<string>(newRelatedIds ?? []);
+
+        // Remove relations no longer in metadata
+        foreach (var removedId in oldRelated.Except(newRelated))
+        {
+            var id1 = string.CompareOrdinal(taskId, removedId) < 0 ? taskId : removedId;
+            var id2 = string.CompareOrdinal(taskId, removedId) < 0 ? removedId : taskId;
+            _db.Execute("DELETE FROM task_relations WHERE task_id_1 = @id1 AND task_id_2 = @id2",
+                ("@id1", id1), ("@id2", id2));
+            // Sync the other task's metadata
+            SyncRelatedMetadata(removedId);
+        }
+
+        // Add new relations from metadata
+        foreach (var addedId in newRelated.Except(oldRelated))
+        {
+            var related = GetTodoTaskById(addedId);
+            if (related != null && addedId != taskId)
+            {
+                var id1 = string.CompareOrdinal(taskId, addedId) < 0 ? taskId : addedId;
+                var id2 = string.CompareOrdinal(taskId, addedId) < 0 ? addedId : taskId;
+                _db.Execute("INSERT OR IGNORE INTO task_relations (task_id_1, task_id_2) VALUES (@id1, @id2)",
+                    ("@id1", id1), ("@id2", id2));
+                // Sync the other task's metadata
+                SyncRelatedMetadata(addedId);
+            }
+        }
     }
 
     // --- Search ---

@@ -308,4 +308,210 @@ public class TaskDescriptionParserTests
         Assert.Null(renamed.Priority);
         Assert.Equal(["newtag"], renamed.Tags);
     }
+
+    // --- Inverse parent reference (-^abc) tests ---
+
+    [Fact]
+    public void Parse_InverseParentRef_ExtractsHasSubtaskId()
+    {
+        var result = TaskDescriptionParser.Parse("task\n-^abc");
+        Assert.NotNull(result.HasSubtaskIds);
+        Assert.Single(result.HasSubtaskIds);
+        Assert.Equal("abc", result.HasSubtaskIds[0]);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    // --- Related reference (~abc) tests ---
+
+    [Fact]
+    public void Parse_RelatedRef_ExtractsRelatedId()
+    {
+        var result = TaskDescriptionParser.Parse("task\n~abc");
+        Assert.NotNull(result.RelatedIds);
+        Assert.Single(result.RelatedIds);
+        Assert.Equal("abc", result.RelatedIds[0]);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    [Fact]
+    public void Parse_MultipleInverseParentRefs_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("task\n-^abc -^def");
+        Assert.NotNull(result.HasSubtaskIds);
+        Assert.Equal(2, result.HasSubtaskIds.Length);
+        Assert.Contains("abc", result.HasSubtaskIds);
+        Assert.Contains("def", result.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void Parse_InverseParentRef_DoesNotCollideWithForwardParent()
+    {
+        var result = TaskDescriptionParser.Parse("task\n^abc -^def");
+        Assert.Equal("abc", result.ParentId);
+        Assert.NotNull(result.HasSubtaskIds);
+        Assert.Single(result.HasSubtaskIds);
+        Assert.Equal("def", result.HasSubtaskIds[0]);
+    }
+
+    // --- Inverse blocker reference (-!abc) tests ---
+
+    [Fact]
+    public void Parse_InverseBlockerRef_ExtractsBlockedById()
+    {
+        var result = TaskDescriptionParser.Parse("task\n-!abc");
+        Assert.NotNull(result.BlockedByIds);
+        Assert.Single(result.BlockedByIds);
+        Assert.Equal("abc", result.BlockedByIds[0]);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    [Fact]
+    public void Parse_MultipleInverseBlockerRefs_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("task\n-!abc -!def");
+        Assert.NotNull(result.BlockedByIds);
+        Assert.Equal(2, result.BlockedByIds.Length);
+        Assert.Contains("abc", result.BlockedByIds);
+        Assert.Contains("def", result.BlockedByIds);
+    }
+
+    [Fact]
+    public void Parse_InverseBlockerRef_DoesNotCollideWithForwardBlocker()
+    {
+        var result = TaskDescriptionParser.Parse("task\n!abc -!def");
+        Assert.NotNull(result.BlocksIds);
+        Assert.Single(result.BlocksIds);
+        Assert.Equal("abc", result.BlocksIds[0]);
+        Assert.NotNull(result.BlockedByIds);
+        Assert.Single(result.BlockedByIds);
+        Assert.Equal("def", result.BlockedByIds[0]);
+    }
+
+    // --- Combined all marker types ---
+
+    [Fact]
+    public void Parse_AllMarkerTypes_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("build API\n^abc !ghi -^def -!jkl p1 @today #tag");
+        Assert.Equal("abc", result.ParentId);
+        Assert.NotNull(result.BlocksIds);
+        Assert.Equal("ghi", result.BlocksIds[0]);
+        Assert.NotNull(result.HasSubtaskIds);
+        Assert.Equal("def", result.HasSubtaskIds[0]);
+        Assert.NotNull(result.BlockedByIds);
+        Assert.Equal("jkl", result.BlockedByIds[0]);
+        Assert.Equal(Priority.High, result.Priority);
+        Assert.Equal(DateOnly.FromDateTime(DateTime.Today), result.DueDate);
+        Assert.Contains("tag", result.Tags);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    [Fact]
+    public void Parse_MultipleRelatedRefs_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("task\n~abc ~def");
+        Assert.NotNull(result.RelatedIds);
+        Assert.Equal(2, result.RelatedIds.Length);
+        Assert.Contains("abc", result.RelatedIds);
+        Assert.Contains("def", result.RelatedIds);
+    }
+
+    [Fact]
+    public void Parse_MixedRelatedAndOtherMetadata_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("build API\n~abc !h67 p1 #tag");
+        Assert.NotNull(result.RelatedIds);
+        Assert.Single(result.RelatedIds);
+        Assert.Equal("abc", result.RelatedIds[0]);
+        Assert.NotNull(result.BlocksIds);
+        Assert.Equal("h67", result.BlocksIds[0]);
+        Assert.Equal(Priority.High, result.Priority);
+        Assert.Contains("tag", result.Tags);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    // --- GetDisplayDescription with inverse markers ---
+
+    [Fact]
+    public void GetDisplayDescription_HidesInverseMarkers()
+    {
+        var display = TaskDescriptionParser.GetDisplayDescription("My task\n-^abc -!def p1");
+        Assert.Equal("My task", display);
+    }
+
+    [Fact]
+    public void GetDisplayDescription_HidesRelatedTokens()
+    {
+        var display = TaskDescriptionParser.GetDisplayDescription("My task\n~abc ~def");
+        Assert.Equal("My task", display);
+    }
+
+    [Fact]
+    public void GetDisplayDescription_HidesAllMarkerTypes()
+    {
+        var display = TaskDescriptionParser.GetDisplayDescription("My task\n^abc !ghi -^def -!jkl ~xyz p1 #tag");
+        Assert.Equal("My task", display);
+    }
+
+    // --- SyncMetadataToDescription with inverse markers ---
+
+    [Fact]
+    public void SyncMetadataToDescription_IncludesInverseMarkers()
+    {
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task", null, null, null, hasSubtaskIds: ["abc"], blockedByIds: ["def"]);
+        Assert.Equal("task\n-^abc -!def", result);
+    }
+
+    [Fact]
+    public void SyncMetadataToDescription_FullMarkerOrder()
+    {
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task", Priority.High, DateOnly.FromDateTime(DateTime.Today), ["tag"],
+            parentId: "abc", blocksIds: ["ghi"],
+            hasSubtaskIds: ["def"], blockedByIds: ["jkl"], relatedIds: ["xyz"]);
+        var expected = $"task\n^abc !ghi -^def -!jkl ~xyz p1 @{DateOnly.FromDateTime(DateTime.Today):yyyy-MM-dd} #tag";
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void SyncMetadataToDescription_PreservesInverseMarkersOnUpdate()
+    {
+        // Start with inverse markers, update priority — inverse markers should survive
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task\n-^abc -!def p1", Priority.Medium, null, null,
+            hasSubtaskIds: ["abc"], blockedByIds: ["def"]);
+        Assert.Equal("task\n-^abc -!def p2", result);
+    }
+
+    [Fact]
+    public void SyncMetadataToDescription_RoundTrip()
+    {
+        var original = "build API\n^abc !ghi -^def -!jkl ~xyz p1 @2026-02-07 #tag";
+        var parsed = TaskDescriptionParser.Parse(original);
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            "build API", parsed.Priority, parsed.DueDate, parsed.Tags,
+            parsed.ParentId, parsed.BlocksIds,
+            parsed.HasSubtaskIds, parsed.BlockedByIds, parsed.RelatedIds);
+        Assert.Equal(original, synced);
+    }
+
+    // --- SyncMetadataToDescription with related IDs ---
+
+    [Fact]
+    public void SyncMetadataToDescription_IncludesRelatedIds()
+    {
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task", null, null, null, relatedIds: ["abc", "def"]);
+        Assert.Equal("task\n~abc ~def", result);
+    }
+
+    [Fact]
+    public void SyncMetadataToDescription_RelatedIds_CorrectOrder()
+    {
+        // Order: ^parent !blocks ~related p1 @date #tags
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task", Priority.High, null, ["tag"], parentId: "abc", blocksIds: ["h67"], relatedIds: ["xyz"]);
+        Assert.Equal("task\n^abc !h67 ~xyz p1 #tag", result);
+    }
 }
