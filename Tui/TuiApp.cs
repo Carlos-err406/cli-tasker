@@ -82,14 +82,6 @@ public class TuiApp
             _cachedTasks[index] = updated;
     }
 
-    private static int StatusSortOrder(TaskStatus status) => status switch
-    {
-        TaskStatus.InProgress => 0,
-        TaskStatus.Pending => 1,
-        TaskStatus.Done => 2,
-        _ => 1
-    };
-
     private List<TodoTask> LoadTasks()
     {
         // Don't use cache during active search — query changes every keystroke
@@ -107,29 +99,21 @@ public class TuiApp
                 .ToList();
         }
 
-        // Sort: by list name (when viewing all), then by status (in-progress first), then by creation date descending
+        // GetSortedTasks() already returns correct order (status-grouped, sort_order within groups).
+        // For all-lists view, group by list name while preserving within-list order.
         List<TodoTask> sorted;
         if (_state.CurrentList == null)
         {
-            // Viewing all lists - group by list name, default list first
             sorted = tasks
-                .OrderBy(t => t.ListName != ListManager.DefaultListName) // default list first
-                .ThenBy(t => t.ListName)
-                .ThenBy(t => StatusSortOrder(t.Status))
-                .ThenByDescending(t => t.Status == TaskStatus.Done
-                    ? (t.CompletedAt ?? DateTime.MinValue)
-                    : t.CreatedAt)
+                .GroupBy(t => t.ListName)
+                .OrderBy(g => g.Key != ListManager.DefaultListName)
+                .ThenBy(g => g.Key)
+                .SelectMany(g => g)
                 .ToList();
         }
         else
         {
-            // Single list view - in-progress first, then pending, then done
-            sorted = tasks
-                .OrderBy(t => StatusSortOrder(t.Status))
-                .ThenByDescending(t => t.Status == TaskStatus.Done
-                    ? (t.CompletedAt ?? DateTime.MinValue)
-                    : t.CreatedAt)
-                .ToList();
+            sorted = tasks;
         }
 
         // Only cache when not searching — search results change per keystroke
