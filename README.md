@@ -1,25 +1,33 @@
 # cli-tasker
 
-A lightweight command-line task manager built with C# and .NET 10.0.
+A lightweight task manager for the terminal. Manage tasks from the CLI, an interactive TUI, or a macOS menu bar app — all backed by the same SQLite database.
 
 ## Features
 
-- Add, list, delete, and manage tasks from the terminal
-- Mark tasks as complete or incomplete (supports batch operations)
-- Organize tasks into multiple lists with a configurable default
-- Move tasks between lists
-- Soft-delete with trash and restore functionality
-- Simple 3-character task IDs for easy reference
-- Tasks sorted by status (unchecked first) then by date (newest first)
-- System diagnostics to view task statistics across all lists
+- **Three interfaces** — CLI commands, interactive TUI, and macOS menu bar app (TaskerTray)
+- **3-state tasks** — Pending, In-Progress, and Done with status cycling
+- **Multiple lists** — Organize tasks into named lists with a configurable default
+- **Task dependencies** — Subtask hierarchies and blocking relationships with cascade operations
+- **Inline metadata** — Set priority, due dates, tags, and relationships right in the task description
+- **Directory auto-detection** — Automatically filters to a list matching your current directory
+- **Due dates** — Natural language input (today, tomorrow, friday, +3d, jan15) with overdue tracking
+- **Priority levels** — High, Medium, Low with colored indicators
+- **Tags** — Colored tag display with consistent hashing
+- **Search** — Filter tasks by text across all lists
+- **Undo/Redo** — Full undo history for all operations
+- **Backup & Restore** — Automatic SQLite backups with hot backup API
+- **Batch operations** — Check, uncheck, and delete multiple tasks at once
+- **Soft delete** — Trash with restore, not permanent deletion
+- **3-character IDs** — Short task IDs for easy reference
 
 ## Requirements
 
 - .NET 10.0 or later
+- macOS for TaskerTray (menu bar app)
 
 ## Installation
 
-### As a global tool (recommended)
+### As a global tool
 
 ```bash
 dotnet tool install -g cli-tasker
@@ -28,148 +36,187 @@ dotnet tool install -g cli-tasker
 ### From source
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Carlos-err406/cli-tasker.git
 cd cli-tasker
 dotnet build
 ```
 
-## Usage
+## Quick Start
 
 ```bash
-# Add a new task (to default list)
+# Add a task
 tasker add "Buy groceries"
 
-# Add a task to a specific list
-tasker add "Review PR" -l work
+# Add with priority, due date, and tags
+tasker add "Review PR\np1 @tomorrow #work"
 
-# List all tasks (grouped by list)
+# List all tasks
 tasker list
 
-# List tasks from a specific list
-tasker list -l work
+# Set a task to in-progress
+tasker wip abc
 
-# List only unchecked or checked tasks
-tasker list -u
-tasker list -c
+# Mark as done
+tasker check abc
 
-# Mark tasks as complete (supports multiple IDs)
-tasker check abc def ghi
-
-# Mark tasks as incomplete
-tasker uncheck abc
-
-# Delete tasks (moves to trash, supports multiple IDs)
-tasker delete abc def
-
-# Rename a task
-tasker rename abc "Updated description"
-
-# Move a task to a different list
-tasker move abc work
-
-# Clear all tasks from a specific list
-tasker clear -l work
-
-# View system status and statistics
-tasker system status
+# Launch interactive TUI
+tasker
 ```
 
-### Example Output
+## Usage
 
-```
-$ tasker list
-tasks
-(def) [ ] - Write documentation
-(ghi) [ ] - Review pull request
-(abc) [x] - Buy groceries
-
-work
-(jkl) [ ] - Deploy to staging
-
-$ tasker system status
-tasks: 2 unchecked, 1 checked, 0 trash
-work: 1 unchecked, 0 checked, 0 trash
-─────────────────────────────────
-Total: 3 unchecked, 1 checked, 0 trash
-```
-
-## Commands
+### CLI Commands
 
 | Command | Description |
 |---------|-------------|
 | `add <description>` | Add a new task |
 | `list` | Display all tasks grouped by list |
-| `check <taskId...>` | Mark one or more tasks as completed |
-| `uncheck <taskId...>` | Mark one or more tasks as incomplete |
-| `delete <taskId...>` | Move one or more tasks to trash |
-| `rename <taskId> <description>` | Update task description |
-| `move <taskId> <list>` | Move a task to a different list |
-| `clear -l <list>` | Move all tasks from a list to trash |
-| `lists` | Manage task lists |
-| `trash` | View and manage deleted tasks |
-| `system status` | Display task statistics per list |
+| `check <id...>` | Mark tasks as done |
+| `uncheck <id...>` | Mark tasks as pending |
+| `status <id> <pending\|inprogress\|done>` | Set task status |
+| `wip <id>` | Set task to in-progress |
+| `delete <id...>` | Move tasks to trash |
+| `rename <id> <description>` | Update task description |
+| `move <id> <list>` | Move a task to a different list |
+| `get <id>` | Show task details (`--json` for JSON output) |
+| `due <id> <date>` | Set due date (`--clear` to remove) |
+| `priority <id> <high\|medium\|low\|none>` | Set priority |
+| `clear` | Move all tasks to trash |
+| `lists` | Manage lists (create, delete, rename, set-default) |
+| `trash` | View and manage deleted tasks (list, restore, clear) |
+| `deps` | Manage dependencies (set-parent, unset-parent, add-blocker, remove-blocker) |
+| `init` | Create a list named after the current directory |
+| `backup` | List or restore backups |
+| `undo` / `redo` | Undo or redo last operation |
+| `history` | Show undo history |
+| `system status` | Show statistics per list |
 
 ### Global Options
 
 | Option | Description |
 |--------|-------------|
-| `-l, --list <name>` | Specify which list to use |
+| `-l, --list <name>` | Filter to a specific list |
+| `-a, --all` | Show all lists (bypass directory auto-detection) |
 
-### List Command Options
+### List Filters
 
 | Option | Description |
 |--------|-------------|
 | `-c, --checked` | Show only completed tasks |
 | `-u, --unchecked` | Show only incomplete tasks |
+| `-p, --priority <level>` | Filter by priority (high, medium, low) |
+| `--overdue` | Show only overdue tasks |
 
-### Lists Management
+### Interactive TUI
+
+Run `tasker` with no arguments to launch the interactive terminal UI:
+
+| Key | Action |
+|-----|--------|
+| Arrow keys | Navigate |
+| Space / Enter | Cycle status (Pending -> In-Progress -> Done) |
+| `a` | Add task |
+| `s` | Add subtask of selected task |
+| `r` | Rename selected task |
+| `x` / Delete | Delete selected task |
+| `1` / `2` / `3` / `0` | Set priority (High / Medium / Low / Clear) |
+| `d` | Set due date |
+| `Shift+D` | Clear due date |
+| `l` | Switch list |
+| `m` | Move task to another list |
+| `/` | Search |
+| `v` | Multi-select mode (then `c`=check, `u`=uncheck, `x`=delete) |
+| `z` / `Shift+Z` | Undo / Redo |
+| `q` / Esc | Quit |
+
+### Menu Bar App (TaskerTray)
+
+A macOS menu bar app that shares the same database. Features task list popup, quick-add window, search, drag reorder, and keyboard shortcuts (Cmd+Z for undo).
+
+Built with Avalonia. Installed to /Applications via `update.sh`.
+
+### Inline Metadata
+
+Add metadata on the last line of a task description:
 
 ```bash
-# Show all lists (marks default with *)
-tasker lists
+# Priority + due date + tag
+tasker add "Deploy to production\np1 @friday #release"
 
-# Set default list for new tasks
-tasker lists set-default work
+# Subtask of another task
+tasker add "Write unit tests\n^abc"
 
-# Rename a list
-tasker lists rename work projects
-
-# Delete a list (and all its tasks)
-tasker lists delete old-list
+# Blocking relationship
+tasker add "Fix auth bug\n!def"
 ```
 
-Note: The default list ("tasks") cannot be deleted or renamed.
+| Marker | Meaning |
+|--------|---------|
+| `p1` / `p2` / `p3` | Priority: High / Medium / Low |
+| `@date` | Due date (today, tomorrow, friday, jan15, +3d) |
+| `#tag` | Tag |
+| `^abc` | Subtask of task abc |
+| `!abc` | Blocks task abc |
 
-### Trash Management
+### Task Dependencies
 
 ```bash
-# View all trashed tasks (grouped by list)
-tasker trash list
+# Make a task a subtask
+tasker deps set-parent <taskId> <parentId>
 
-# View trashed tasks from a specific list
-tasker trash list -l work
+# Remove parent
+tasker deps unset-parent <taskId>
 
-# Restore a task from trash
-tasker trash restore abc
+# Add blocking relationship
+tasker deps add-blocker <blockerId> <blockedId>
 
-# Permanently delete all trashed tasks
-tasker trash clear
-
-# Permanently delete trashed tasks from a specific list
-tasker trash clear -l work
+# Remove blocking
+tasker deps remove-blocker <blockerId> <blockedId>
 ```
 
-## Data Storage
+Cascade behavior: checking a parent marks all subtasks as done. Deleting a parent trashes all subtasks. Moving a parent moves all subtasks.
 
-Tasks are stored in JSON files in a platform-specific config directory:
-- macOS: `~/Library/Application Support/cli-tasker/`
-- Linux: `~/.config/cli-tasker/`
-- Windows: `%APPDATA%/cli-tasker/`
+### Directory Auto-Detection
 
-Files:
-- `all-tasks.json` - All active tasks (with `ListName` property)
-- `all-tasks.trash.json` - Soft-deleted tasks
-- `config.json` - User preferences (default list)
+When a list matches your current directory name, commands automatically filter to that list:
+
+```bash
+cd ~/projects/my-app
+tasker init              # Creates a list named "my-app"
+tasker add "Fix bug"     # Added to "my-app" list
+tasker list              # Shows only "my-app" tasks
+tasker list -a           # Shows all lists
+```
+
+## Architecture
+
+Three-project structure sharing a core library:
+
+```
+cli-tasker       → CLI + TUI (System.CommandLine, Spectre.Console)
+TaskerCore       → Shared core (SQLite, models, data layer)
+TaskerTray       → macOS menu bar app (Avalonia)
+```
+
+All data stored in SQLite with WAL mode for concurrent access:
+`~/Library/Application Support/cli-tasker/tasker.db`
+
+## Building from Source
+
+```bash
+# Build CLI
+dotnet build
+
+# Run tests
+dotnet test
+
+# Package and install globally
+dotnet pack -c Release -o ./nupkg
+dotnet tool install -g cli-tasker --add-source ./nupkg
+
+# Build and install everything (CLI + TaskerTray)
+./update.sh patch
+```
 
 ## License
 
