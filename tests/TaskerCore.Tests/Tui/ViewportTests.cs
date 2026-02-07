@@ -98,4 +98,40 @@ public class ViewportTests
         Assert.True(start <= cursorIndex);
         Assert.True(end > cursorIndex);
     }
+
+    [Fact]
+    public void WrapLine_ShortLine_ReturnsUnchanged()
+    {
+        var result = TuiRenderer.WrapLine("hello world", 50);
+        Assert.Single(result);
+        Assert.Equal("hello world", result[0]);
+    }
+
+    [Fact]
+    public void WrapLine_BreaksAtSpace()
+    {
+        var result = TuiRenderer.WrapLine("hello world foo bar", 10);
+        Assert.Equal(3, result.Count);
+        Assert.Equal("hello", result[0]);
+        Assert.Equal("world foo", result[1]);
+        Assert.Equal("bar", result[2]);
+    }
+
+    [Fact]
+    public void WrapLine_NoSpaces_BreaksMidWord()
+    {
+        var result = TuiRenderer.WrapLine("abcdefghijklmno", 5);
+        Assert.Equal(3, result.Count);
+        Assert.Equal("abcde", result[0]);
+        Assert.Equal("fghij", result[1]);
+        Assert.Equal("klmno", result[2]);
+    }
+
+    [Fact]
+    public void WrapLine_EmptyLine_ReturnsSingleEmpty()
+    {
+        var result = TuiRenderer.WrapLine("", 10);
+        Assert.Single(result);
+        Assert.Equal("", result[0]);
+    }
 }
