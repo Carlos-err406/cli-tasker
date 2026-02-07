@@ -86,4 +86,53 @@ public class SortOrderStabilityTests : IDisposable
         Assert.Equal(TaskStatus.Pending, sorted[1].Status);
         Assert.Equal(TaskStatus.Done, sorted[2].Status);
     }
+
+    [Fact]
+    public void GetSortedTasks_RespectsUserSortOrderWithinStatusGroup()
+    {
+        var taskList = new TodoTaskList(_services, "tasks");
+
+        var taskA = TodoTask.CreateTodoTask("task A", "tasks");
+        var taskB = TodoTask.CreateTodoTask("task B", "tasks");
+        var taskC = TodoTask.CreateTodoTask("task C", "tasks");
+
+        taskList.AddTodoTask(taskA, recordUndo: false);  // sort_order 0
+        taskList.AddTodoTask(taskB, recordUndo: false);  // sort_order 1
+        taskList.AddTodoTask(taskC, recordUndo: false);  // sort_order 2
+
+        // Default display order (sort_order DESC): C, B, A
+        var before = taskList.GetSortedTasks();
+        Assert.Equal(taskC.Id, before[0].Id);
+        Assert.Equal(taskB.Id, before[1].Id);
+        Assert.Equal(taskA.Id, before[2].Id);
+
+        // Reorder: move C to the bottom (index 2 in display = lowest sort_order)
+        TodoTaskList.ReorderTask(_services, taskC.Id, 2);
+
+        var after = taskList.GetSortedTasks();
+
+        // B should be first (highest sort_order), then A, then C (reordered to bottom)
+        Assert.Equal(taskB.Id, after[0].Id);
+        Assert.Equal(taskA.Id, after[1].Id);
+        Assert.Equal(taskC.Id, after[2].Id);
+    }
+
+    [Fact]
+    public void RenameTask_DoesNotChangeSortOrder()
+    {
+        var taskList = new TodoTaskList(_services, "tasks");
+
+        var taskA = TodoTask.CreateTodoTask("task A", "tasks");
+        var taskB = TodoTask.CreateTodoTask("task B", "tasks");
+
+        taskList.AddTodoTask(taskA, recordUndo: false);
+        taskList.AddTodoTask(taskB, recordUndo: false);
+
+        var sortOrderA = GetSortOrder(taskA.Id);
+
+        // Renaming should NOT bump sort order
+        taskList.RenameTask(taskA.Id, "renamed A", recordUndo: false);
+
+        Assert.Equal(sortOrderA, GetSortOrder(taskA.Id));
+    }
 }

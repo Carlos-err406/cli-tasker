@@ -132,40 +132,19 @@ public class TodoTaskList
         if (filterOverdue == true)
             filteredTasks = filteredTasks.Where(t => t.DueDate.HasValue && t.DueDate.Value < today);
 
-        // Active tasks: priority → due date → created_at
+        // Active tasks: sort_order DESC from DB, stable-partitioned by status (InProgress first)
         var active = filteredTasks
             .Where(t => t.Status != TaskStatus.Done)
-            .OrderBy(t => StatusSortOrder(t.Status))
-            .ThenBy(t => t.Priority.HasValue ? (int)t.Priority : 99)
-            .ThenBy(t => GetDueDateSortOrder(t.DueDate, today))
-            .ThenByDescending(t => t.CreatedAt)
+            .OrderBy(t => t.Status == TaskStatus.InProgress ? 0 : 1)
             .ToList();
 
-        // Done tasks: purely by completed_at DESC (NULL sorts last)
+        // Done tasks: by completion time (most recently completed first)
         var done = filteredTasks
             .Where(t => t.Status == TaskStatus.Done)
             .OrderByDescending(t => t.CompletedAt ?? DateTime.MinValue)
             .ToList();
 
         return [..active, ..done];
-    }
-
-    /// <summary>
-    /// Sort order for status: in-progress (0) first, pending (1), done (2) last.
-    /// </summary>
-    private static int StatusSortOrder(TaskStatus status) => status switch
-    {
-        TaskStatus.InProgress => 0,
-        TaskStatus.Pending => 1,
-        TaskStatus.Done => 2,
-        _ => 1
-    };
-
-    private static int GetDueDateSortOrder(DateOnly? dueDate, DateOnly today)
-    {
-        if (!dueDate.HasValue) return 99;
-        var days = dueDate.Value.DayNumber - today.DayNumber;
-        return days < 0 ? 0 : days;
     }
 
     // --- Write helpers ---
@@ -551,7 +530,6 @@ public class TodoTaskList
         CreateBackup();
         var renamedTask = todoTask.Rename(newDescription);
         UpdateTask(renamedTask);
-        BumpSortOrder(taskId, renamedTask.ListName);
 
         if (recordUndo)
         {
@@ -630,7 +608,6 @@ public class TodoTaskList
         updatedTask = updatedTask.Rename(syncedDescription);
 
         UpdateTask(updatedTask);
-        BumpSortOrder(taskId, updatedTask.ListName);
 
         if (recordUndo)
         {
@@ -672,7 +649,6 @@ public class TodoTaskList
         updatedTask = updatedTask.Rename(syncedDescription);
 
         UpdateTask(updatedTask);
-        BumpSortOrder(taskId, updatedTask.ListName);
 
         if (recordUndo)
         {
@@ -1069,13 +1045,9 @@ public class TodoTaskList
             ReadTask,
             ("@search", $"%{escaped}%"));
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
         var active = tasks
             .Where(t => t.Status != TaskStatus.Done)
-            .OrderBy(t => StatusSortOrder(t.Status))
-            .ThenBy(t => t.Priority.HasValue ? (int)t.Priority : 99)
-            .ThenBy(t => GetDueDateSortOrder(t.DueDate, today))
-            .ThenByDescending(t => t.CreatedAt)
+            .OrderBy(t => t.Status == TaskStatus.InProgress ? 0 : 1)
             .ToList();
         var done = tasks
             .Where(t => t.Status == TaskStatus.Done)
