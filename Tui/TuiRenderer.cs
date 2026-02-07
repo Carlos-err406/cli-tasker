@@ -1,5 +1,6 @@
 namespace cli_tasker.Tui;
 
+using System.IO;
 using Spectre.Console;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
@@ -11,13 +12,28 @@ public class TuiRenderer
     // ANSI escape code to clear from cursor to end of line
     private const string ClearToEndOfLine = "\x1b[K";
 
+    // Frame buffer: all rendering writes here, flushed in one shot
+    private StringWriter _buffer = new();
+    private IAnsiConsole _ansi = null!;
+
     public void Render(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
-        Console.SetCursorPosition(0, 0);
+        _buffer = new StringWriter();
+        _buffer.NewLine = "\n";
+        _ansi = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Ansi = AnsiSupport.Yes,
+            ColorSystem = ColorSystemSupport.TrueColor,
+            Out = new AnsiConsoleOutput(_buffer),
+        });
+        _ansi.Profile.Width = int.MaxValue; // never wrap — let terminal handle overflow
 
         RenderHeader(state, tasks.Count);
         RenderTasks(state, tasks);
         RenderStatusBar(state, tasks.Count);
+
+        Console.SetCursorPosition(0, 0);
+        Console.Write(_buffer.ToString());
     }
 
     private void RenderHeader(TuiState state, int taskCount)
@@ -43,7 +59,7 @@ public class TuiRenderer
         var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 4 :
                                    state.Mode == TuiMode.InputDueDate ? 2 : 0;
         var selectModeExtraSpace = (state.Mode == TuiMode.SelectMoveTarget || state.Mode == TuiMode.SelectList) ? 7 : 0;
-        var availableLines = terminalHeight - 6 - inputModeExtraSpace - selectModeExtraSpace;
+        var availableLines = Math.Max(1, terminalHeight - 6 - inputModeExtraSpace - selectModeExtraSpace);
 
         if (tasks.Count == 0)
         {
@@ -54,12 +70,28 @@ public class TuiRenderer
         }
 
         var showingAllLists = state.CurrentList == null;
-        var startIndex = Math.Max(0, state.CursorIndex - availableLines / 2);
-        startIndex = Math.Min(startIndex, Math.Max(0, tasks.Count - availableLines));
-        var endIndex = Math.Min(tasks.Count, startIndex + availableLines);
+
+        // Pre-compute line heights (accounting for multi-line descriptions, wrapping, and list headers)
+        var prefixLen = 1 + (state.Mode == TuiMode.MultiSelect ? 3 : 0) + 5 + 1 + 3 + 3 + 1;
+        var wrapWidth = Math.Max(10, Console.WindowWidth - prefixLen);
+        var lineHeights = new int[tasks.Count];
+        string? preGroup = null;
+        for (var i = 0; i < tasks.Count; i++)
+        {
+            var height = CountTaskLines(tasks[i], wrapWidth);
+            if (showingAllLists && tasks[i].ListName != preGroup)
+            {
+                height += 1; // list group header
+                preGroup = tasks[i].ListName;
+            }
+            lineHeights[i] = height;
+        }
+
+        var (startIndex, endIndex) = ComputeViewport(state.CursorIndex, lineHeights, availableLines);
 
         var linesRendered = 0;
-        string? lastListName = null;
+        // Initialize from context before startIndex so headers match pre-computation
+        string? lastListName = showingAllLists && startIndex > 0 ? tasks[startIndex - 1].ListName : null;
 
         for (var i = startIndex; i < endIndex && linesRendered < availableLines; i++)
         {
@@ -78,7 +110,8 @@ public class TuiRenderer
             var isSelected = i == state.CursorIndex;
             var isMultiSelected = state.SelectedTaskIds.Contains(task.Id);
 
-            var taskLines = RenderTask(task, isSelected, isMultiSelected, state.Mode, state.SearchQuery);
+            var remaining = availableLines - linesRendered;
+            var taskLines = RenderTask(task, isSelected, isMultiSelected, state.Mode, state.SearchQuery, remaining);
             linesRendered += taskLines;
         }
 
@@ -86,7 +119,7 @@ public class TuiRenderer
             ClearLine();
     }
 
-    private int RenderTask(TodoTask task, bool isSelected, bool isMultiSelected, TuiMode mode, string? searchQuery)
+    private int RenderTask(TodoTask task, bool isSelected, bool isMultiSelected, TuiMode mode, string? searchQuery, int maxLines = int.MaxValue)
     {
         var selectionIndicator = mode == TuiMode.MultiSelect
             ? (isMultiSelected ? "[blue][[*]][/]" : "[dim][[ ]][/]")
@@ -121,27 +154,89 @@ public class TuiRenderer
 
         if (lines.Length > 1)
         {
-            for (var i = 1; i < lines.Length; i++)
+            var wrapWidth = Math.Max(10, Console.WindowWidth - indent.Length);
+            for (var i = 1; i < lines.Length && linesRendered < maxLines; i++)
             {
-                var continuationLine = HighlightSearch(lines[i], searchQuery);
-                if (isSelected)
+                var wrappedSegments = WrapLine(lines[i], wrapWidth);
+                foreach (var segment in wrappedSegments)
                 {
-                    // Dimmed but NOT strikethrough when selected
-                    WriteLineCleared($"{indent}[dim]{continuationLine}[/]");
+                    if (linesRendered >= maxLines) break;
+                    var continuationLine = HighlightSearch(segment, searchQuery);
+                    if (isSelected)
+                    {
+                        // Dimmed but NOT strikethrough when selected
+                        WriteLineCleared($"{indent}[dim]{continuationLine}[/]");
+                    }
+                    else if (task.Status == TaskStatus.Done)
+                    {
+                        WriteLineCleared($"{indent}[dim strikethrough]{continuationLine}[/]");
+                    }
+                    else
+                    {
+                        WriteLineCleared($"{indent}[dim]{continuationLine}[/]");
+                    }
+                    linesRendered++;
                 }
-                else if (task.Status == TaskStatus.Done)
-                {
-                    WriteLineCleared($"{indent}[dim strikethrough]{continuationLine}[/]");
-                }
-                else
-                {
-                    WriteLineCleared($"{indent}[dim]{continuationLine}[/]");
-                }
-                linesRendered++;
             }
         }
 
         return linesRendered;
+    }
+
+    private static int CountTaskLines(TodoTask task, int wrapWidth)
+    {
+        var displayDesc = TaskDescriptionParser.GetDisplayDescription(task.Description);
+        var lines = displayDesc.Split('\n');
+        var count = 1; // first line is always 1 visual line
+        for (var i = 1; i < lines.Length; i++)
+            count += WrapLine(lines[i], wrapWidth).Count;
+        return count;
+    }
+
+    /// <summary>
+    /// Word-wrap a single line of text to fit within maxWidth characters.
+    /// Breaks at spaces when possible, mid-word only as a last resort.
+    /// </summary>
+    internal static List<string> WrapLine(string line, int maxWidth)
+    {
+        if (maxWidth < 1) maxWidth = 1;
+        if (line.Length <= maxWidth) return [line];
+
+        var result = new List<string>();
+        var remaining = line;
+        while (remaining.Length > maxWidth)
+        {
+            var breakAt = remaining.LastIndexOf(' ', maxWidth - 1);
+            if (breakAt <= 0) breakAt = maxWidth;
+            result.Add(remaining[..breakAt]);
+            remaining = remaining[breakAt..].TrimStart();
+        }
+        if (remaining.Length > 0)
+            result.Add(remaining);
+        return result;
+    }
+
+    internal static (int StartIndex, int EndIndex) ComputeViewport(
+        int cursorIndex, int[] lineHeights, int availableLines)
+    {
+        availableLines = Math.Max(1, availableLines);
+        if (lineHeights.Length == 0) return (0, 0);
+        cursorIndex = Math.Clamp(cursorIndex, 0, lineHeights.Length - 1);
+
+        // Start with the cursor task, then expand upward, then fill downward
+        var startIndex = cursorIndex;
+        var budget = lineHeights[cursorIndex];
+
+        // Expand upward
+        while (startIndex > 0 && budget + lineHeights[startIndex - 1] <= availableLines)
+            budget += lineHeights[--startIndex];
+
+        // Expand downward
+        var endIndex = cursorIndex + 1;
+        while (endIndex < lineHeights.Length && budget + lineHeights[endIndex] <= availableLines)
+            budget += lineHeights[endIndex++];
+
+        return (startIndex, endIndex);
     }
 
     private static string FormatPriority(Priority? priority) => priority switch
@@ -288,9 +383,9 @@ public class TuiRenderer
                 var atCursor = cursorInLine < line.Length ? line[cursorInLine].ToString() : " ";
                 var afterCursor = cursorInLine < line.Length - 1 ? line[(cursorInLine + 1)..] : "";
 
-                Console.Write(ClearToEndOfLine);
-                AnsiConsole.Markup($"{prefix}{Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
-                Console.WriteLine();
+                _buffer.Write(ClearToEndOfLine);
+                _ansi.Markup($"{prefix}{Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
+                _buffer.WriteLine();
             }
             else
             {
@@ -326,9 +421,9 @@ public class TuiRenderer
         var atCursor = cursorInLine < buffer.Length ? buffer[cursorInLine].ToString() : " ";
         var afterCursor = cursorInLine < buffer.Length - 1 ? buffer[(cursorInLine + 1)..] : "";
 
-        Console.Write(ClearToEndOfLine);
-        AnsiConsole.Markup($"[bold]>[/] {Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
-        Console.WriteLine();
+        _buffer.Write(ClearToEndOfLine);
+        _ansi.Markup($"[bold]>[/] {Markup.Escape(beforeCursor)}[bold underline]{Markup.Escape(atCursor)}[/]{Markup.Escape(afterCursor)}");
+        _buffer.WriteLine();
 
         WriteLineCleared("[dim]enter[/]:save [dim]esc[/]:cancel");
     }
@@ -372,20 +467,20 @@ public class TuiRenderer
     /// <summary>
     /// Write markup and clear to end of line, then move to next line
     /// </summary>
-    private static void WriteLineCleared(string markup)
+    private void WriteLineCleared(string markup)
     {
-        AnsiConsole.Markup(markup);
-        Console.Write(ClearToEndOfLine);
-        Console.WriteLine();
+        _ansi.Markup(markup);
+        _buffer.Write(ClearToEndOfLine);
+        _buffer.WriteLine();
     }
 
     /// <summary>
     /// Clear entire line and move to next line
     /// </summary>
-    private static void ClearLine()
+    private void ClearLine()
     {
-        Console.Write(ClearToEndOfLine);
-        Console.WriteLine();
+        _buffer.Write(ClearToEndOfLine);
+        _buffer.WriteLine();
     }
 
     public void Clear()

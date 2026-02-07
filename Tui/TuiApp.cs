@@ -37,6 +37,9 @@ public class TuiApp
         Console.CursorVisible = false;
         // Use alternate screen buffer to preserve terminal history
         Console.Write("\x1b[?1049h");
+        // Disable auto-wrap so long lines clip at terminal edge instead of
+        // wrapping to extra visual lines (which would scroll the top off screen)
+        Console.Write("\x1b[?7l");
         Console.Clear(); // Clear the alternate buffer
 
         try
@@ -67,7 +70,8 @@ public class TuiApp
         finally
         {
             Console.CursorVisible = true;
-            // Exit alternate screen buffer - restores previous terminal content
+            // Re-enable auto-wrap and exit alternate screen buffer
+            Console.Write("\x1b[?7h");
             Console.Write("\x1b[?1049l");
         }
     }
