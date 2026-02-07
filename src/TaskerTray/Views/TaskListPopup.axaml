@@ -193,7 +193,8 @@
                          Background="Transparent"
                          BorderThickness="0"
                          FontSize="13"
-                         Foreground="White"/>
+                         Foreground="White"
+                         VerticalContentAlignment="Center"/>
             </Border>
 
             <!-- Task List - built programmatically for grouping support -->
