@@ -181,21 +181,36 @@ public class TodoTaskList
             ? JsonSerializer.Serialize(task.Tags)
             : null;
 
-        _db.Execute("""
-            INSERT INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at)
-            VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, @trashed, @order, @completed)
-            """,
-            ("@id", task.Id),
-            ("@desc", task.Description),
-            ("@status", (int)task.Status),
-            ("@created", task.CreatedAt.ToString("o")),
-            ("@list", task.ListName),
-            ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
-            ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
-            ("@tags", (object?)tagsJson ?? DBNull.Value),
-            ("@trashed", isTrashed ? 1 : 0),
-            ("@order", maxOrder + 1),
-            ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
+        // Retry with new ID on rare 3-char GUID collision
+        var id = task.Id;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                _db.Execute("""
+                    INSERT INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at)
+                    VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, @trashed, @order, @completed)
+                    """,
+                    ("@id", id),
+                    ("@desc", task.Description),
+                    ("@status", (int)task.Status),
+                    ("@created", task.CreatedAt.ToString("o")),
+                    ("@list", task.ListName),
+                    ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
+                    ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
+                    ("@tags", (object?)tagsJson ?? DBNull.Value),
+                    ("@trashed", isTrashed ? 1 : 0),
+                    ("@order", maxOrder + 1),
+                    ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
+                return;
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
+            {
+                id = Guid.NewGuid().ToString()[..3];
+            }
+        }
+
+        throw new InvalidOperationException("Failed to generate unique task ID after 5 attempts");
     }
 
     private void UpdateTask(TodoTask task)
