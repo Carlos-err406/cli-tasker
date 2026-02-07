@@ -72,7 +72,8 @@ public class TuiRenderer
         var (startIndex, endIndex) = ComputeViewport(state.CursorIndex, lineHeights, availableLines);
 
         var linesRendered = 0;
-        string? lastListName = null;
+        // Initialize from context before startIndex so headers match pre-computation
+        string? lastListName = showingAllLists && startIndex > 0 ? tasks[startIndex - 1].ListName : null;
 
         for (var i = startIndex; i < endIndex && linesRendered < availableLines; i++)
         {
@@ -91,7 +92,8 @@ public class TuiRenderer
             var isSelected = i == state.CursorIndex;
             var isMultiSelected = state.SelectedTaskIds.Contains(task.Id);
 
-            var taskLines = RenderTask(task, isSelected, isMultiSelected, state.Mode, state.SearchQuery);
+            var remaining = availableLines - linesRendered;
+            var taskLines = RenderTask(task, isSelected, isMultiSelected, state.Mode, state.SearchQuery, remaining);
             linesRendered += taskLines;
         }
 
@@ -99,7 +101,7 @@ public class TuiRenderer
             ClearLine();
     }
 
-    private int RenderTask(TodoTask task, bool isSelected, bool isMultiSelected, TuiMode mode, string? searchQuery)
+    private int RenderTask(TodoTask task, bool isSelected, bool isMultiSelected, TuiMode mode, string? searchQuery, int maxLines = int.MaxValue)
     {
         var selectionIndicator = mode == TuiMode.MultiSelect
             ? (isMultiSelected ? "[blue][[*]][/]" : "[dim][[ ]][/]")
@@ -134,7 +136,7 @@ public class TuiRenderer
 
         if (lines.Length > 1)
         {
-            for (var i = 1; i < lines.Length; i++)
+            for (var i = 1; i < lines.Length && linesRendered < maxLines; i++)
             {
                 var continuationLine = HighlightSearch(lines[i], searchQuery);
                 if (isSelected)
