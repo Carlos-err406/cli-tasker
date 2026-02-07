@@ -266,6 +266,7 @@ public partial class TaskListPopup : Window
 
     private void DoRefreshTasks()
     {
+        var relTaskList = new TodoTaskList(_currentListFilter);
         List<TodoTask> tasks;
         if (_searchQuery != null)
         {
@@ -273,14 +274,15 @@ public partial class TaskListPopup : Window
         }
         else
         {
-            var taskList = new TodoTaskList(_currentListFilter);
-            tasks = taskList.GetSortedTasks();
+            tasks = relTaskList.GetSortedTasks();
         }
 
         _tasks.Clear();
         foreach (var task in tasks)
         {
-            _tasks.Add(new TodoTaskViewModel(task));
+            var vm = new TodoTaskViewModel(task);
+            vm.LoadRelationships(relTaskList);
+            _tasks.Add(vm);
         }
 
         BuildTaskList();
@@ -1268,6 +1270,30 @@ public partial class TaskListPopup : Window
             contentPanel.Children.Add(desc);
         }
 
+        // Relationship indicators
+        if (task.HasParent && task.ParentDisplay != null)
+        {
+            AddRelationshipLabel(contentPanel, $"↑ {task.ParentDisplay}", "#777");
+        }
+
+        if (task.HasSubtasks)
+        {
+            foreach (var line in task.SubtasksDisplay!)
+                AddRelationshipLabel(contentPanel, $"↳ {line}", "#777");
+        }
+
+        if (task.HasBlocks)
+        {
+            foreach (var line in task.BlocksDisplay!)
+                AddRelationshipLabel(contentPanel, $"⊘ {line}", "#D4A054");
+        }
+
+        if (task.HasBlockedBy)
+        {
+            foreach (var line in task.BlockedByDisplay!)
+                AddRelationshipLabel(contentPanel, $"⊘ {line}", "#D4A054");
+        }
+
         // Due date display
         if (task.HasDueDate)
         {
@@ -1393,6 +1419,18 @@ public partial class TaskListPopup : Window
 
         border.Child = grid;
         return border;
+    }
+
+    private static void AddRelationshipLabel(StackPanel parent, string text, string color)
+    {
+        parent.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.Parse(color)),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
     }
 
     private void OnCheckboxClicked(TodoTaskViewModel task, CheckBox checkbox)

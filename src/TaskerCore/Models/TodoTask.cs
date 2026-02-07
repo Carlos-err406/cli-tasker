@@ -11,7 +11,8 @@ public record TodoTask(
     DateOnly? DueDate = null,
     Priority? Priority = null,
     string[]? Tags = null,
-    DateTime? CompletedAt = null)
+    DateTime? CompletedAt = null,
+    string? ParentId = null)
 {
     public static TodoTask CreateTodoTask(string description, string listName)
     {
@@ -26,9 +27,17 @@ public record TodoTask(
             listName,
             parsed.DueDate,
             parsed.Priority,
-            parsed.Tags.Length > 0 ? parsed.Tags : null
+            parsed.Tags.Length > 0 ? parsed.Tags : null,
+            ParentId: parsed.ParentId
         );
     }
+
+    // Parent mutation methods
+    public bool HasParent => ParentId != null;
+
+    public TodoTask SetParent(string parentId) => this with { ParentId = parentId };
+
+    public TodoTask ClearParent() => this with { ParentId = null };
 
     // Computed properties for display logic
     public bool IsOverdue => DueDate.HasValue && DueDate.Value < DateOnly.FromDateTime(DateTime.Today);
@@ -52,7 +61,10 @@ public record TodoTask(
             Description = trimmed,
             Priority = parsed.Priority,
             DueDate = parsed.DueDate,
-            Tags = parsed.Tags.Length > 0 ? parsed.Tags : null
+            Tags = parsed.Tags.Length > 0 ? parsed.Tags : null,
+            // If metadata line exists, use parsed parent (null = cleared).
+            // If no metadata line, preserve existing parent.
+            ParentId = parsed.LastLineIsMetadataOnly ? parsed.ParentId : ParentId
         };
     }
 

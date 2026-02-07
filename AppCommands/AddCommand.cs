@@ -43,9 +43,12 @@ static class AddCommand
                 task = task.SetTags(parsed.Tags);
 
             var taskList = new TodoTaskList();
-            taskList.AddTodoTask(task);
+            var result = taskList.AddTodoTask(task);
 
-            Output.Success($"Task saved to '{listName}'. Use the list command to see your tasks");
+            foreach (var warning in result.Warnings)
+                Output.Warning(warning);
+
+            Output.Success($"Task saved to '{result.Task.ListName}'. Use the list command to see your tasks");
         }));
         return addCommand;
     }

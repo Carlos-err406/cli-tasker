@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -29,6 +31,18 @@ public partial class TodoTaskViewModel : ObservableObject
     public bool HasPriority => _task.Priority.HasValue;
     public bool HasTags => _task.HasTags;
     public DateTime? CompletedAt => _task.CompletedAt;
+    public string? ParentId => _task.ParentId;
+    public bool HasParent => _task.ParentId != null;
+
+    // Relationship display (populated via LoadRelationships)
+    public string? ParentDisplay { get; private set; }
+    public string[]? SubtasksDisplay { get; private set; }
+    public bool HasSubtasks => SubtasksDisplay is { Length: > 0 };
+    public string[]? BlocksDisplay { get; private set; }
+    public bool HasBlocks => BlocksDisplay is { Length: > 0 };
+    public string[]? BlockedByDisplay { get; private set; }
+    public bool HasBlockedBy => BlockedByDisplay is { Length: > 0 };
+    public bool HasRelationships => HasParent || HasSubtasks || HasBlocks || HasBlockedBy;
 
     /// <summary>
     /// Relative time display for completed tasks (e.g., "2h ago").
@@ -206,6 +220,55 @@ public partial class TodoTaskViewModel : ObservableObject
         if (result is TaskResult.Success)
         {
             _onChanged?.Invoke(this);
+        }
+    }
+
+    /// <summary>
+    /// Loads relationship data for display. Call after construction.
+    /// </summary>
+    public void LoadRelationships(TodoTaskList taskList)
+    {
+        // Parent display with title
+        if (_task.ParentId != null)
+        {
+            var parent = taskList.GetTodoTaskById(_task.ParentId);
+            var parentTitle = parent != null
+                ? TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0]
+                : "?";
+            ParentDisplay = $"subtask of ({_task.ParentId}) {parentTitle}";
+        }
+
+        // Subtasks with id + title
+        var subtasks = taskList.GetSubtasks(_task.Id);
+        if (subtasks.Count > 0)
+        {
+            SubtasksDisplay = subtasks.Select(s =>
+            {
+                var title = TaskDescriptionParser.GetDisplayDescription(s.Description).Split('\n')[0];
+                return $"subtask ({s.Id}) {title}";
+            }).ToArray();
+        }
+
+        // Blocks with id + title
+        var blocks = taskList.GetBlocks(_task.Id);
+        if (blocks.Count > 0)
+        {
+            BlocksDisplay = blocks.Select(b =>
+            {
+                var title = TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0];
+                return $"blocks ({b.Id}) {title}";
+            }).ToArray();
+        }
+
+        // Blocked by with id + title
+        var blockedBy = taskList.GetBlockedBy(_task.Id);
+        if (blockedBy.Count > 0)
+        {
+            BlockedByDisplay = blockedBy.Select(b =>
+            {
+                var title = TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0];
+                return $"blocked by ({b.Id}) {title}";
+            }).ToArray();
         }
     }
 

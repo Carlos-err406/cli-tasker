@@ -180,6 +180,13 @@ public class TuiRenderer
             }
         }
 
+        // Relationship indicator: subtask of parent
+        if (task.ParentId != null && linesRendered < maxLines)
+        {
+            WriteLineCleared($"{indent}[dim]^ subtask of ({task.ParentId})[/]");
+            linesRendered++;
+        }
+
         return linesRendered;
     }
 
@@ -190,6 +197,9 @@ public class TuiRenderer
         var count = 1; // first line is always 1 visual line
         for (var i = 1; i < lines.Length; i++)
             count += WrapLine(lines[i], wrapWidth).Count;
+        // Relationship indicator line
+        if (task.ParentId != null)
+            count++;
         return count;
     }
 
@@ -323,7 +333,7 @@ public class TuiRenderer
 
         var hints = state.Mode switch
         {
-            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:cycle [dim]x[/]:del [dim]1/2/3[/]:priority [dim]d[/]:due [dim]z[/]:undo [dim]a[/]:add [dim]q[/]:quit",
+            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:cycle [dim]x[/]:del [dim]1/2/3[/]:priority [dim]d[/]:due [dim]z[/]:undo [dim]a[/]:add [dim]s[/]:subtask [dim]q[/]:quit",
             TuiMode.Search => "[dim]type[/]:filter [dim]enter[/]:done [dim]esc[/]:clear",
             TuiMode.MultiSelect => "[dim]space[/]:toggle [dim]x[/]:del [dim]c[/]:check [dim]u[/]:uncheck [dim]esc[/]:exit",
             _ => ""

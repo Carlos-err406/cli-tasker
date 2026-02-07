@@ -146,4 +146,166 @@ public class TaskDescriptionParserTests
             "task\np1", null, null, null);
         Assert.Equal("task", result);
     }
+
+    // --- Parent reference (^abc) tests ---
+
+    [Fact]
+    public void Parse_ParentRef_ExtractsParentId()
+    {
+        var result = TaskDescriptionParser.Parse("task\n^abc");
+        Assert.Equal("abc", result.ParentId);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    [Fact]
+    public void Parse_ParentRef_NotParsedFromNonMetadataLine()
+    {
+        var result = TaskDescriptionParser.Parse("task with ^abc in text");
+        Assert.Null(result.ParentId);
+        Assert.False(result.LastLineIsMetadataOnly);
+    }
+
+    // --- Blocks reference (!abc) tests ---
+
+    [Fact]
+    public void Parse_BlocksRef_ExtractsBlockedId()
+    {
+        var result = TaskDescriptionParser.Parse("task\n!h67");
+        Assert.NotNull(result.BlocksIds);
+        Assert.Single(result.BlocksIds);
+        Assert.Equal("h67", result.BlocksIds[0]);
+    }
+
+    [Fact]
+    public void Parse_MultipleBlocksRefs_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("task\n!h67 !j89");
+        Assert.NotNull(result.BlocksIds);
+        Assert.Equal(2, result.BlocksIds.Length);
+        Assert.Contains("h67", result.BlocksIds);
+        Assert.Contains("j89", result.BlocksIds);
+    }
+
+    [Fact]
+    public void Parse_BlocksRef_NotParsedFromNonMetadataLine()
+    {
+        var result = TaskDescriptionParser.Parse("fix bug! important");
+        Assert.Null(result.BlocksIds);
+        Assert.False(result.LastLineIsMetadataOnly);
+    }
+
+    // --- Combined dependency + metadata tests ---
+
+    [Fact]
+    public void Parse_CombinedDependenciesAndMetadata_ExtractsAll()
+    {
+        var result = TaskDescriptionParser.Parse("build API\n^abc !h67 #feature p1");
+        Assert.Equal("abc", result.ParentId);
+        Assert.NotNull(result.BlocksIds);
+        Assert.Single(result.BlocksIds);
+        Assert.Equal("h67", result.BlocksIds[0]);
+        Assert.Equal(Priority.High, result.Priority);
+        Assert.Contains("feature", result.Tags);
+        Assert.True(result.LastLineIsMetadataOnly);
+    }
+
+    // --- GetDisplayDescription hides dependency tokens ---
+
+    [Fact]
+    public void GetDisplayDescription_HidesDependencyTokens()
+    {
+        var display = TaskDescriptionParser.GetDisplayDescription("My task\n^abc !h67 p1");
+        Assert.Equal("My task", display);
+    }
+
+    // --- SyncMetadataToDescription with dependencies ---
+
+    [Fact]
+    public void SyncMetadataToDescription_IncludesParentAndBlocks()
+    {
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task", Priority.High, null, null, parentId: "abc", blocksIds: ["h67"]);
+        Assert.Equal("task\n^abc !h67 p1", result);
+    }
+
+    [Fact]
+    public void SyncMetadataToDescription_UpdatesExistingDependencyTokens()
+    {
+        var result = TaskDescriptionParser.SyncMetadataToDescription(
+            "task\n^abc p1", null, null, null, parentId: "def", blocksIds: null);
+        Assert.Equal("task\n^def", result);
+    }
+
+    // --- TodoTask.Rename() metadata handling ---
+
+    [Fact]
+    public void TodoTask_Rename_WithParentToken_SetsParentId()
+    {
+        var task = TodoTask.CreateTodoTask("original task", "tasks");
+        var renamed = task.Rename("renamed task\n^abc");
+
+        Assert.Equal("abc", renamed.ParentId);
+    }
+
+    [Fact]
+    public void TodoTask_Rename_RemovingParentToken_ClearsParentId()
+    {
+        var task = TodoTask.CreateTodoTask("child task\n^abc", "tasks");
+        Assert.Equal("abc", task.ParentId);
+
+        // Rename with metadata line that doesn't have ^parent
+        var renamed = task.Rename("child task\n#tag");
+
+        Assert.Null(renamed.ParentId);
+    }
+
+    [Fact]
+    public void TodoTask_Rename_NoMetadataLine_PreservesParentId()
+    {
+        var task = TodoTask.CreateTodoTask("child task\n^abc", "tasks");
+        Assert.Equal("abc", task.ParentId);
+
+        // Rename with no metadata line — parent preserved
+        var renamed = task.Rename("renamed child task");
+
+        Assert.Equal("abc", renamed.ParentId);
+    }
+
+    [Fact]
+    public void TodoTask_Rename_SwapParentToBlockerToken_ClearsParent()
+    {
+        var task = TodoTask.CreateTodoTask("my task\n^abc", "tasks");
+        Assert.Equal("abc", task.ParentId);
+
+        // Change from ^abc to !abc
+        var renamed = task.Rename("my task\n!abc");
+
+        Assert.Null(renamed.ParentId);
+    }
+
+    [Fact]
+    public void TodoTask_Rename_ChangingParentToken_UpdatesParentId()
+    {
+        var task = TodoTask.CreateTodoTask("child task\n^abc", "tasks");
+        Assert.Equal("abc", task.ParentId);
+
+        var renamed = task.Rename("child task\n^def");
+
+        Assert.Equal("def", renamed.ParentId);
+    }
+
+    [Fact]
+    public void TodoTask_Rename_EmptyMetadataLine_ClearsAllMetadata()
+    {
+        var task = TodoTask.CreateTodoTask("my task\np1 ^abc #tag", "tasks");
+        Assert.Equal("abc", task.ParentId);
+        Assert.Equal(Priority.High, task.Priority);
+
+        // Rename to a different metadata line with nothing
+        var renamed = task.Rename("my task\n#newtag");
+
+        Assert.Null(renamed.ParentId);
+        Assert.Null(renamed.Priority);
+        Assert.Equal(["newtag"], renamed.Tags);
+    }
 }

@@ -53,6 +53,7 @@ class Program
         rootCommand.Add(SystemCommand.CreateSystemCommand());
         rootCommand.Add(InitCommand.CreateInitCommand());
         rootCommand.Add(BackupCommand.CreateBackupCommand());
+        rootCommand.Add(DepsCommand.CreateDepsCommand());
         var (undoCmd, redoCmd, historyCmd) = UndoCommand.CreateUndoCommands();
         rootCommand.Add(undoCmd);
         rootCommand.Add(redoCmd);
