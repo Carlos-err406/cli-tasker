@@ -2,41 +2,58 @@
 title: "TUI buffered rendering and line wrapping"
 date: 2026-02-06
 category: ui-bugs
-tags: [tui, rendering, flicker, buffer, wrapping, viewport, ansi, spectre-console]
-module: [TUI]
-severity: high
+module: TUI
+problem_type: ui_bug
+component: frontend_stimulus
 symptoms:
-  - TUI flickers visibly on every cursor move
-  - Header and first list name cropped off top of screen
-  - Long continuation lines clipped horizontally at terminal edge
+  - "TUI flickers visibly on every cursor move due to line-by-line console writes"
+  - "Header and first list name cropped off top of screen after buffering"
+  - "Long continuation lines clipped horizontally at terminal edge"
+root_cause: logic_error
+resolution_type: code_fix
+severity: high
+tags: [tui, rendering, flicker, buffer, wrapping, viewport, ansi, spectre-console]
 ---
 
-# TUI Buffered Rendering and Line Wrapping
+# Troubleshooting: TUI Buffered Rendering and Line Wrapping
 
 ## Problem
 
-Three interrelated TUI rendering issues:
+Three interrelated TUI rendering issues: visible flicker on every cursor move, header cropped off the top of the screen after buffering, and long continuation lines clipped horizontally after disabling terminal auto-wrap.
 
-1. **Flicker**: Every cursor move triggered dozens of individual `Console.Write()` and `AnsiConsole.Markup()` calls, making re-renders visually noticeable.
-2. **Top cropping**: After buffering the output, the header ("tasker (all lists)") and first list group name were pushed off the top of the screen.
-3. **Horizontal clipping**: After disabling terminal auto-wrap to fix the cropping, long continuation lines were silently clipped at the terminal edge.
+## Environment
 
-## Root Cause
+- Module: TUI
+- Framework: .NET 10 / Spectre.Console 0.54.0
+- Affected Component: `Tui/TuiRenderer.cs`, `Tui/TuiApp.cs`
+- Date: 2026-02-06
 
-### Flicker
-Each `AnsiConsole.Markup()` and `Console.Write()` call flushed to the terminal individually. With 30+ calls per frame, the terminal displayed partially-rendered frames between calls.
+## Symptoms
 
-### Top cropping
-Terminal-level text wrapping was the culprit. Long description lines (wider than terminal width) wrapped at the terminal edge, creating extra *visual* lines beyond what the viewport budget counted. The viewport budget counted only logical lines (`\n` characters), so the actual visual output exceeded terminal height and scrolled the top off screen.
+- TUI flickers visibly on every cursor move (dozens of individual `Console.Write` calls per frame)
+- After buffering fix: "tasker (all lists)" header and first list group name pushed off screen top
+- Debug output showed `termHeight=56` but frame contained `58` newlines
+- After disabling terminal auto-wrap: long continuation lines silently clipped at terminal edge with no visual indicator
 
-Debug confirmed: `termHeight=56` but the frame contained `58` newlines — 2 extra from terminal wrapping.
+## What Didn't Work
 
-Two additional issues discovered during investigation:
-- `StringWriter.NewLine` defaults to `"\r\n"` on ALL platforms (not `"\n"` like `Console.Out`), adding invisible `\r` characters
-- `Spectre.Console` wraps text at `Profile.Width`, inserting extra newlines into the buffer
+**Attempted Solution 1:** Synchronized output markers (`\x1b[?2026h`/`\x1b[?2026l`)
+- **Why it failed:** Compatibility issues with Warp terminal. Markers weren't reliably supported.
 
-### Horizontal clipping
-Disabling terminal auto-wrap (`\x1b[?7l`) prevented the visual overflow but caused long lines to be silently truncated at the terminal edge with no visual indicator.
+**Attempted Solution 2:** `Console.SetCursorPosition(0,0)` instead of `\x1b[H` in buffer
+- **Why it failed:** The cropping wasn't caused by cursor positioning — it was terminal-level text wrapping creating extra visual lines.
+
+**Attempted Solution 3:** Remove synchronized output markers entirely
+- **Why it failed:** Didn't address the root cause (visual line overflow from terminal wrapping).
+
+**Attempted Solution 4:** Set `_buffer.NewLine = "\n"` and `_ansi.Profile.Width = Console.WindowWidth`
+- **Why it failed:** Fixed the `\r\n` issue but Spectre's width-based wrapping still inserted extra newlines. And terminal wrapping still added visual lines beyond the budget.
+
+**Attempted Solution 5:** Set `_ansi.Profile.Width = int.MaxValue` to prevent Spectre wrapping
+- **Why it failed:** Prevented Spectre wrapping but terminal-level auto-wrap still created extra visual lines for long text.
+
+**Attempted Solution 6:** Disable terminal auto-wrap with `\x1b[?7l`
+- **Why it partially failed:** Fixed the vertical cropping but long continuation lines were now silently clipped horizontally — text just disappeared at the terminal edge.
 
 ## Solution
 
@@ -143,17 +160,15 @@ private static int CountTaskLines(TodoTask task, int wrapWidth)
 }
 ```
 
-## Key Gotchas
+## Why This Works
 
-1. **`StringWriter.NewLine` defaults to `"\r\n"` everywhere** — even on macOS/Linux. Always set `.NewLine = "\n"` explicitly when buffering terminal output.
+1. **Buffering** eliminates flicker because the terminal only receives one large write per frame instead of 30+ individual calls. No partially-rendered state is ever visible.
 
-2. **`Spectre.Console Profile.Width` causes wrapping** — Set to `int.MaxValue` when you want the renderer (not Spectre) to control line breaks.
+2. **Disabling auto-wrap** (`\x1b[?7l`) prevents the terminal from creating extra visual lines when text exceeds terminal width. This keeps the renderer in full control of the line count.
 
-3. **Terminal auto-wrap (`\x1b[?7l`) must be re-enabled on exit** — Put the re-enable in a `finally` block alongside alternate screen buffer exit, or the user's shell will have broken wrapping after a crash.
+3. **Renderer-level word wrapping** means `CountTaskLines` and `RenderTask` use the same `WrapLine` logic, so the viewport budget is always accurate. The renderer decides exactly how many visual lines each task produces — no surprises from terminal or Spectre wrapping.
 
-4. **Viewport line count must match rendering exactly** — If the renderer wraps lines, `CountTaskLines` must use the same wrapping logic. Any mismatch causes the viewport to over- or under-estimate, scrolling content off screen.
-
-5. **Synchronized output markers (`\x1b[?2026h`/`\x1b[?2026l`)** were tried and removed — they had compatibility issues with some terminals (Warp). The single-flush buffer approach via StringWriter achieves the same atomic rendering without terminal-specific escape codes.
+The key insight: **the renderer must be the single source of truth for visual line count**. Neither the terminal (auto-wrap) nor the library (Spectre.Console Profile.Width) should insert line breaks — only the renderer's `WrapLine` function.
 
 ## Prevention
 
@@ -161,12 +176,10 @@ private static int CountTaskLines(TodoTask task, int wrapWidth)
 - When disabling terminal features (auto-wrap, cursor visibility), always restore them in a `finally` block.
 - When computing viewport budgets for scrollable TUIs, account for all sources of visual lines: multi-line descriptions, group headers, AND text wrapping.
 - Test with tasks that have long descriptions to catch wrapping issues early.
+- Remember: `StringWriter.NewLine` defaults to `"\r\n"` on ALL platforms. Always set `.NewLine = "\n"` explicitly when buffering terminal output.
+- Set `Spectre.Console Profile.Width = int.MaxValue` when you want the renderer (not Spectre) to control line breaks.
+- Synchronized output markers (`\x1b[?2026h`/`\x1b[?2026l`) have compatibility issues — prefer single-flush buffer approach.
 
-## References
+## Related Issues
 
-- `Tui/TuiRenderer.cs` — buffered rendering, word wrapping, viewport calculation
-- `Tui/TuiApp.cs:37-41` — alternate screen buffer and auto-wrap setup
-- `Tui/TuiApp.cs:67-72` — cleanup in finally block
-- `tests/TaskerCore.Tests/Tui/ViewportTests.cs` — viewport and wrap tests
-- Related plan: `docs/plans/2026-02-06-fix-tui-scroll-cursor-visibility-plan.md`
-- ANSI escape reference: `\x1b[?7l` (DECRST auto-wrap), `\x1b[?1049h` (alternate screen)
+- Related plan: [fix-tui-scroll-cursor-visibility-plan](../../plans/2026-02-06-fix-tui-scroll-cursor-visibility-plan.md)
