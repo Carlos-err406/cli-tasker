@@ -43,6 +43,7 @@ public class TaskerServices : IDisposable
         Db = new TaskerDb(Paths.DatabasePath);
         Db.EnsureCreated();
         JsonMigrator.MigrateIfNeeded(Paths, Db);
+        InverseMarkerMigrator.MigrateIfNeeded(Db);
         Config = new AppConfig(Db);
         Backup = new BackupManager(Paths, Db);
         Undo = new UndoManager(Db);

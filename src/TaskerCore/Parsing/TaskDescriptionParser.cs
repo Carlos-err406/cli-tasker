@@ -18,7 +18,9 @@ public static partial class TaskDescriptionParser
         string[] Tags,
         bool LastLineIsMetadataOnly,
         string? ParentId = null,
-        string[]? BlocksIds = null);
+        string[]? BlocksIds = null,
+        string[]? HasSubtaskIds = null,
+        string[]? BlockedByIds = null);
 
     public static ParsedTask Parse(string input)
     {
@@ -28,11 +30,13 @@ public static partial class TaskDescriptionParser
         var lines = input.Split('\n');
         var lastLine = lines[^1];
 
-        // Check if last line is metadata-only (contains only p1/p2/p3, @date, #tags, ^parent, !blocks, and whitespace)
+        // Check if last line is metadata-only (contains only metadata markers and whitespace)
         var strippedLine = lastLine;
         strippedLine = PriorityRegex().Replace(strippedLine, " ");
         strippedLine = DueDateRegex().Replace(strippedLine, " ");
         strippedLine = TagRegex().Replace(strippedLine, " ");
+        strippedLine = InverseParentRefRegex().Replace(strippedLine, " ");
+        strippedLine = InverseBlockerRefRegex().Replace(strippedLine, " ");
         strippedLine = ParentRefRegex().Replace(strippedLine, " ");
         strippedLine = BlocksRefRegex().Replace(strippedLine, " ");
         var isMetadataOnly = string.IsNullOrWhiteSpace(strippedLine);
@@ -46,6 +50,8 @@ public static partial class TaskDescriptionParser
         var tags = new List<string>();
         string? parentId = null;
         var blocksIds = new List<string>();
+        var hasSubtaskIds = new List<string>();
+        var blockedByIds = new List<string>();
 
         // Extract priority: p1 (high), p2 (medium), p3 (low)
         var priorityMatch = PriorityRegex().Match(lastLine);
@@ -89,9 +95,25 @@ public static partial class TaskDescriptionParser
             blocksIds.Add(match.Groups[1].Value);
         }
 
+        // Extract inverse parent references: -^abc (has subtask, can have multiple)
+        var hasSubtaskMatches = InverseParentRefRegex().Matches(lastLine);
+        foreach (Match match in hasSubtaskMatches)
+        {
+            hasSubtaskIds.Add(match.Groups[1].Value);
+        }
+
+        // Extract inverse blocker references: -!abc (blocked by, can have multiple)
+        var blockedByMatches = InverseBlockerRefRegex().Matches(lastLine);
+        foreach (Match match in blockedByMatches)
+        {
+            blockedByIds.Add(match.Groups[1].Value);
+        }
+
         // Keep original description intact
         return new ParsedTask(input, priority, dueDate, tags.ToArray(), true,
-            parentId, blocksIds.Count > 0 ? blocksIds.ToArray() : null);
+            parentId, blocksIds.Count > 0 ? blocksIds.ToArray() : null,
+            hasSubtaskIds.Count > 0 ? hasSubtaskIds.ToArray() : null,
+            blockedByIds.Count > 0 ? blockedByIds.ToArray() : null);
     }
 
     /// <summary>
@@ -110,6 +132,8 @@ public static partial class TaskDescriptionParser
             strippedLine = PriorityRegex().Replace(strippedLine, " ");
             strippedLine = DueDateRegex().Replace(strippedLine, " ");
             strippedLine = TagRegex().Replace(strippedLine, " ");
+            strippedLine = InverseParentRefRegex().Replace(strippedLine, " ");
+            strippedLine = InverseBlockerRefRegex().Replace(strippedLine, " ");
             strippedLine = ParentRefRegex().Replace(strippedLine, " ");
             strippedLine = BlocksRefRegex().Replace(strippedLine, " ");
             // If single line is metadata-only, still show it (otherwise task would be empty)
@@ -122,6 +146,8 @@ public static partial class TaskDescriptionParser
         stripped = PriorityRegex().Replace(stripped, " ");
         stripped = DueDateRegex().Replace(stripped, " ");
         stripped = TagRegex().Replace(stripped, " ");
+        stripped = InverseParentRefRegex().Replace(stripped, " ");
+        stripped = InverseBlockerRefRegex().Replace(stripped, " ");
         stripped = ParentRefRegex().Replace(stripped, " ");
         stripped = BlocksRefRegex().Replace(stripped, " ");
 
@@ -138,7 +164,8 @@ public static partial class TaskDescriptionParser
     /// Updates the description to sync metadata changes. Updates existing metadata line or appends new one.
     /// </summary>
     public static string SyncMetadataToDescription(string description, Priority? priority, DateOnly? dueDate, string[]? tags,
-        string? parentId = null, string[]? blocksIds = null)
+        string? parentId = null, string[]? blocksIds = null,
+        string[]? hasSubtaskIds = null, string[]? blockedByIds = null)
     {
         var lines = description.Split('\n').ToList();
         var lastLine = lines[^1];
@@ -148,6 +175,8 @@ public static partial class TaskDescriptionParser
         stripped = PriorityRegex().Replace(stripped, " ");
         stripped = DueDateRegex().Replace(stripped, " ");
         stripped = TagRegex().Replace(stripped, " ");
+        stripped = InverseParentRefRegex().Replace(stripped, " ");
+        stripped = InverseBlockerRefRegex().Replace(stripped, " ");
         stripped = ParentRefRegex().Replace(stripped, " ");
         stripped = BlocksRefRegex().Replace(stripped, " ");
         var hasMetadataLine = string.IsNullOrWhiteSpace(stripped);
@@ -161,6 +190,14 @@ public static partial class TaskDescriptionParser
         if (blocksIds is { Length: > 0 })
         {
             metaParts.AddRange(blocksIds.Select(id => $"!{id}"));
+        }
+        if (hasSubtaskIds is { Length: > 0 })
+        {
+            metaParts.AddRange(hasSubtaskIds.Select(id => $"-^{id}"));
+        }
+        if (blockedByIds is { Length: > 0 })
+        {
+            metaParts.AddRange(blockedByIds.Select(id => $"-!{id}"));
         }
         if (priority.HasValue)
         {
@@ -225,4 +262,12 @@ public static partial class TaskDescriptionParser
     // Match !abc for blocking reference (blocks task)
     [GeneratedRegex(@"(?:^|\s)!(\w{3})(?=\s|$)")]
     private static partial Regex BlocksRefRegex();
+
+    // Match -^abc for inverse parent reference (has subtask)
+    [GeneratedRegex(@"(?:^|\s)-\^(\w{3})(?=\s|$)")]
+    private static partial Regex InverseParentRefRegex();
+
+    // Match -!abc for inverse blocker reference (blocked by)
+    [GeneratedRegex(@"(?:^|\s)-!(\w{3})(?=\s|$)")]
+    private static partial Regex InverseBlockerRefRegex();
 }

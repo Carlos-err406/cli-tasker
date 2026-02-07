@@ -5,6 +5,7 @@ using System.Text.Json;
 using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskerCore.Parsing;
 using TaskStatus = TaskerCore.Models.TaskStatus;
 
 static class GetCommand
@@ -60,13 +61,25 @@ static class GetCommand
 
     private static void OutputJson(TodoTask task, TodoTaskList taskList)
     {
-        var subtasks = taskList.GetSubtasks(task.Id);
-        var blocks = taskList.GetBlocks(task.Id);
-        var blockedBy = taskList.GetBlockedBy(task.Id);
+        var parsed = TaskDescriptionParser.Parse(task.Description);
 
-        TodoTask? parent = null;
-        if (task.ParentId != null)
-            parent = taskList.GetTodoTaskById(task.ParentId);
+        var subtaskObjs = (parsed.HasSubtaskIds ?? []).Select(id =>
+        {
+            var s = taskList.GetTodoTaskById(id);
+            return new { id, description = s != null ? StringHelpers.Truncate(s.Description, 50) : "?" };
+        }).ToArray();
+
+        var blocksObjs = (parsed.BlocksIds ?? []).Select(id =>
+        {
+            var b = taskList.GetTodoTaskById(id);
+            return new { id, description = b != null ? StringHelpers.Truncate(b.Description, 50) : "?" };
+        }).ToArray();
+
+        var blockedByObjs = (parsed.BlockedByIds ?? []).Select(id =>
+        {
+            var b = taskList.GetTodoTaskById(id);
+            return new { id, description = b != null ? StringHelpers.Truncate(b.Description, 50) : "?" };
+        }).ToArray();
 
         var obj = new
         {
@@ -85,10 +98,10 @@ static class GetCommand
             listName = task.ListName,
             createdAt = task.CreatedAt.ToString("o"),
             completedAt = task.CompletedAt?.ToString("o"),
-            parentId = task.ParentId,
-            subtasks = subtasks.Select(s => new { id = s.Id, description = StringHelpers.Truncate(s.Description, 50) }).ToArray(),
-            blocks = blocks.Select(b => new { id = b.Id, description = StringHelpers.Truncate(b.Description, 50) }).ToArray(),
-            blockedBy = blockedBy.Select(b => new { id = b.Id, description = StringHelpers.Truncate(b.Description, 50) }).ToArray()
+            parentId = parsed.ParentId,
+            subtasks = subtaskObjs,
+            blocks = blocksObjs,
+            blockedBy = blockedByObjs
         };
         Console.WriteLine(JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -115,36 +128,47 @@ static class GetCommand
         if (task.CompletedAt.HasValue)
             Output.Markup($"[bold]Completed:[/]   {task.CompletedAt.Value:yyyy-MM-dd HH:mm}");
 
-        // Relationships
-        if (task.ParentId != null)
+        // Relationships (from parsed markers)
+        var parsed = TaskDescriptionParser.Parse(task.Description);
+
+        if (parsed.ParentId != null)
         {
-            var parent = taskList.GetTodoTaskById(task.ParentId);
+            var parent = taskList.GetTodoTaskById(parsed.ParentId);
             var parentDesc = parent != null ? StringHelpers.Truncate(parent.Description, 40) : "?";
-            Output.Markup($"[bold]Parent:[/]      [dim]({task.ParentId}) {Spectre.Console.Markup.Escape(parentDesc)}[/]");
+            Output.Markup($"[bold]Parent:[/]      [dim]({parsed.ParentId}) {Spectre.Console.Markup.Escape(parentDesc)}[/]");
         }
 
-        var subtasks = taskList.GetSubtasks(task.Id);
-        if (subtasks.Count > 0)
+        if (parsed.HasSubtaskIds is { Length: > 0 })
         {
             Output.Markup($"[bold]Subtasks:[/]");
-            foreach (var sub in subtasks)
-                Output.Markup($"               [dim]({sub.Id}) {Spectre.Console.Markup.Escape(StringHelpers.Truncate(sub.Description, 40))}[/]");
+            foreach (var subId in parsed.HasSubtaskIds)
+            {
+                var sub = taskList.GetTodoTaskById(subId);
+                var subDesc = sub != null ? StringHelpers.Truncate(sub.Description, 40) : "?";
+                Output.Markup($"               [dim]({subId}) {Spectre.Console.Markup.Escape(subDesc)}[/]");
+            }
         }
 
-        var blocks = taskList.GetBlocks(task.Id);
-        if (blocks.Count > 0)
+        if (parsed.BlocksIds is { Length: > 0 })
         {
             Output.Markup($"[bold]Blocks:[/]");
-            foreach (var b in blocks)
-                Output.Markup($"               [dim]({b.Id}) {Spectre.Console.Markup.Escape(StringHelpers.Truncate(b.Description, 40))}[/]");
+            foreach (var bId in parsed.BlocksIds)
+            {
+                var b = taskList.GetTodoTaskById(bId);
+                var bDesc = b != null ? StringHelpers.Truncate(b.Description, 40) : "?";
+                Output.Markup($"               [dim]({bId}) {Spectre.Console.Markup.Escape(bDesc)}[/]");
+            }
         }
 
-        var blockedBy = taskList.GetBlockedBy(task.Id);
-        if (blockedBy.Count > 0)
+        if (parsed.BlockedByIds is { Length: > 0 })
         {
             Output.Markup($"[bold]Blocked by:[/]");
-            foreach (var b in blockedBy)
-                Output.Markup($"               [dim]({b.Id}) {Spectre.Console.Markup.Escape(StringHelpers.Truncate(b.Description, 40))}[/]");
+            foreach (var bbId in parsed.BlockedByIds)
+            {
+                var bb = taskList.GetTodoTaskById(bbId);
+                var bbDesc = bb != null ? StringHelpers.Truncate(bb.Description, 40) : "?";
+                Output.Markup($"               [dim]({bbId}) {Spectre.Console.Markup.Escape(bbDesc)}[/]");
+            }
         }
 
         Output.Markup($"[bold]Description:[/]");

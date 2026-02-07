@@ -243,46 +243,54 @@ public partial class TodoTaskViewModel : ObservableObject
     /// </summary>
     public void LoadRelationships(TodoTaskList taskList)
     {
+        var parsed = TaskDescriptionParser.Parse(_task.Description);
+
         // Parent display with title
-        if (_task.ParentId != null)
+        if (parsed.ParentId != null)
         {
-            var parent = taskList.GetTodoTaskById(_task.ParentId);
+            var parent = taskList.GetTodoTaskById(parsed.ParentId);
             var parentTitle = parent != null
                 ? TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0]
                 : "?";
-            ParentDisplay = $"Subtask of ({_task.ParentId}) {parentTitle}";
+            ParentDisplay = $"Subtask of ({parsed.ParentId}) {parentTitle}";
         }
 
-        // Subtasks with id + title
-        var subtasks = taskList.GetSubtasks(_task.Id);
-        if (subtasks.Count > 0)
+        // Subtasks with id + title (from -^abc markers)
+        if (parsed.HasSubtaskIds is { Length: > 0 })
         {
-            SubtasksDisplay = subtasks.Select(s =>
+            SubtasksDisplay = parsed.HasSubtaskIds.Select(subId =>
             {
-                var title = TaskDescriptionParser.GetDisplayDescription(s.Description).Split('\n')[0];
-                return $"Subtask ({s.Id}) {title}";
+                var sub = taskList.GetTodoTaskById(subId);
+                var title = sub != null
+                    ? TaskDescriptionParser.GetDisplayDescription(sub.Description).Split('\n')[0]
+                    : "?";
+                return $"Subtask ({subId}) {title}";
             }).ToArray();
         }
 
-        // Blocks with id + title
-        var blocks = taskList.GetBlocks(_task.Id);
-        if (blocks.Count > 0)
+        // Blocks with id + title (from !abc markers)
+        if (parsed.BlocksIds is { Length: > 0 })
         {
-            BlocksDisplay = blocks.Select(b =>
+            BlocksDisplay = parsed.BlocksIds.Select(bId =>
             {
-                var title = TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0];
-                return $"Blocks ({b.Id}) {title}";
+                var b = taskList.GetTodoTaskById(bId);
+                var title = b != null
+                    ? TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0]
+                    : "?";
+                return $"Blocks ({bId}) {title}";
             }).ToArray();
         }
 
-        // Blocked by with id + title
-        var blockedBy = taskList.GetBlockedBy(_task.Id);
-        if (blockedBy.Count > 0)
+        // Blocked by with id + title (from -!abc markers)
+        if (parsed.BlockedByIds is { Length: > 0 })
         {
-            BlockedByDisplay = blockedBy.Select(b =>
+            BlockedByDisplay = parsed.BlockedByIds.Select(bbId =>
             {
-                var title = TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0];
-                return $"Blocked by ({b.Id}) {title}";
+                var bb = taskList.GetTodoTaskById(bbId);
+                var title = bb != null
+                    ? TaskDescriptionParser.GetDisplayDescription(bb.Description).Split('\n')[0]
+                    : "?";
+                return $"Blocked by ({bbId}) {title}";
             }).ToArray();
         }
     }

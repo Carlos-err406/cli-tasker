@@ -2,6 +2,7 @@ namespace TaskerCore.Tests.Data;
 
 using TaskerCore.Data;
 using TaskerCore.Models;
+using TaskerCore.Parsing;
 using TaskerCore.Results;
 using TaskStatus = TaskerCore.Models.TaskStatus;
 
@@ -725,5 +726,335 @@ public class TaskDependencyTests : IDisposable
         Assert.DoesNotContain(b1.Id, blocks);
         Assert.Contains(b2.Id, blocks);
         Assert.Contains(b3.Id, blocks);
+    }
+
+    // --- Inverse marker preservation on unrelated metadata changes ---
+
+    [Fact]
+    public void SetTaskDueDate_PreservesInverseMarkers()
+    {
+        // Create a task with inverse markers in its description
+        var task = AddTask("parent task");
+        var child = AddTask("child task");
+
+        // Manually set inverse markers on the parent's description
+        var parsed = TaskDescriptionParser.Parse(task.Description);
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            task.Description, null, null, null, hasSubtaskIds: [child.Id]);
+        _taskList.RenameTask(task.Id, synced, recordUndo: false);
+
+        // Now set a due date on the parent
+        _taskList.SetTaskDueDate(task.Id, DateOnly.FromDateTime(DateTime.Today), recordUndo: false);
+
+        // Verify inverse marker is preserved
+        var updated = _taskList.GetTodoTaskById(task.Id)!;
+        var updatedParsed = TaskDescriptionParser.Parse(updated.Description);
+        Assert.NotNull(updatedParsed.HasSubtaskIds);
+        Assert.Contains(child.Id, updatedParsed.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void SetTaskPriority_PreservesInverseMarkers()
+    {
+        var task = AddTask("blocked task");
+        var blocker = AddTask("blocker task");
+
+        // Manually set inverse markers on the blocked task's description
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            task.Description, null, null, null, blockedByIds: [blocker.Id]);
+        _taskList.RenameTask(task.Id, synced, recordUndo: false);
+
+        // Now set priority
+        _taskList.SetTaskPriority(task.Id, Priority.High, recordUndo: false);
+
+        // Verify inverse marker is preserved
+        var updated = _taskList.GetTodoTaskById(task.Id)!;
+        var updatedParsed = TaskDescriptionParser.Parse(updated.Description);
+        Assert.NotNull(updatedParsed.BlockedByIds);
+        Assert.Contains(blocker.Id, updatedParsed.BlockedByIds);
+    }
+
+    // --- Phase 3: Bidirectional sync in relationship operations ---
+
+    [Fact]
+    public void SetParent_AddsInverseMarkerOnParent()
+    {
+        var parent = AddTask("parent task");
+        var child = AddTask("child task");
+
+        _taskList.SetParent(child.Id, parent.Id, recordUndo: false);
+
+        var updatedParent = _taskList.GetTodoTaskById(parent.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedParent.Description);
+        Assert.NotNull(parsed.HasSubtaskIds);
+        Assert.Contains(child.Id, parsed.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void UnsetParent_RemovesInverseMarkerFromParent()
+    {
+        var parent = AddTask("parent task");
+        var child = AddTask("child task");
+
+        _taskList.SetParent(child.Id, parent.Id, recordUndo: false);
+        _taskList.UnsetParent(child.Id, recordUndo: false);
+
+        var updatedParent = _taskList.GetTodoTaskById(parent.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedParent.Description);
+        Assert.Null(parsed.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void SetParent_ChangingParent_MovesInverseMarker()
+    {
+        var oldParent = AddTask("old parent");
+        var newParent = AddTask("new parent");
+        var child = AddTask("child task");
+
+        _taskList.SetParent(child.Id, oldParent.Id, recordUndo: false);
+        _taskList.SetParent(child.Id, newParent.Id, recordUndo: false);
+
+        // Old parent should NOT have the marker
+        var updatedOld = _taskList.GetTodoTaskById(oldParent.Id)!;
+        var parsedOld = TaskDescriptionParser.Parse(updatedOld.Description);
+        Assert.Null(parsedOld.HasSubtaskIds);
+
+        // New parent SHOULD have the marker
+        var updatedNew = _taskList.GetTodoTaskById(newParent.Id)!;
+        var parsedNew = TaskDescriptionParser.Parse(updatedNew.Description);
+        Assert.NotNull(parsedNew.HasSubtaskIds);
+        Assert.Contains(child.Id, parsedNew.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void AddBlocker_AddsInverseMarkerOnBlocked()
+    {
+        var blocker = AddTask("blocker task");
+        var blocked = AddTask("blocked task");
+
+        _taskList.AddBlocker(blocker.Id, blocked.Id, recordUndo: false);
+
+        var updatedBlocked = _taskList.GetTodoTaskById(blocked.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedBlocked.Description);
+        Assert.NotNull(parsed.BlockedByIds);
+        Assert.Contains(blocker.Id, parsed.BlockedByIds);
+    }
+
+    [Fact]
+    public void RemoveBlocker_RemovesInverseMarkerFromBlocked()
+    {
+        var blocker = AddTask("blocker task");
+        var blocked = AddTask("blocked task");
+
+        _taskList.AddBlocker(blocker.Id, blocked.Id, recordUndo: false);
+        _taskList.RemoveBlocker(blocker.Id, blocked.Id, recordUndo: false);
+
+        var updatedBlocked = _taskList.GetTodoTaskById(blocked.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedBlocked.Description);
+        Assert.Null(parsed.BlockedByIds);
+    }
+
+    [Fact]
+    public void SetParent_MultipleChildren_ParentAccumulatesMarkers()
+    {
+        var parent = AddTask("parent task");
+        var child1 = AddTask("child 1");
+        var child2 = AddTask("child 2");
+
+        _taskList.SetParent(child1.Id, parent.Id, recordUndo: false);
+        _taskList.SetParent(child2.Id, parent.Id, recordUndo: false);
+
+        var updatedParent = _taskList.GetTodoTaskById(parent.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedParent.Description);
+        Assert.NotNull(parsed.HasSubtaskIds);
+        Assert.Equal(2, parsed.HasSubtaskIds.Length);
+        Assert.Contains(child1.Id, parsed.HasSubtaskIds);
+        Assert.Contains(child2.Id, parsed.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void AddBlocker_MultipleBlockers_BlockedAccumulatesMarkers()
+    {
+        var blocker1 = AddTask("blocker 1");
+        var blocker2 = AddTask("blocker 2");
+        var blocked = AddTask("blocked task");
+
+        _taskList.AddBlocker(blocker1.Id, blocked.Id, recordUndo: false);
+        _taskList.AddBlocker(blocker2.Id, blocked.Id, recordUndo: false);
+
+        var updatedBlocked = _taskList.GetTodoTaskById(blocked.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedBlocked.Description);
+        Assert.NotNull(parsed.BlockedByIds);
+        Assert.Equal(2, parsed.BlockedByIds.Length);
+        Assert.Contains(blocker1.Id, parsed.BlockedByIds);
+        Assert.Contains(blocker2.Id, parsed.BlockedByIds);
+    }
+
+    // --- Phase 4: Bidirectional sync in Add and Rename ---
+
+    [Fact]
+    public void AddTask_WithParent_SyncsInverseMarkerOnParent()
+    {
+        var parent = AddTask("parent task");
+        var child = TodoTask.CreateTodoTask($"child task\n^{parent.Id}", "tasks");
+        _taskList.AddTodoTask(child, recordUndo: false);
+
+        var updatedParent = _taskList.GetTodoTaskById(parent.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedParent.Description);
+        Assert.NotNull(parsed.HasSubtaskIds);
+        Assert.Contains(child.Id, parsed.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void AddTask_WithBlocker_SyncsInverseMarkerOnBlocked()
+    {
+        var blocked = AddTask("blocked task");
+        var blocker = TodoTask.CreateTodoTask($"blocker task\n!{blocked.Id}", "tasks");
+        _taskList.AddTodoTask(blocker, recordUndo: false);
+
+        var updatedBlocked = _taskList.GetTodoTaskById(blocked.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedBlocked.Description);
+        Assert.NotNull(parsed.BlockedByIds);
+        Assert.Contains(blocker.Id, parsed.BlockedByIds);
+    }
+
+    [Fact]
+    public void AddTask_WithInverseParent_CreatesRelationship()
+    {
+        var subtask = AddTask("subtask");
+        var parent = TodoTask.CreateTodoTask($"parent task\n-^{subtask.Id}", "tasks");
+        _taskList.AddTodoTask(parent, recordUndo: false);
+
+        // Subtask should now have parent set
+        var updatedSubtask = _taskList.GetTodoTaskById(subtask.Id)!;
+        Assert.Equal(parent.Id, updatedSubtask.ParentId);
+
+        // Subtask's description should have ^parentId
+        var parsed = TaskDescriptionParser.Parse(updatedSubtask.Description);
+        Assert.Equal(parent.Id, parsed.ParentId);
+    }
+
+    [Fact]
+    public void AddTask_WithInverseBlocker_CreatesRelationship()
+    {
+        var blocker = AddTask("blocker");
+        var blocked = TodoTask.CreateTodoTask($"blocked task\n-!{blocker.Id}", "tasks");
+        _taskList.AddTodoTask(blocked, recordUndo: false);
+
+        // Dependency should exist: blocker blocks blocked
+        var blockedByIds = _taskList.GetBlockedByIds(blocked.Id);
+        Assert.Contains(blocker.Id, blockedByIds);
+
+        // Blocker's description should have !blockedId
+        var updatedBlocker = _taskList.GetTodoTaskById(blocker.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedBlocker.Description);
+        Assert.NotNull(parsed.BlocksIds);
+        Assert.Contains(blocked.Id, parsed.BlocksIds);
+    }
+
+    [Fact]
+    public void Rename_AddInverseParent_CreatesSubtaskRelationship()
+    {
+        var parent = AddTask("parent task");
+        var subtask = AddTask("subtask");
+
+        _taskList.RenameTask(parent.Id, $"parent task\n-^{subtask.Id}", recordUndo: false);
+
+        var updatedSubtask = _taskList.GetTodoTaskById(subtask.Id)!;
+        Assert.Equal(parent.Id, updatedSubtask.ParentId);
+    }
+
+    [Fact]
+    public void Rename_RemoveInverseParent_ClearsSubtaskRelationship()
+    {
+        var parent = AddTask("parent task");
+        var subtask = AddTask("subtask");
+
+        // First add the relationship
+        _taskList.RenameTask(parent.Id, $"parent task\n-^{subtask.Id}", recordUndo: false);
+        Assert.Equal(parent.Id, _taskList.GetTodoTaskById(subtask.Id)!.ParentId);
+
+        // Now remove the inverse marker
+        _taskList.RenameTask(parent.Id, "parent task\n#tag", recordUndo: false);
+
+        var updatedSubtask = _taskList.GetTodoTaskById(subtask.Id)!;
+        Assert.Null(updatedSubtask.ParentId);
+    }
+
+    [Fact]
+    public void Rename_AddForwardParent_SyncsInverseOnParent()
+    {
+        var parent = AddTask("parent task");
+        var child = AddTask("child task");
+
+        _taskList.RenameTask(child.Id, $"child task\n^{parent.Id}", recordUndo: false);
+
+        var updatedParent = _taskList.GetTodoTaskById(parent.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedParent.Description);
+        Assert.NotNull(parsed.HasSubtaskIds);
+        Assert.Contains(child.Id, parsed.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void Rename_RemoveForwardParent_RemovesInverseFromParent()
+    {
+        var parent = AddTask("parent task");
+        var child = AddTask("child task");
+
+        // Set parent
+        _taskList.RenameTask(child.Id, $"child task\n^{parent.Id}", recordUndo: false);
+
+        // Remove parent
+        _taskList.RenameTask(child.Id, "child task\n#tag", recordUndo: false);
+
+        var updatedParent = _taskList.GetTodoTaskById(parent.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedParent.Description);
+        Assert.Null(parsed.HasSubtaskIds);
+    }
+
+    [Fact]
+    public void Rename_AddForwardBlocker_SyncsInverseOnBlocked()
+    {
+        var blocker = AddTask("blocker task");
+        var blocked = AddTask("blocked task");
+
+        _taskList.RenameTask(blocker.Id, $"blocker task\n!{blocked.Id}", recordUndo: false);
+
+        var updatedBlocked = _taskList.GetTodoTaskById(blocked.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedBlocked.Description);
+        Assert.NotNull(parsed.BlockedByIds);
+        Assert.Contains(blocker.Id, parsed.BlockedByIds);
+    }
+
+    [Fact]
+    public void Rename_RemoveForwardBlocker_RemovesInverseFromBlocked()
+    {
+        var blocker = AddTask("blocker task");
+        var blocked = AddTask("blocked task");
+
+        // Add blocker
+        _taskList.RenameTask(blocker.Id, $"blocker task\n!{blocked.Id}", recordUndo: false);
+
+        // Remove blocker
+        _taskList.RenameTask(blocker.Id, "blocker task\n#tag", recordUndo: false);
+
+        var updatedBlocked = _taskList.GetTodoTaskById(blocked.Id)!;
+        var parsed = TaskDescriptionParser.Parse(updatedBlocked.Description);
+        Assert.Null(parsed.BlockedByIds);
+    }
+
+    [Fact]
+    public void AddTask_WithInverseParent_SelfReference_ShowsWarning()
+    {
+        // Create a task that references itself as subtask
+        var task = TodoTask.CreateTodoTask("self ref task", "tasks");
+        // We can't easily create a self-referencing task inline since the ID isn't known until creation,
+        // but we can test via rename
+        _taskList.AddTodoTask(task, recordUndo: false);
+        _taskList.RenameTask(task.Id, $"self ref task\n-^{task.Id}", recordUndo: false);
+
+        // The task should NOT have itself as parent
+        var updated = _taskList.GetTodoTaskById(task.Id)!;
+        Assert.NotEqual(task.Id, updated.ParentId);
     }
 }

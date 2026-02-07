@@ -138,35 +138,52 @@ static class ListCommand
             var tags = Output.FormatTags(td.Tags);
             Output.Markup($"{taskId} {priority} {checkbox} {firstLine}{dueDate}{tags}{restLines}");
 
-            // Relationship indicators
-            if (td.ParentId != null)
+            // Relationship indicators (read from parsed markers, titles from DB)
+            var parsed = TaskDescriptionParser.Parse(td.Description);
+
+            if (parsed.ParentId != null)
             {
-                var parent = taskList.GetTodoTaskById(td.ParentId);
+                var parent = taskList.GetTodoTaskById(parsed.ParentId);
                 var parentTitle = parent != null
                     ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0], 40))
                     : "?";
-                Output.Markup($"{indent}[dim]↑ Subtask of ({td.ParentId}) {parentTitle}[/]");
+                Output.Markup($"{indent}[dim]↑ Subtask of ({parsed.ParentId}) {parentTitle}[/]");
             }
 
-            var subtasks = taskList.GetSubtasks(td.Id);
-            foreach (var sub in subtasks)
+            if (parsed.HasSubtaskIds != null)
             {
-                var subTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(sub.Description).Split('\n')[0], 40));
-                Output.Markup($"{indent}[dim]↳ Subtask ({sub.Id}) {subTitle}[/]");
+                foreach (var subId in parsed.HasSubtaskIds)
+                {
+                    var sub = taskList.GetTodoTaskById(subId);
+                    var subTitle = sub != null
+                        ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(sub.Description).Split('\n')[0], 40))
+                        : "?";
+                    Output.Markup($"{indent}[dim]↳ Subtask ({subId}) {subTitle}[/]");
+                }
             }
 
-            var blocks = taskList.GetBlocks(td.Id);
-            foreach (var b in blocks)
+            if (parsed.BlocksIds != null)
             {
-                var bTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0], 40));
-                Output.Markup($"{indent}[yellow dim]⊘ Blocks ({b.Id}) {bTitle}[/]");
+                foreach (var bId in parsed.BlocksIds)
+                {
+                    var b = taskList.GetTodoTaskById(bId);
+                    var bTitle = b != null
+                        ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0], 40))
+                        : "?";
+                    Output.Markup($"{indent}[yellow dim]⊘ Blocks ({bId}) {bTitle}[/]");
+                }
             }
 
-            var blockedBy = taskList.GetBlockedBy(td.Id);
-            foreach (var bb in blockedBy)
+            if (parsed.BlockedByIds != null)
             {
-                var bbTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(bb.Description).Split('\n')[0], 40));
-                Output.Markup($"{indent}[yellow dim]⊘ Blocked by ({bb.Id}) {bbTitle}[/]");
+                foreach (var bbId in parsed.BlockedByIds)
+                {
+                    var bb = taskList.GetTodoTaskById(bbId);
+                    var bbTitle = bb != null
+                        ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(bb.Description).Split('\n')[0], 40))
+                        : "?";
+                    Output.Markup($"{indent}[yellow dim]⊘ Blocked by ({bbId}) {bbTitle}[/]");
+                }
             }
         }
     }
