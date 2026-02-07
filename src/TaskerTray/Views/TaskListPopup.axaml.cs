@@ -761,9 +761,9 @@ public partial class TaskListPopup : Window
 
         var submitted = false;  // Local flag to prevent double submission
 
-        textBox.KeyDown += (_, e) =>
+        textBox.AddHandler(KeyDownEvent, (_, e) =>
         {
-            if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
             {
                 e.Handled = true;
                 if (!submitted)
@@ -779,7 +779,7 @@ public partial class TaskListPopup : Window
                 CancelInlineEdit();
                 BuildTaskList();
             }
-        };
+        }, RoutingStrategies.Tunnel);
 
         // Capture current show count to detect stale events
         var capturedShowCount = _showCount;
@@ -842,9 +842,9 @@ public partial class TaskListPopup : Window
             TextWrapping = TextWrapping.Wrap
         };
 
-        textBox.KeyDown += (_, e) =>
+        textBox.AddHandler(KeyDownEvent, (_, e) =>
         {
-            if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
             {
                 e.Handled = true;
                 SubmitInlineEdit(task.Id, textBox.Text);
@@ -855,7 +855,7 @@ public partial class TaskListPopup : Window
                 CancelInlineEdit();
                 BuildTaskList();
             }
-        };
+        }, RoutingStrategies.Tunnel);
 
         textBox.LostFocus += (_, _) =>
         {
