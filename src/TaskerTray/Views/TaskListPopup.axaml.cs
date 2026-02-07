@@ -295,6 +295,7 @@ public partial class TaskListPopup : Window
         _taskCheckboxes.Clear();
         _taskTitles.Clear();
         _listTaskPanels.Clear();
+        _listChevronButtons.Clear();
 
         // Show create list input at top if active
         if (_creatingNewList)
@@ -504,9 +505,10 @@ public partial class TaskListPopup : Window
                 chevronBtn.Classes.Add("collapsed");
             }
             ToolTip.SetTip(chevronBtn, isCollapsed ? "Expand list" : "Collapse list");
-            chevronBtn.Click += (_, _) => OnToggleListCollapsed(listName, !isCollapsed);
+            chevronBtn.Click += (_, _) => OnToggleListCollapsed(listName);
             Grid.SetColumn(chevronBtn, colOffset);
             headerPanel.Children.Add(chevronBtn);
+            _listChevronButtons[listName] = chevronBtn;
         }
 
         // List name + summary
@@ -603,10 +605,41 @@ public partial class TaskListPopup : Window
         TaskListPanel.Children.Add(headerBorder);
     }
 
-    private void OnToggleListCollapsed(string listName, bool collapsed)
+    private void OnToggleListCollapsed(string listName)
     {
-        TodoTaskList.SetListCollapsed(listName, collapsed);
-        BuildTaskList();
+        // Read current state from the element, not a captured boolean
+        var isCurrentlyCollapsed = _listTaskPanels.TryGetValue(listName, out var panel)
+            && panel.Classes.Contains("collapsed");
+        var newCollapsed = !isCurrentlyCollapsed;
+
+        TodoTaskList.SetListCollapsed(listName, newCollapsed);
+
+        // Cancel any active inline edit/add inside this list before collapsing
+        if (newCollapsed && (_addingToList == listName || _renamingList == listName))
+        {
+            CancelInlineEdit();
+            BuildTaskList();
+            return;
+        }
+
+        // Toggle classes in-place (triggers XAML transitions)
+        if (panel != null)
+        {
+            if (newCollapsed)
+                panel.Classes.Add("collapsed");
+            else
+                panel.Classes.Remove("collapsed");
+        }
+
+        if (_listChevronButtons.TryGetValue(listName, out var chevron))
+        {
+            if (newCollapsed)
+                chevron.Classes.Add("collapsed");
+            else
+                chevron.Classes.Remove("collapsed");
+
+            ToolTip.SetTip(chevron, newCollapsed ? "Expand list" : "Collapse list");
+        }
     }
 
     private void OnDeleteListClicked(string listName)
@@ -1748,6 +1781,7 @@ public partial class TaskListPopup : Window
 
     // Map list names to their task panels for drop targeting
     private Dictionary<string, StackPanel> _listTaskPanels = new();
+    private Dictionary<string, Button> _listChevronButtons = new();
 
     // Canvas overlay for drag ghost (stored reference since FindControl doesn't work for dynamic controls)
     private Canvas? _dragCanvas;
