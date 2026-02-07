@@ -2,6 +2,7 @@ namespace cli_tasker;
 
 using System.CommandLine;
 using Spectre.Console;
+using TaskerCore;
 using TaskerCore.Config;
 using TaskerCore.Data;
 using TaskerCore.Models;
@@ -133,6 +134,12 @@ static class ListCommand
             var dueDate = Output.FormatDueDate(td.DueDate);
             var tags = Output.FormatTags(td.Tags);
             Output.Markup($"{taskId} {priority} {checkbox} {firstLine}{dueDate}{tags}{restLines}");
+
+            // Relationship indicators
+            if (td.ParentId != null)
+            {
+                Output.Markup($"{indent}[dim]^ subtask of ({td.ParentId})[/]");
+            }
         }
     }
 }

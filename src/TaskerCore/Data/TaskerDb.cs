@@ -80,7 +80,15 @@ public sealed class TaskerDb : IDisposable
                 tags TEXT,
                 is_trashed INTEGER DEFAULT 0,
                 sort_order INTEGER DEFAULT 0,
-                completed_at TEXT
+                completed_at TEXT,
+                parent_id TEXT REFERENCES tasks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS task_dependencies (
+                task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                blocks_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                PRIMARY KEY (task_id, blocks_task_id),
+                CHECK (task_id != blocks_task_id)
             );
 
             CREATE TABLE IF NOT EXISTS config (
@@ -107,6 +115,9 @@ public sealed class TaskerDb : IDisposable
 
         // Add completed_at column if upgrading from older schema
         MigrateAddCompletedAt();
+
+        // Add parent_id column and task_dependencies table
+        MigrateAddDependencies();
 
         // Ensure default list exists
         EnsureDefaultList();
@@ -187,6 +198,34 @@ public sealed class TaskerDb : IDisposable
         Execute("ALTER TABLE tasks ADD COLUMN completed_at TEXT");
         Execute("UPDATE tasks SET completed_at = created_at WHERE status = 2");
         Execute("DELETE FROM undo_history");
+    }
+
+    private void MigrateAddDependencies()
+    {
+        var hasParentId = Query(
+            "PRAGMA table_info(tasks)",
+            reader => reader.GetString(1),
+            []).Any(col => col == "parent_id");
+
+        if (!hasParentId)
+        {
+            Execute("ALTER TABLE tasks ADD COLUMN parent_id TEXT REFERENCES tasks(id) ON DELETE CASCADE");
+
+            Execute("""
+                CREATE TABLE IF NOT EXISTS task_dependencies (
+                    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    blocks_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    PRIMARY KEY (task_id, blocks_task_id),
+                    CHECK (task_id != blocks_task_id)
+                )
+                """);
+
+            // Clear undo history — old serialized commands lack ParentId field
+            Execute("DELETE FROM undo_history");
+        }
+
+        // Always ensure index exists (safe for both fresh and migrated databases)
+        Execute("CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id)");
     }
 
     private void EnsureDefaultList()

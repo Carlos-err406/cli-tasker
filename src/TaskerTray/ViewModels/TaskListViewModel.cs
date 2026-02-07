@@ -58,11 +58,13 @@ public partial class TaskListViewModel : ObservableObject
         TotalCount = sortedTasks.Count;
         UncheckedCount = sortedTasks.Count(t => t.Status != TaskStatus.Done);
 
-        // Convert to ViewModels
+        // Convert to ViewModels and load relationships
         Tasks.Clear();
         foreach (var task in sortedTasks)
         {
-            Tasks.Add(new TodoTaskViewModel(task, OnTaskChanged));
+            var vm = new TodoTaskViewModel(task, OnTaskChanged);
+            vm.LoadRelationships(taskList);
+            Tasks.Add(vm);
         }
     }
 

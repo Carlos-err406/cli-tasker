@@ -16,6 +16,9 @@ using TaskerCore.Undo.Commands;
 [JsonDerivedType(typeof(ReorderTaskCommand), "reorderTask")]
 [JsonDerivedType(typeof(ReorderListCommand), "reorderList")]
 [JsonDerivedType(typeof(DeleteListCommand), "deleteList")]
+[JsonDerivedType(typeof(SetParentCommand), "set-parent")]
+[JsonDerivedType(typeof(AddBlockerCommand), "add-blocker")]
+[JsonDerivedType(typeof(RemoveBlockerCommand), "remove-blocker")]
 public interface IUndoableCommand
 {
     string Description { get; }

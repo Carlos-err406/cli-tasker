@@ -2,6 +2,7 @@ namespace cli_tasker;
 
 using System.CommandLine;
 using System.Text.Json;
+using TaskerCore;
 using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskStatus = TaskerCore.Models.TaskStatus;
@@ -46,19 +47,27 @@ static class GetCommand
 
             if (asJson)
             {
-                OutputJson(task);
+                OutputJson(task, taskList);
             }
             else
             {
-                OutputHumanReadable(task);
+                OutputHumanReadable(task, taskList);
             }
         }));
 
         return getCommand;
     }
 
-    private static void OutputJson(TodoTask task)
+    private static void OutputJson(TodoTask task, TodoTaskList taskList)
     {
+        var subtasks = taskList.GetSubtasks(task.Id);
+        var blocks = taskList.GetBlocks(task.Id);
+        var blockedBy = taskList.GetBlockedBy(task.Id);
+
+        TodoTask? parent = null;
+        if (task.ParentId != null)
+            parent = taskList.GetTodoTaskById(task.ParentId);
+
         var obj = new
         {
             id = task.Id,
@@ -75,12 +84,16 @@ static class GetCommand
             tags = task.Tags,
             listName = task.ListName,
             createdAt = task.CreatedAt.ToString("o"),
-            completedAt = task.CompletedAt?.ToString("o")
+            completedAt = task.CompletedAt?.ToString("o"),
+            parentId = task.ParentId,
+            subtasks = subtasks.Select(s => new { id = s.Id, description = StringHelpers.Truncate(s.Description, 50) }).ToArray(),
+            blocks = blocks.Select(b => new { id = b.Id, description = StringHelpers.Truncate(b.Description, 50) }).ToArray(),
+            blockedBy = blockedBy.Select(b => new { id = b.Id, description = StringHelpers.Truncate(b.Description, 50) }).ToArray()
         };
         Console.WriteLine(JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private static void OutputHumanReadable(TodoTask task)
+    private static void OutputHumanReadable(TodoTask task, TodoTaskList taskList)
     {
         var checkbox = task.Status switch
         {
@@ -101,6 +114,39 @@ static class GetCommand
         Output.Markup($"[bold]Created:[/]     {task.CreatedAt:yyyy-MM-dd HH:mm}");
         if (task.CompletedAt.HasValue)
             Output.Markup($"[bold]Completed:[/]   {task.CompletedAt.Value:yyyy-MM-dd HH:mm}");
+
+        // Relationships
+        if (task.ParentId != null)
+        {
+            var parent = taskList.GetTodoTaskById(task.ParentId);
+            var parentDesc = parent != null ? StringHelpers.Truncate(parent.Description, 40) : "?";
+            Output.Markup($"[bold]Parent:[/]      [dim]({task.ParentId}) {Spectre.Console.Markup.Escape(parentDesc)}[/]");
+        }
+
+        var subtasks = taskList.GetSubtasks(task.Id);
+        if (subtasks.Count > 0)
+        {
+            Output.Markup($"[bold]Subtasks:[/]");
+            foreach (var sub in subtasks)
+                Output.Markup($"               [dim]({sub.Id}) {Spectre.Console.Markup.Escape(StringHelpers.Truncate(sub.Description, 40))}[/]");
+        }
+
+        var blocks = taskList.GetBlocks(task.Id);
+        if (blocks.Count > 0)
+        {
+            Output.Markup($"[bold]Blocks:[/]");
+            foreach (var b in blocks)
+                Output.Markup($"               [dim]({b.Id}) {Spectre.Console.Markup.Escape(StringHelpers.Truncate(b.Description, 40))}[/]");
+        }
+
+        var blockedBy = taskList.GetBlockedBy(task.Id);
+        if (blockedBy.Count > 0)
+        {
+            Output.Markup($"[bold]Blocked by:[/]");
+            foreach (var b in blockedBy)
+                Output.Markup($"               [dim]({b.Id}) {Spectre.Console.Markup.Escape(StringHelpers.Truncate(b.Description, 40))}[/]");
+        }
+
         Output.Markup($"[bold]Description:[/]");
         Console.WriteLine(task.Description);
     }

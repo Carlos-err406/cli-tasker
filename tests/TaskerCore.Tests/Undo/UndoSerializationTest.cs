@@ -196,4 +196,92 @@ public class UndoSerializationTest
         Assert.IsType<DeleteTaskCommand>(restored.UndoStack[1]);
         Assert.IsType<RenameListCommand>(restored.UndoStack[2]);
     }
+
+    [Fact]
+    public void SetParentCommand_SerializesAndDeserializes()
+    {
+        var cmd = new SetParentCommand
+        {
+            TaskId = "abc",
+            OldParentId = null,
+            NewParentId = "def"
+        };
+
+        var json = JsonSerializer.Serialize<IUndoableCommand>(cmd, GetJsonOptions());
+        Assert.Contains("\"$type\": \"set-parent\"", json);
+
+        var deserialized = JsonSerializer.Deserialize<IUndoableCommand>(json, GetJsonOptions());
+        Assert.NotNull(deserialized);
+        Assert.IsType<SetParentCommand>(deserialized);
+
+        var restored = (SetParentCommand)deserialized;
+        Assert.Equal("abc", restored.TaskId);
+        Assert.Null(restored.OldParentId);
+        Assert.Equal("def", restored.NewParentId);
+    }
+
+    [Fact]
+    public void AddBlockerCommand_SerializesAndDeserializes()
+    {
+        var cmd = new AddBlockerCommand
+        {
+            BlockerId = "abc",
+            BlockedId = "def"
+        };
+
+        var json = JsonSerializer.Serialize<IUndoableCommand>(cmd, GetJsonOptions());
+        Assert.Contains("\"$type\": \"add-blocker\"", json);
+
+        var deserialized = JsonSerializer.Deserialize<IUndoableCommand>(json, GetJsonOptions());
+        Assert.NotNull(deserialized);
+        Assert.IsType<AddBlockerCommand>(deserialized);
+
+        var restored = (AddBlockerCommand)deserialized;
+        Assert.Equal("abc", restored.BlockerId);
+        Assert.Equal("def", restored.BlockedId);
+    }
+
+    [Fact]
+    public void RemoveBlockerCommand_SerializesAndDeserializes()
+    {
+        var cmd = new RemoveBlockerCommand
+        {
+            BlockerId = "abc",
+            BlockedId = "def"
+        };
+
+        var json = JsonSerializer.Serialize<IUndoableCommand>(cmd, GetJsonOptions());
+        Assert.Contains("\"$type\": \"remove-blocker\"", json);
+
+        var deserialized = JsonSerializer.Deserialize<IUndoableCommand>(json, GetJsonOptions());
+        Assert.NotNull(deserialized);
+        Assert.IsType<RemoveBlockerCommand>(deserialized);
+
+        var restored = (RemoveBlockerCommand)deserialized;
+        Assert.Equal("abc", restored.BlockerId);
+        Assert.Equal("def", restored.BlockedId);
+    }
+
+    [Fact]
+    public void CompositeWithDependencyCommands_SerializesAndDeserializes()
+    {
+        var setParent = new SetParentCommand { TaskId = "abc", OldParentId = null, NewParentId = "def" };
+        var addBlocker = new AddBlockerCommand { BlockerId = "ghi", BlockedId = "jkl" };
+        var composite = new CompositeCommand
+        {
+            BatchDescription = "Dependency batch",
+            Commands = [setParent, addBlocker]
+        };
+
+        var json = JsonSerializer.Serialize<IUndoableCommand>(composite, GetJsonOptions());
+        var deserialized = JsonSerializer.Deserialize<IUndoableCommand>(json, GetJsonOptions());
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<CompositeCommand>(deserialized);
+
+        var restored = (CompositeCommand)deserialized;
+        Assert.Equal(2, restored.Commands.Count);
+        Assert.IsType<SetParentCommand>(restored.Commands[0]);
+        Assert.IsType<AddBlockerCommand>(restored.Commands[1]);
+    }
 }

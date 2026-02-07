@@ -74,6 +74,10 @@ public class TuiKeyHandler
                 var listName = state.CurrentList ?? ListManager.DefaultListName;
                 return state.StartInputAdd(listName);
 
+            // Add subtask (inline with ^parentId pre-filled)
+            case ConsoleKey.S:
+                return StartAddSubtask(state, tasks);
+
             // Switch list
             case ConsoleKey.L:
                 return StartSwitchList(state);
@@ -453,8 +457,12 @@ public class TuiKeyHandler
                 task = task.SetTags(parsed.Tags);
 
             var taskList = new TodoTaskList(state.CurrentList);
-            taskList.AddTodoTask(task);
+            var result = taskList.AddTodoTask(task);
             _app.InvalidateCache();
+
+            var statusMsg = result.Warnings.Count > 0
+                ? $"Added ({result.Warnings[0]})"
+                : "Added";
 
             return (state with
             {
@@ -462,7 +470,7 @@ public class TuiKeyHandler
                 InputBuffer = "",
                 InputCursor = 0,
                 CursorIndex = 0
-            }).WithStatusMessage("Added");
+            }).WithStatusMessage(statusMsg);
         }
 
         return state.CancelInput();
@@ -485,18 +493,23 @@ public class TuiKeyHandler
             _ => TaskStatus.Pending
         };
 
-        taskList.SetStatus(task.Id, nextStatus);
+        var result = taskList.SetStatus(task.Id, nextStatus);
 
         // Update cached task in-place so the list doesn't re-sort
         _app.UpdateCachedTask(state.CursorIndex, task.WithStatus(nextStatus));
 
-        var label = nextStatus switch
-        {
-            TaskStatus.Pending => "Pending",
-            TaskStatus.InProgress => "In-progress",
-            TaskStatus.Done => "Done",
-            _ => nextStatus.ToString()
-        };
+        var label = result is TaskerCore.Results.TaskResult.Success success
+            ? success.Message
+            : nextStatus switch
+            {
+                TaskStatus.Pending => "Pending",
+                TaskStatus.InProgress => "In-progress",
+                TaskStatus.Done => "Done",
+                _ => nextStatus.ToString()
+            };
+        // If cascade affected descendants, invalidate cache since subtask statuses changed
+        if (label.Contains("subtask"))
+            _app.InvalidateCache();
         return state.WithStatusMessage(label);
     }
 
@@ -507,11 +520,12 @@ public class TuiKeyHandler
 
         var task = tasks[state.CursorIndex];
         var taskList = new TodoTaskList(state.CurrentList);
-        taskList.DeleteTask(task.Id);
+        var result = taskList.DeleteTask(task.Id);
         _app.InvalidateCache();
 
+        var msg = result is TaskerCore.Results.TaskResult.Success success ? success.Message : "Deleted";
         var newIndex = Math.Min(state.CursorIndex, Math.Max(0, tasks.Count - 2));
-        return state.WithStatusMessage("Deleted") with { CursorIndex = newIndex };
+        return state.WithStatusMessage(msg) with { CursorIndex = newIndex };
     }
 
     private static TuiState StartSwitchList(TuiState state)
@@ -520,6 +534,24 @@ public class TuiKeyHandler
         lists.Insert(0, "<All Lists>");
         var current = state.CurrentList ?? "<All Lists>";
         return state.StartSelectList(current, lists.ToArray());
+    }
+
+    private static TuiState StartAddSubtask(TuiState state, IReadOnlyList<TodoTask> tasks)
+    {
+        if (tasks.Count == 0 || state.CursorIndex >= tasks.Count)
+            return state;
+
+        var parentTask = tasks[state.CursorIndex];
+        var listName = parentTask.ListName;
+        // Pre-fill input with newline + ^parentId so it becomes metadata line
+        var prefill = $"\n^{parentTask.Id}";
+        return state with
+        {
+            Mode = TuiMode.InputAdd,
+            InputBuffer = prefill,
+            InputCursor = 0, // cursor at start so user types task description first
+            StatusMessage = $"New subtask of ({parentTask.Id}) in: {listName} (Esc to cancel)"
+        };
     }
 
     private static TuiState StartMoveTask(TuiState state, IReadOnlyList<TodoTask> tasks)

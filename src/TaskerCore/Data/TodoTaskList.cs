@@ -51,6 +51,8 @@ public class TodoTaskList
         var completedAtStr = reader.IsDBNull(8) ? null : reader.GetString(8);
         DateTime? completedAt = completedAtStr != null ? DateTime.Parse(completedAtStr) : null;
 
+        var parentId = reader.IsDBNull(9) ? null : reader.GetString(9);
+
         return new TodoTask(
             Id: reader.GetString(0),
             Description: reader.GetString(1),
@@ -60,12 +62,13 @@ public class TodoTaskList
             DueDate: dueDate,
             Priority: priority,
             Tags: tags is { Length: > 0 } ? tags : null,
-            CompletedAt: completedAt
+            CompletedAt: completedAt,
+            ParentId: parentId
         );
     }
 
     private static string TaskSelectColumns =>
-        "id, description, status, created_at, list_name, due_date, priority, tags, completed_at";
+        "id, description, status, created_at, list_name, due_date, priority, tags, completed_at, parent_id";
 
     // --- Query helpers ---
 
@@ -182,8 +185,8 @@ public class TodoTaskList
             : null;
 
         _db.Execute("""
-            INSERT INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at)
-            VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, @trashed, @order, @completed)
+            INSERT INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at, parent_id)
+            VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, @trashed, @order, @completed, @parent)
             """,
             ("@id", task.Id),
             ("@desc", task.Description),
@@ -195,7 +198,8 @@ public class TodoTaskList
             ("@tags", (object?)tagsJson ?? DBNull.Value),
             ("@trashed", isTrashed ? 1 : 0),
             ("@order", maxOrder + 1),
-            ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
+            ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value),
+            ("@parent", (object?)task.ParentId ?? DBNull.Value));
     }
 
     private void UpdateTask(TodoTask task)
@@ -206,7 +210,8 @@ public class TodoTaskList
 
         _db.Execute("""
             UPDATE tasks SET description = @desc, status = @status, list_name = @list,
-                due_date = @due, priority = @priority, tags = @tags, completed_at = @completed
+                due_date = @due, priority = @priority, tags = @tags, completed_at = @completed,
+                parent_id = @parent
             WHERE id = @id
             """,
             ("@id", task.Id),
@@ -216,7 +221,8 @@ public class TodoTaskList
             ("@due", (object?)task.DueDate?.ToString("yyyy-MM-dd") ?? DBNull.Value),
             ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
             ("@tags", (object?)tagsJson ?? DBNull.Value),
-            ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
+            ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value),
+            ("@parent", (object?)task.ParentId ?? DBNull.Value));
     }
 
     private void DeleteTaskById(string taskId)
@@ -232,24 +238,75 @@ public class TodoTaskList
 
     // --- Public operations ---
 
-    public void AddTodoTask(TodoTask todoTask, bool recordUndo = true)
+    public record AddResult(TodoTask Task, List<string> Warnings);
+
+    public AddResult AddTodoTask(TodoTask todoTask, bool recordUndo = true)
     {
+        var warnings = new List<string>();
+        var parsed = TaskDescriptionParser.Parse(todoTask.Description);
+        var task = todoTask;
+
+        // Validate parent reference
+        if (task.ParentId != null)
+        {
+            var parent = GetTodoTaskById(task.ParentId);
+            if (parent == null)
+            {
+                warnings.Add($"Parent task ({task.ParentId}) not found, created as top-level task");
+                task = task.ClearParent();
+            }
+            else if (task.ListName != parent.ListName)
+            {
+                // Override list to match parent
+                warnings.Add($"Subtask moved to list '{parent.ListName}' to match parent ({task.ParentId})");
+                task = task with { ListName = parent.ListName };
+            }
+        }
+
         if (recordUndo)
         {
-            var cmd = new AddTaskCommand { Task = todoTask };
+            var cmd = new AddTaskCommand { Task = task };
             _services.Undo.RecordCommand(cmd);
         }
 
         // Ensure the list exists
-        EnsureListExists(todoTask.ListName);
+        EnsureListExists(task.ListName);
 
         CreateBackup();
-        InsertTask(todoTask);
+        InsertTask(task);
+
+        // Process blocking references
+        if (parsed.BlocksIds is { Length: > 0 })
+        {
+            foreach (var blockedId in parsed.BlocksIds)
+            {
+                var blocked = GetTodoTaskById(blockedId);
+                if (blocked == null)
+                {
+                    warnings.Add($"Blocked task ({blockedId}) not found, skipping blocker relationship");
+                    continue;
+                }
+                if (blockedId == task.Id)
+                {
+                    warnings.Add("A task cannot block itself, skipping");
+                    continue;
+                }
+                if (HasCircularBlocking(task.Id, blockedId))
+                {
+                    warnings.Add($"Circular dependency with ({blockedId}), skipping blocker relationship");
+                    continue;
+                }
+                _db.Execute("INSERT INTO task_dependencies (task_id, blocks_task_id) VALUES (@blocker, @blocked)",
+                    ("@blocker", task.Id), ("@blocked", blockedId));
+            }
+        }
 
         if (recordUndo)
         {
             _services.Undo.SaveHistory();
         }
+
+        return new AddResult(task, warnings);
     }
 
     private void EnsureListExists(string listName)
@@ -278,27 +335,65 @@ public class TodoTaskList
             return new TaskResult.NoChange($"Task {taskId} is already {StatusLabel(status)}");
         }
 
+        // Cascade-check: when marking a parent as Done, also mark all non-Done descendants
+        var cascadeIds = new List<string>();
+        if (status == TaskStatus.Done)
+        {
+            var descendantIds = GetAllDescendantIds(taskId);
+            foreach (var descId in descendantIds)
+            {
+                var desc = GetTodoTaskById(descId);
+                if (desc != null && desc.Status != TaskStatus.Done)
+                    cascadeIds.Add(descId);
+            }
+        }
+
+        var hasCascade = cascadeIds.Count > 0;
+
         if (recordUndo)
         {
-            var cmd = new SetStatusCommand
+            if (hasCascade) _services.Undo.BeginBatch($"Set {taskId} and {cascadeIds.Count} subtask(s) to {StatusLabel(status)}");
+
+            _services.Undo.RecordCommand(new SetStatusCommand
             {
                 TaskId = taskId,
                 OldStatus = todoTask.Status,
                 NewStatus = status
-            };
-            _services.Undo.RecordCommand(cmd);
+            });
+
+            foreach (var descId in cascadeIds)
+            {
+                var desc = GetTodoTaskById(descId)!;
+                _services.Undo.RecordCommand(new SetStatusCommand
+                {
+                    TaskId = descId,
+                    OldStatus = desc.Status,
+                    NewStatus = status
+                });
+            }
         }
 
         CreateBackup();
         var updatedTask = todoTask.WithStatus(status);
         UpdateTask(updatedTask);
 
+        // Apply cascade
+        foreach (var descId in cascadeIds)
+        {
+            var desc = GetTodoTaskById(descId)!;
+            UpdateTask(desc.WithStatus(status));
+        }
+
         if (recordUndo)
         {
+            if (hasCascade) _services.Undo.EndBatch();
             _services.Undo.SaveHistory();
         }
 
-        return new TaskResult.Success($"Set {taskId} to {StatusLabel(status)}");
+        var msg = hasCascade
+            ? $"Set {taskId} and {cascadeIds.Count} subtask(s) to {StatusLabel(status)}"
+            : $"Set {taskId} to {StatusLabel(status)}";
+        return new TaskResult.Success(msg);
     }
 
     /// <summary>
@@ -341,10 +436,23 @@ public class TodoTaskList
             return new TaskResult.NotFound(taskId);
         }
 
+        // Collect descendants for cascade trash
+        var descendantIds = moveToTrash ? GetAllDescendantIds(taskId) : [];
+        var hasCascade = descendantIds.Count > 0;
+
         if (recordUndo && moveToTrash)
         {
+            if (hasCascade) _services.Undo.BeginBatch($"Delete ({taskId}) and {descendantIds.Count} subtask(s)");
             var cmd = new DeleteTaskCommand { DeletedTask = task };
             _services.Undo.RecordCommand(cmd);
+
+            // Record each descendant for undo
+            foreach (var descId in descendantIds)
+            {
+                var descTask = GetTodoTaskById(descId);
+                if (descTask != null)
+                    _services.Undo.RecordCommand(new DeleteTaskCommand { DeletedTask = descTask });
+            }
         }
 
         if (save)
@@ -352,21 +460,26 @@ public class TodoTaskList
 
         if (moveToTrash)
         {
-            // Set is_trashed flag
+            // Set is_trashed flag on task and all descendants
             _db.Execute("UPDATE tasks SET is_trashed = 1 WHERE id = @id", ("@id", taskId));
+            foreach (var descId in descendantIds)
+                _db.Execute("UPDATE tasks SET is_trashed = 1 WHERE id = @id", ("@id", descId));
         }
         else
         {
-            // Actually delete (used internally by check/uncheck re-insertion — not needed with SQLite update approach)
             DeleteTaskById(taskId);
         }
 
         if (save && recordUndo && moveToTrash)
         {
+            if (hasCascade) _services.Undo.EndBatch();
             _services.Undo.SaveHistory();
         }
 
-        return new TaskResult.Success($"Deleted task: {taskId}");
+        var msg = hasCascade
+            ? $"Deleted task ({taskId}) and {descendantIds.Count} subtask(s)"
+            : $"Deleted task: {taskId}";
+        return new TaskResult.Success(msg);
     }
 
     public BatchTaskResult DeleteTasks(string[] taskIds, bool recordUndo = true)
@@ -537,6 +650,9 @@ public class TodoTaskList
             return new TaskResult.NotFound(taskId);
         }
 
+        var oldParsed = TaskDescriptionParser.Parse(todoTask.Description);
+        var newParsed = TaskDescriptionParser.Parse(newDescription.Trim());
+
         if (recordUndo)
         {
             var cmd = new RenameTaskCommand
@@ -550,8 +666,27 @@ public class TodoTaskList
 
         CreateBackup();
         var renamedTask = todoTask.Rename(newDescription);
+
+        // Validate new parent if metadata line changed it
+        if (newParsed.LastLineIsMetadataOnly && newParsed.ParentId != null)
+        {
+            var parent = GetTodoTaskById(newParsed.ParentId);
+            if (parent == null || parent.Id == taskId)
+            {
+                renamedTask = renamedTask.ClearParent();
+            }
+        }
+
         UpdateTask(renamedTask);
         BumpSortOrder(taskId, renamedTask.ListName);
+
+        // Sync blocking relationships if metadata line present
+        // Compare actual DB state (not old description) with desired state from new description
+        if (newParsed.LastLineIsMetadataOnly)
+        {
+            var currentBlocksIds = GetBlocksIds(taskId).ToArray();
+            SyncBlockingRelationships(taskId, currentBlocksIds, newParsed.BlocksIds);
+        }
 
         if (recordUndo)
         {
@@ -559,6 +694,30 @@ public class TodoTaskList
         }
 
         return new TaskResult.Success($"Renamed task: {taskId}");
+    }
+
+    private void SyncBlockingRelationships(string taskId, string[]? oldBlocksIds, string[]? newBlocksIds)
+    {
+        var oldBlocks = new HashSet<string>(oldBlocksIds ?? []);
+        var newBlocks = new HashSet<string>(newBlocksIds ?? []);
+
+        // Remove blockers no longer in metadata
+        foreach (var removedId in oldBlocks.Except(newBlocks))
+        {
+            _db.Execute("DELETE FROM task_dependencies WHERE task_id = @blocker AND blocks_task_id = @blocked",
+                ("@blocker", taskId), ("@blocked", removedId));
+        }
+
+        // Add new blockers from metadata
+        foreach (var addedId in newBlocks.Except(oldBlocks))
+        {
+            var blocked = GetTodoTaskById(addedId);
+            if (blocked != null && addedId != taskId && !HasCircularBlocking(taskId, addedId))
+            {
+                _db.Execute("INSERT OR IGNORE INTO task_dependencies (task_id, blocks_task_id) VALUES (@blocker, @blocked)",
+                    ("@blocker", taskId), ("@blocked", addedId));
+            }
+        }
     }
 
     public TaskResult MoveTask(string taskId, string targetList, bool recordUndo = true)
@@ -574,17 +733,39 @@ public class TodoTaskList
             return new TaskResult.NoChange($"Task is already in '{targetList}'");
         }
 
+        // Block moving a subtask independently to a different list
+        if (todoTask.ParentId != null)
+        {
+            return new TaskResult.Error(
+                $"Cannot move subtask ({taskId}) to a different list. Use `tasker deps unset-parent {taskId}` first, or move its parent.");
+        }
+
         var sourceList = todoTask.ListName;
+
+        // Collect descendants for cascade move
+        var descendantIds = GetAllDescendantIds(taskId);
+        var hasCascade = descendantIds.Count > 0;
 
         if (recordUndo)
         {
-            var cmd = new MoveTaskCommand
+            if (hasCascade) _services.Undo.BeginBatch($"Move ({taskId}) and {descendantIds.Count} subtask(s) to '{targetList}'");
+
+            _services.Undo.RecordCommand(new MoveTaskCommand
             {
                 TaskId = taskId,
                 SourceList = sourceList,
                 TargetList = targetList
-            };
-            _services.Undo.RecordCommand(cmd);
+            });
+
+            foreach (var descId in descendantIds)
+            {
+                _services.Undo.RecordCommand(new MoveTaskCommand
+                {
+                    TaskId = descId,
+                    SourceList = sourceList,
+                    TargetList = targetList
+                });
+            }
         }
 
         CreateBackup();
@@ -593,12 +774,23 @@ public class TodoTaskList
         UpdateTask(movedTask);
         BumpSortOrder(taskId, targetList);
 
+        // Cascade move descendants
+        foreach (var descId in descendantIds)
+        {
+            _db.Execute("UPDATE tasks SET list_name = @list WHERE id = @id",
+                ("@list", targetList), ("@id", descId));
+        }
+
         if (recordUndo)
         {
+            if (hasCascade) _services.Undo.EndBatch();
             _services.Undo.SaveHistory();
         }
 
-        return new TaskResult.Success($"Moved task {taskId} from '{sourceList}' to '{targetList}'");
+        var msg = hasCascade
+            ? $"Moved ({taskId}) and {descendantIds.Count} subtask(s) from '{sourceList}' to '{targetList}'"
+            : $"Moved task {taskId} from '{sourceList}' to '{targetList}'";
+        return new TaskResult.Success(msg);
     }
 
     public TaskResult SetTaskDueDate(string taskId, DateOnly? dueDate, bool recordUndo = true)
@@ -700,10 +892,27 @@ public class TodoTaskList
             return new TaskResult.NotFound(taskId);
         }
 
+        // Also find trashed descendants to cascade-restore
+        var trashedDescendantIds = _db.Query("""
+            WITH RECURSIVE desc AS (
+                SELECT id FROM tasks WHERE parent_id = @id AND is_trashed = 1
+                UNION ALL
+                SELECT t.id FROM tasks t JOIN desc d ON t.parent_id = d.id WHERE t.is_trashed = 1
+            )
+            SELECT id FROM desc
+            """,
+            reader => reader.GetString(0),
+            ("@id", taskId));
+
         CreateBackup();
         _db.Execute("UPDATE tasks SET is_trashed = 0 WHERE id = @id", ("@id", taskId));
+        foreach (var descId in trashedDescendantIds)
+            _db.Execute("UPDATE tasks SET is_trashed = 0 WHERE id = @id", ("@id", descId));
 
-        return new TaskResult.Success($"Restored task: {taskId}");
+        var msg = trashedDescendantIds.Count > 0
+            ? $"Restored ({taskId}) and {trashedDescendantIds.Count} subtask(s)"
+            : $"Restored task: {taskId}";
+        return new TaskResult.Success(msg);
     }
 
     public int ClearTrash()
@@ -865,8 +1074,8 @@ public class TodoTaskList
             {
                 var tagsJson = task.Tags is { Length: > 0 } ? JsonSerializer.Serialize(task.Tags) : null;
                 db.Execute("""
-                    INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at)
-                    VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 0, @order, @completed)
+                    INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at, parent_id)
+                    VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 0, @order, @completed, @parent)
                     """,
                     ("@id", task.Id),
                     ("@desc", task.Description),
@@ -877,7 +1086,8 @@ public class TodoTaskList
                     ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
                     ("@tags", (object?)tagsJson ?? DBNull.Value),
                     ("@order", 0),
-                    ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
+                    ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value),
+                    ("@parent", (object?)task.ParentId ?? DBNull.Value));
             }
 
             // Insert trashed tasks
@@ -887,8 +1097,8 @@ public class TodoTaskList
                 {
                     var tagsJson = task.Tags is { Length: > 0 } ? JsonSerializer.Serialize(task.Tags) : null;
                     db.Execute("""
-                        INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at)
-                        VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 1, @order, @completed)
+                        INSERT OR IGNORE INTO tasks (id, description, status, created_at, list_name, due_date, priority, tags, is_trashed, sort_order, completed_at, parent_id)
+                        VALUES (@id, @desc, @status, @created, @list, @due, @priority, @tags, 1, @order, @completed, @parent)
                         """,
                         ("@id", task.Id),
                         ("@desc", task.Description),
@@ -899,7 +1109,8 @@ public class TodoTaskList
                         ("@priority", (object?)(task.Priority.HasValue ? (int)task.Priority.Value : null) ?? DBNull.Value),
                         ("@tags", (object?)tagsJson ?? DBNull.Value),
                         ("@order", 0),
-                        ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value));
+                        ("@completed", (object?)task.CompletedAt?.ToString("o") ?? DBNull.Value),
+                        ("@parent", (object?)task.ParentId ?? DBNull.Value));
                 }
             }
 
@@ -1058,6 +1269,210 @@ public class TodoTaskList
 
     public static void ReorderList(string listName, int newIndex, bool recordUndo = true) =>
         ReorderList(TaskerServices.Default, listName, newIndex, recordUndo);
+
+    // --- Dependency operations ---
+
+    public TaskResult SetParent(string taskId, string parentId, bool recordUndo = true)
+    {
+        var task = GetTodoTaskById(taskId);
+        if (task == null) return new TaskResult.NotFound(taskId);
+
+        var parent = GetTodoTaskById(parentId);
+        if (parent == null) return new TaskResult.Error($"Parent task not found: {parentId}");
+
+        if (task.Id == parentId) return new TaskResult.Error("A task cannot be its own parent");
+
+        if (task.ListName != parent.ListName)
+            return new TaskResult.Error($"Cannot set parent: task ({taskId}) is in '{task.ListName}' but parent ({parentId}) is in '{parent.ListName}'. Subtasks must be in the same list.");
+
+        // Check for circular reference (parent is a descendant of task)
+        var descendants = GetAllDescendantIds(taskId);
+        if (descendants.Contains(parentId))
+            return new TaskResult.Error($"Circular reference: ({parentId}) is already a descendant of ({taskId})");
+
+        if (recordUndo)
+        {
+            var cmd = new SetParentCommand { TaskId = taskId, OldParentId = task.ParentId, NewParentId = parentId };
+            _services.Undo.RecordCommand(cmd);
+        }
+
+        CreateBackup();
+        _db.Execute("UPDATE tasks SET parent_id = @parent WHERE id = @id",
+            ("@parent", parentId), ("@id", taskId));
+
+        // Sync metadata line
+        var parsed = TaskDescriptionParser.Parse(task.Description);
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            task.Description, task.Priority, task.DueDate, task.Tags, parentId,
+            parsed.BlocksIds);
+        if (synced != task.Description)
+            _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                ("@desc", synced), ("@id", taskId));
+
+        if (recordUndo) _services.Undo.SaveHistory();
+        return new TaskResult.Success($"Set ({taskId}) as subtask of ({parentId})");
+    }
+
+    public TaskResult UnsetParent(string taskId, bool recordUndo = true)
+    {
+        var task = GetTodoTaskById(taskId);
+        if (task == null) return new TaskResult.NotFound(taskId);
+
+        if (task.ParentId == null)
+            return new TaskResult.NoChange($"Task ({taskId}) has no parent");
+
+        if (recordUndo)
+        {
+            var cmd = new SetParentCommand { TaskId = taskId, OldParentId = task.ParentId, NewParentId = null };
+            _services.Undo.RecordCommand(cmd);
+        }
+
+        CreateBackup();
+        _db.Execute("UPDATE tasks SET parent_id = NULL WHERE id = @id", ("@id", taskId));
+
+        // Sync metadata line
+        var parsed = TaskDescriptionParser.Parse(task.Description);
+        var synced = TaskDescriptionParser.SyncMetadataToDescription(
+            task.Description, task.Priority, task.DueDate, task.Tags, null,
+            parsed.BlocksIds);
+        if (synced != task.Description)
+            _db.Execute("UPDATE tasks SET description = @desc WHERE id = @id",
+                ("@desc", synced), ("@id", taskId));
+
+        if (recordUndo) _services.Undo.SaveHistory();
+        return new TaskResult.Success($"Removed parent from ({taskId})");
+    }
+
+    public TaskResult AddBlocker(string blockerId, string blockedId, bool recordUndo = true)
+    {
+        if (blockerId == blockedId)
+            return new TaskResult.Error("A task cannot block itself");
+
+        var blocker = GetTodoTaskById(blockerId);
+        if (blocker == null) return new TaskResult.NotFound(blockerId);
+
+        var blocked = GetTodoTaskById(blockedId);
+        if (blocked == null) return new TaskResult.Error($"Blocked task not found: {blockedId}");
+
+        // Check for circular blocking
+        if (HasCircularBlocking(blockerId, blockedId))
+            return new TaskResult.Error($"Circular dependency: ({blockedId}) already blocks ({blockerId}) directly or transitively");
+
+        // Check if already exists
+        var exists = _db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM task_dependencies WHERE task_id = @blocker AND blocks_task_id = @blocked",
+            ("@blocker", blockerId), ("@blocked", blockedId));
+        if (exists > 0)
+            return new TaskResult.NoChange($"({blockerId}) already blocks ({blockedId})");
+
+        if (recordUndo)
+        {
+            var cmd = new AddBlockerCommand { BlockerId = blockerId, BlockedId = blockedId };
+            _services.Undo.RecordCommand(cmd);
+        }
+
+        CreateBackup();
+        _db.Execute("INSERT INTO task_dependencies (task_id, blocks_task_id) VALUES (@blocker, @blocked)",
+            ("@blocker", blockerId), ("@blocked", blockedId));
+
+        if (recordUndo) _services.Undo.SaveHistory();
+        return new TaskResult.Success($"({blockerId}) now blocks ({blockedId})");
+    }
+
+    public TaskResult RemoveBlocker(string blockerId, string blockedId, bool recordUndo = true)
+    {
+        var exists = _db.ExecuteScalar<long>(
+            "SELECT COUNT(*) FROM task_dependencies WHERE task_id = @blocker AND blocks_task_id = @blocked",
+            ("@blocker", blockerId), ("@blocked", blockedId));
+        if (exists == 0)
+            return new TaskResult.NoChange($"({blockerId}) does not block ({blockedId})");
+
+        if (recordUndo)
+        {
+            var cmd = new RemoveBlockerCommand { BlockerId = blockerId, BlockedId = blockedId };
+            _services.Undo.RecordCommand(cmd);
+        }
+
+        CreateBackup();
+        _db.Execute("DELETE FROM task_dependencies WHERE task_id = @blocker AND blocks_task_id = @blocked",
+            ("@blocker", blockerId), ("@blocked", blockedId));
+
+        if (recordUndo) _services.Undo.SaveHistory();
+        return new TaskResult.Success($"({blockerId}) no longer blocks ({blockedId})");
+    }
+
+    public List<TodoTask> GetSubtasks(string parentId)
+    {
+        return QueryTasks("WHERE parent_id = @id AND is_trashed = 0", ("@id", parentId));
+    }
+
+    public List<string> GetAllDescendantIds(string parentId)
+    {
+        return _db.Query("""
+            WITH RECURSIVE desc AS (
+                SELECT id FROM tasks WHERE parent_id = @id AND is_trashed = 0
+                UNION ALL
+                SELECT t.id FROM tasks t JOIN desc d ON t.parent_id = d.id WHERE t.is_trashed = 0
+            )
+            SELECT id FROM desc
+            """,
+            reader => reader.GetString(0),
+            ("@id", parentId));
+    }
+
+    public List<TodoTask> GetBlockedBy(string taskId)
+    {
+        return _db.Query(
+            $"SELECT {TaskSelectColumns} FROM tasks t JOIN task_dependencies td ON td.task_id = t.id WHERE td.blocks_task_id = @id AND t.is_trashed = 0",
+            ReadTask,
+            ("@id", taskId));
+    }
+
+    public List<TodoTask> GetBlocks(string taskId)
+    {
+        return _db.Query(
+            $"SELECT {TaskSelectColumns} FROM tasks t JOIN task_dependencies td ON td.blocks_task_id = t.id WHERE td.task_id = @id AND t.is_trashed = 0",
+            ReadTask,
+            ("@id", taskId));
+    }
+
+    public bool HasCircularBlocking(string blockerId, string blockedId)
+    {
+        // Check if blockedId already blocks blockerId (directly or transitively)
+        var reachable = _db.Query("""
+            WITH RECURSIVE chain AS (
+                SELECT blocks_task_id AS target FROM task_dependencies WHERE task_id = @start
+                UNION ALL
+                SELECT td.blocks_task_id FROM task_dependencies td JOIN chain c ON td.task_id = c.target
+            )
+            SELECT target FROM chain
+            """,
+            reader => reader.GetString(0),
+            ("@start", blockedId));
+        return reachable.Contains(blockerId);
+    }
+
+    /// <summary>
+    /// Gets blocking relationship IDs for a task (what this task blocks).
+    /// </summary>
+    public List<string> GetBlocksIds(string taskId)
+    {
+        return _db.Query(
+            "SELECT blocks_task_id FROM task_dependencies WHERE task_id = @id",
+            reader => reader.GetString(0),
+            ("@id", taskId));
+    }
+
+    /// <summary>
+    /// Gets blocked-by relationship IDs for a task (what blocks this task).
+    /// </summary>
+    public List<string> GetBlockedByIds(string taskId)
+    {
+        return _db.Query(
+            "SELECT task_id FROM task_dependencies WHERE blocks_task_id = @id",
+            reader => reader.GetString(0),
+            ("@id", taskId));
+    }
 
     // --- Search ---
 
