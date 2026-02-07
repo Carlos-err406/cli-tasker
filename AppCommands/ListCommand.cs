@@ -77,6 +77,9 @@ static class ListCommand
                 Output.Info($"[dim](auto: {listName})[/]");
             }
 
+            // Unfiltered task list for relationship queries (global by ID)
+            var relTaskList = new TodoTaskList();
+
             if (listName == null)
             {
                 // Default: show all lists grouped
@@ -85,7 +88,7 @@ static class ListCommand
                 {
                     var taskList = new TodoTaskList(name);
                     Output.Markup($"[bold underline]{name}[/]");
-                    DisplayTasks(taskList.GetSortedTasks(filterChecked: filterChecked, filterPriority: filterPriority, filterOverdue: filterOverdue), filterChecked);
+                    DisplayTasks(taskList.GetSortedTasks(filterChecked: filterChecked, filterPriority: filterPriority, filterOverdue: filterOverdue), filterChecked, relTaskList);
                     Output.Info("");
                 }
             }
@@ -93,13 +96,13 @@ static class ListCommand
             {
                 // Filter to specific list
                 var todoTaskList = new TodoTaskList(listName);
-                DisplayTasks(todoTaskList.GetSortedTasks(filterChecked: filterChecked, filterPriority: filterPriority, filterOverdue: filterOverdue), filterChecked);
+                DisplayTasks(todoTaskList.GetSortedTasks(filterChecked: filterChecked, filterPriority: filterPriority, filterOverdue: filterOverdue), filterChecked, relTaskList);
             }
         }));
         return listCommand;
     }
 
-    private static void DisplayTasks(List<TodoTask> tasks, bool? filterChecked)
+    private static void DisplayTasks(List<TodoTask> tasks, bool? filterChecked, TodoTaskList taskList)
     {
         if (tasks.Count == 0)
         {
@@ -138,7 +141,32 @@ static class ListCommand
             // Relationship indicators
             if (td.ParentId != null)
             {
-                Output.Markup($"{indent}[dim]^ Subtask of ({td.ParentId})[/]");
+                var parent = taskList.GetTodoTaskById(td.ParentId);
+                var parentTitle = parent != null
+                    ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0], 40))
+                    : "?";
+                Output.Markup($"{indent}[dim]↑ Subtask of ({td.ParentId}) {parentTitle}[/]");
+            }
+
+            var subtasks = taskList.GetSubtasks(td.Id);
+            foreach (var sub in subtasks)
+            {
+                var subTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(sub.Description).Split('\n')[0], 40));
+                Output.Markup($"{indent}[dim]↳ Subtask ({sub.Id}) {subTitle}[/]");
+            }
+
+            var blocks = taskList.GetBlocks(td.Id);
+            foreach (var b in blocks)
+            {
+                var bTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0], 40));
+                Output.Markup($"{indent}[yellow dim]⊘ Blocks ({b.Id}) {bTitle}[/]");
+            }
+
+            var blockedBy = taskList.GetBlockedBy(td.Id);
+            foreach (var bb in blockedBy)
+            {
+                var bbTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(bb.Description).Split('\n')[0], 40));
+                Output.Markup($"{indent}[yellow dim]⊘ Blocked by ({bb.Id}) {bbTitle}[/]");
             }
         }
     }

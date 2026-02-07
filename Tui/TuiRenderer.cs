@@ -2,6 +2,8 @@ namespace cli_tasker.Tui;
 
 using System.IO;
 using Spectre.Console;
+using TaskerCore;
+using TaskerCore.Data;
 using TaskerCore.Models;
 using TaskerCore.Parsing;
 using TaskerCore.Utilities;
@@ -15,6 +17,7 @@ public class TuiRenderer
     // Frame buffer: all rendering writes here, flushed in one shot
     private StringWriter _buffer = new();
     private IAnsiConsole _ansi = null!;
+    private TodoTaskList _taskList = new();
 
     public void Render(TuiState state, IReadOnlyList<TodoTask> tasks)
     {
@@ -27,6 +30,7 @@ public class TuiRenderer
             Out = new AnsiConsoleOutput(_buffer),
         });
         _ansi.Profile.Width = int.MaxValue; // never wrap — let terminal handle overflow
+        _taskList = new TodoTaskList();
 
         RenderHeader(state, tasks.Count);
         RenderTasks(state, tasks);
@@ -180,26 +184,60 @@ public class TuiRenderer
             }
         }
 
-        // Relationship indicator: subtask of parent
+        // Relationship indicators
         if (task.ParentId != null && linesRendered < maxLines)
         {
-            WriteLineCleared($"{indent}[dim]^ Subtask of ({task.ParentId})[/]");
+            var parent = _taskList.GetTodoTaskById(task.ParentId);
+            var parentTitle = parent != null
+                ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0], 40))
+                : "?";
+            WriteLineCleared($"{indent}[dim]↑ Subtask of ({task.ParentId}) {parentTitle}[/]");
+            linesRendered++;
+        }
+
+        var subtasks = _taskList.GetSubtasks(task.Id);
+        foreach (var sub in subtasks)
+        {
+            if (linesRendered >= maxLines) break;
+            var subTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(sub.Description).Split('\n')[0], 40));
+            WriteLineCleared($"{indent}[dim]↳ Subtask ({sub.Id}) {subTitle}[/]");
+            linesRendered++;
+        }
+
+        var blocks = _taskList.GetBlocks(task.Id);
+        foreach (var b in blocks)
+        {
+            if (linesRendered >= maxLines) break;
+            var bTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0], 40));
+            WriteLineCleared($"{indent}[yellow]⊘ Blocks ({b.Id}) {bTitle}[/]");
+            linesRendered++;
+        }
+
+        var blockedBy = _taskList.GetBlockedBy(task.Id);
+        foreach (var bb in blockedBy)
+        {
+            if (linesRendered >= maxLines) break;
+            var bbTitle = Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(bb.Description).Split('\n')[0], 40));
+            WriteLineCleared($"{indent}[yellow]⊘ Blocked by ({bb.Id}) {bbTitle}[/]");
             linesRendered++;
         }
 
         return linesRendered;
     }
 
-    private static int CountTaskLines(TodoTask task, int wrapWidth)
+    private int CountTaskLines(TodoTask task, int wrapWidth)
     {
         var displayDesc = TaskDescriptionParser.GetDisplayDescription(task.Description);
         var lines = displayDesc.Split('\n');
         var count = 1; // first line is always 1 visual line
         for (var i = 1; i < lines.Length; i++)
             count += WrapLine(lines[i], wrapWidth).Count;
-        // Relationship indicator line
+        // Relationship indicator lines
         if (task.ParentId != null)
             count++;
+        count += _taskList.GetSubtasks(task.Id).Count;
+        count += _taskList.GetBlocks(task.Id).Count;
+        count += _taskList.GetBlockedBy(task.Id).Count;
         return count;
     }
 
