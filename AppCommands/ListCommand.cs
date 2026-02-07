@@ -138,7 +138,7 @@ static class ListCommand
             // Relationship indicators
             if (td.ParentId != null)
             {
-                Output.Markup($"{indent}[dim]^ subtask of ({td.ParentId})[/]");
+                Output.Markup($"{indent}[dim]^ Subtask of ({td.ParentId})[/]");
             }
         }
     }

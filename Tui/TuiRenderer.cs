@@ -183,7 +183,7 @@ public class TuiRenderer
         // Relationship indicator: subtask of parent
         if (task.ParentId != null && linesRendered < maxLines)
         {
-            WriteLineCleared($"{indent}[dim]^ subtask of ({task.ParentId})[/]");
+            WriteLineCleared($"{indent}[dim]^ Subtask of ({task.ParentId})[/]");
             linesRendered++;
         }
 

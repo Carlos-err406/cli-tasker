@@ -235,7 +235,7 @@ public partial class TodoTaskViewModel : ObservableObject
             var parentTitle = parent != null
                 ? TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0]
                 : "?";
-            ParentDisplay = $"subtask of ({_task.ParentId}) {parentTitle}";
+            ParentDisplay = $"Subtask of ({_task.ParentId}) {parentTitle}";
         }
 
         // Subtasks with id + title
@@ -245,7 +245,7 @@ public partial class TodoTaskViewModel : ObservableObject
             SubtasksDisplay = subtasks.Select(s =>
             {
                 var title = TaskDescriptionParser.GetDisplayDescription(s.Description).Split('\n')[0];
-                return $"subtask ({s.Id}) {title}";
+                return $"Subtask ({s.Id}) {title}";
             }).ToArray();
         }
 
@@ -256,7 +256,7 @@ public partial class TodoTaskViewModel : ObservableObject
             BlocksDisplay = blocks.Select(b =>
             {
                 var title = TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0];
-                return $"blocks ({b.Id}) {title}";
+                return $"Blocks ({b.Id}) {title}";
             }).ToArray();
         }
 
@@ -267,7 +267,7 @@ public partial class TodoTaskViewModel : ObservableObject
             BlockedByDisplay = blockedBy.Select(b =>
             {
                 var title = TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0];
-                return $"blocked by ({b.Id}) {title}";
+                return $"Blocked by ({b.Id}) {title}";
             }).ToArray();
         }
     }
