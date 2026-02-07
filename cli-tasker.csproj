@@ -11,12 +11,16 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>tasker</ToolCommandName>
     <PackageId>cli-tasker</PackageId>
-    <Version>2.35.0</Version>
+    <Version>2.35.1</Version>
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Exclude src/ and tests/ folders which contain separate projects -->
     <DefaultItemExcludes>$(DefaultItemExcludes);src/**;tests/**</DefaultItemExcludes>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TaskerCore.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.54.0" />

@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TaskerCore\TaskerCore.csproj" />
+    <ProjectReference Include="..\..\cli-tasker.csproj" />
   </ItemGroup>
 
 </Project>

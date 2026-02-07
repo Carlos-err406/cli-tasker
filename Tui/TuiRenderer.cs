@@ -43,7 +43,7 @@ public class TuiRenderer
         var inputModeExtraSpace = (state.Mode == TuiMode.InputAdd || state.Mode == TuiMode.InputRename) ? 4 :
                                    state.Mode == TuiMode.InputDueDate ? 2 : 0;
         var selectModeExtraSpace = (state.Mode == TuiMode.SelectMoveTarget || state.Mode == TuiMode.SelectList) ? 7 : 0;
-        var availableLines = terminalHeight - 6 - inputModeExtraSpace - selectModeExtraSpace;
+        var availableLines = Math.Max(1, terminalHeight - 6 - inputModeExtraSpace - selectModeExtraSpace);
 
         if (tasks.Count == 0)
         {
@@ -54,9 +54,22 @@ public class TuiRenderer
         }
 
         var showingAllLists = state.CurrentList == null;
-        var startIndex = Math.Max(0, state.CursorIndex - availableLines / 2);
-        startIndex = Math.Min(startIndex, Math.Max(0, tasks.Count - availableLines));
-        var endIndex = Math.Min(tasks.Count, startIndex + availableLines);
+
+        // Pre-compute line heights (accounting for multi-line descriptions and list headers)
+        var lineHeights = new int[tasks.Count];
+        string? preGroup = null;
+        for (var i = 0; i < tasks.Count; i++)
+        {
+            var height = CountTaskLines(tasks[i]);
+            if (showingAllLists && tasks[i].ListName != preGroup)
+            {
+                height += 1; // list group header
+                preGroup = tasks[i].ListName;
+            }
+            lineHeights[i] = height;
+        }
+
+        var (startIndex, endIndex) = ComputeViewport(state.CursorIndex, lineHeights, availableLines);
 
         var linesRendered = 0;
         string? lastListName = null;
@@ -142,6 +155,35 @@ public class TuiRenderer
         }
 
         return linesRendered;
+    }
+
+    private static int CountTaskLines(TodoTask task)
+    {
+        var displayDesc = TaskDescriptionParser.GetDisplayDescription(task.Description);
+        return displayDesc.Split('\n').Length;
+    }
+
+    internal static (int StartIndex, int EndIndex) ComputeViewport(
+        int cursorIndex, int[] lineHeights, int availableLines)
+    {
+        availableLines = Math.Max(1, availableLines);
+        if (lineHeights.Length == 0) return (0, 0);
+        cursorIndex = Math.Clamp(cursorIndex, 0, lineHeights.Length - 1);
+
+        // Start with the cursor task, then expand upward, then fill downward
+        var startIndex = cursorIndex;
+        var budget = lineHeights[cursorIndex];
+
+        // Expand upward
+        while (startIndex > 0 && budget + lineHeights[startIndex - 1] <= availableLines)
+            budget += lineHeights[--startIndex];
+
+        // Expand downward
+        var endIndex = cursorIndex + 1;
+        while (endIndex < lineHeights.Length && budget + lineHeights[endIndex] <= availableLines)
+            budget += lineHeights[endIndex++];
+
+        return (startIndex, endIndex);
     }
 
     private static string FormatPriority(Priority? priority) => priority switch
