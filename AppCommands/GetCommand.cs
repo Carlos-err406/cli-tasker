@@ -81,6 +81,12 @@ static class GetCommand
             return new { id, description = b != null ? StringHelpers.Truncate(b.Description, 50) : "?" };
         }).ToArray();
 
+        var relatedObjs = (parsed.RelatedIds ?? []).Select(id =>
+        {
+            var r = taskList.GetTodoTaskById(id);
+            return new { id, description = r != null ? StringHelpers.Truncate(r.Description, 50) : "?" };
+        }).ToArray();
+
         var obj = new
         {
             id = task.Id,
@@ -101,7 +107,8 @@ static class GetCommand
             parentId = parsed.ParentId,
             subtasks = subtaskObjs,
             blocks = blocksObjs,
-            blockedBy = blockedByObjs
+            blockedBy = blockedByObjs,
+            related = relatedObjs
         };
         Console.WriteLine(JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -168,6 +175,17 @@ static class GetCommand
                 var bb = taskList.GetTodoTaskById(bbId);
                 var bbDesc = bb != null ? StringHelpers.Truncate(bb.Description, 40) : "?";
                 Output.Markup($"               [dim]({bbId}) {Spectre.Console.Markup.Escape(bbDesc)}[/]");
+            }
+        }
+
+        if (parsed.RelatedIds is { Length: > 0 })
+        {
+            Output.Markup($"[bold]Related:[/]");
+            foreach (var rId in parsed.RelatedIds)
+            {
+                var r = taskList.GetTodoTaskById(rId);
+                var rDesc = r != null ? StringHelpers.Truncate(r.Description, 40) : "?";
+                Output.Markup($"               [dim]({rId}) {Spectre.Console.Markup.Escape(rDesc)}[/]");
             }
         }
 

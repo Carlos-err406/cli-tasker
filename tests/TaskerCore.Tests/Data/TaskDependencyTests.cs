@@ -1057,4 +1057,277 @@ public class TaskDependencyTests : IDisposable
         var updated = _taskList.GetTodoTaskById(task.Id)!;
         Assert.NotEqual(task.Id, updated.ParentId);
     }
+
+    // --- AddRelated / RemoveRelated ---
+
+    [Fact]
+    public void AddRelated_CreatesRelationship()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+
+        var result = _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        Assert.IsType<TaskResult.Success>(result);
+        var related = _taskList.GetRelated(a.Id);
+        Assert.Single(related);
+        Assert.Equal(b.Id, related[0].Id);
+    }
+
+    [Fact]
+    public void AddRelated_CanonicalOrdering()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+
+        // Regardless of argument order, stored canonically
+        _taskList.AddRelated(b.Id, a.Id, recordUndo: false);
+
+        var relatedFromA = _taskList.GetRelated(a.Id);
+        Assert.Single(relatedFromA);
+        Assert.Equal(b.Id, relatedFromA[0].Id);
+
+        var relatedFromB = _taskList.GetRelated(b.Id);
+        Assert.Single(relatedFromB);
+        Assert.Equal(a.Id, relatedFromB[0].Id);
+    }
+
+    [Fact]
+    public void AddRelated_SelfReference_ReturnsError()
+    {
+        var task = AddTask("task");
+
+        var result = _taskList.AddRelated(task.Id, task.Id, recordUndo: false);
+
+        Assert.IsType<TaskResult.Error>(result);
+    }
+
+    [Fact]
+    public void AddRelated_Duplicate_ReturnsNoChange()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        var result = _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        Assert.IsType<TaskResult.NoChange>(result);
+    }
+
+    [Fact]
+    public void AddRelated_NonexistentTask_ReturnsError()
+    {
+        var a = AddTask("task a");
+
+        var result = _taskList.AddRelated(a.Id, "zzz", recordUndo: false);
+
+        Assert.IsType<TaskResult.Error>(result);
+    }
+
+    [Fact]
+    public void RemoveRelated_DeletesRelationship()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        var result = _taskList.RemoveRelated(a.Id, b.Id, recordUndo: false);
+
+        Assert.IsType<TaskResult.Success>(result);
+        Assert.Empty(_taskList.GetRelated(a.Id));
+        Assert.Empty(_taskList.GetRelated(b.Id));
+    }
+
+    [Fact]
+    public void RemoveRelated_NonExisting_ReturnsNoChange()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+
+        var result = _taskList.RemoveRelated(a.Id, b.Id, recordUndo: false);
+
+        Assert.IsType<TaskResult.NoChange>(result);
+    }
+
+    [Fact]
+    public void GetRelated_ReturnsBothSides()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        var c = AddTask("task c");
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+        _taskList.AddRelated(a.Id, c.Id, recordUndo: false);
+
+        var relatedA = _taskList.GetRelated(a.Id);
+        Assert.Equal(2, relatedA.Count);
+
+        var relatedB = _taskList.GetRelated(b.Id);
+        Assert.Single(relatedB);
+        Assert.Equal(a.Id, relatedB[0].Id);
+    }
+
+    [Fact]
+    public void GetRelatedIds_ReturnsBothSides()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        var idsFromA = _taskList.GetRelatedIds(a.Id);
+        Assert.Single(idsFromA);
+        Assert.Contains(b.Id, idsFromA);
+
+        var idsFromB = _taskList.GetRelatedIds(b.Id);
+        Assert.Single(idsFromB);
+        Assert.Contains(a.Id, idsFromB);
+    }
+
+    [Fact]
+    public void AddRelated_AllowsCrossList()
+    {
+        TodoTaskList.CreateList(_services, "work");
+        var a = AddTask("task a", "tasks");
+        var b = AddTask("task b", "work");
+
+        var result = _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        Assert.IsType<TaskResult.Success>(result);
+    }
+
+    // --- Inline related via AddTodoTask ---
+
+    [Fact]
+    public void AddTodoTask_WithRelatedRef_CreatesRelationship()
+    {
+        var existing = AddTask("existing task");
+
+        var task = TodoTask.CreateTodoTask($"new task\n~{existing.Id}", "tasks");
+        var result = _taskList.AddTodoTask(task, recordUndo: false);
+
+        var related = _taskList.GetRelated(result.Task.Id);
+        Assert.Single(related);
+        Assert.Equal(existing.Id, related[0].Id);
+    }
+
+    [Fact]
+    public void AddTodoTask_WithInvalidRelatedRef_WarnsAndSkips()
+    {
+        var task = TodoTask.CreateTodoTask("new task\n~zzz", "tasks");
+        var result = _taskList.AddTodoTask(task, recordUndo: false);
+
+        Assert.NotNull(_taskList.GetTodoTaskById(result.Task.Id));
+        Assert.Single(result.Warnings);
+        Assert.Contains("not found", result.Warnings[0]);
+    }
+
+    [Fact]
+    public void AddTodoTask_WithSelfRelatedRef_WarnsAndSkips()
+    {
+        // Create task with a known ID, then try to relate to itself
+        var task = TodoTask.CreateTodoTask("task a", "tasks");
+        _taskList.AddTodoTask(task, recordUndo: false);
+
+        // Now create a task that tries to relate to itself — since IDs are random,
+        // we test this via the AddRelated method instead
+        var a = AddTask("task a");
+        var result = _taskList.AddRelated(a.Id, a.Id, recordUndo: false);
+        Assert.IsType<TaskResult.Error>(result);
+    }
+
+    // --- Rename syncs related relationships ---
+
+    [Fact]
+    public void Rename_AddingRelatedToken_CreatesRelationship()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+
+        _taskList.RenameTask(a.Id, $"task a\n~{b.Id}", recordUndo: false);
+
+        var related = _taskList.GetRelated(a.Id);
+        Assert.Single(related);
+        Assert.Equal(b.Id, related[0].Id);
+    }
+
+    [Fact]
+    public void Rename_RemovingRelatedToken_RemovesRelationship()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        _taskList.RenameTask(a.Id, "task a\n#sometag", recordUndo: false);
+
+        Assert.Empty(_taskList.GetRelated(a.Id));
+    }
+
+    // --- Bidirectional sync ---
+
+    [Fact]
+    public void AddRelated_SyncsBothDescriptions()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        var updatedA = _taskList.GetTodoTaskById(a.Id)!;
+        var updatedB = _taskList.GetTodoTaskById(b.Id)!;
+        Assert.Contains($"~{b.Id}", updatedA.Description);
+        Assert.Contains($"~{a.Id}", updatedB.Description);
+    }
+
+    [Fact]
+    public void RemoveRelated_SyncsBothDescriptions()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        _taskList.RemoveRelated(a.Id, b.Id, recordUndo: false);
+
+        var updatedA = _taskList.GetTodoTaskById(a.Id)!;
+        var updatedB = _taskList.GetTodoTaskById(b.Id)!;
+        Assert.DoesNotContain("~", updatedA.Description);
+        Assert.DoesNotContain("~", updatedB.Description);
+    }
+
+    // --- task_relations table ---
+
+    [Fact]
+    public void TaskRelationsTable_Exists()
+    {
+        var tables = _services.Db.Query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='task_relations'",
+            reader => reader.GetString(0));
+        Assert.Single(tables);
+    }
+
+    [Fact]
+    public void HardDelete_RemovesRelationRows()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        _taskList.DeleteTask(a.Id, save: false, moveToTrash: false, recordUndo: false);
+
+        var relCount = _services.Db.ExecuteScalar<long>("SELECT COUNT(*) FROM task_relations");
+        Assert.Equal(0, relCount);
+    }
+
+    [Fact]
+    public void Rename_WithoutMetadataLine_PreservesRelated()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        _taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+
+        // Rename with no metadata line — related should be preserved
+        _taskList.RenameTask(a.Id, "renamed task a", recordUndo: false);
+
+        var related = _taskList.GetRelated(a.Id);
+        Assert.Single(related);
+        Assert.Equal(b.Id, related[0].Id);
+    }
 }

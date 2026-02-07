@@ -185,6 +185,18 @@ static class ListCommand
                     Output.Markup($"{indent}[yellow dim]⊘ Blocked by ({bbId}) {bbTitle}[/]");
                 }
             }
+
+            if (parsed.RelatedIds != null)
+            {
+                foreach (var rId in parsed.RelatedIds)
+                {
+                    var r = taskList.GetTodoTaskById(rId);
+                    var rTitle = r != null
+                        ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(r.Description).Split('\n')[0], 40))
+                        : "?";
+                    Output.Markup($"{indent}[cyan dim]~ Related to ({rId}) {rTitle}[/]");
+                }
+            }
         }
     }
 }

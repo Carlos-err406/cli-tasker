@@ -7,12 +7,14 @@ static class DepsCommand
 {
     public static Command CreateDepsCommand()
     {
-        var depsCommand = new Command("deps", "Manage task dependencies (subtasks and blocking)");
+        var depsCommand = new Command("deps", "Manage task dependencies (subtasks, blocking, and related)");
 
         depsCommand.Add(CreateSetParentCommand());
         depsCommand.Add(CreateUnsetParentCommand());
         depsCommand.Add(CreateAddBlockerCommand());
         depsCommand.Add(CreateRemoveBlockerCommand());
+        depsCommand.Add(CreateAddRelatedCommand());
+        depsCommand.Add(CreateRemoveRelatedCommand());
 
         return depsCommand;
     }
@@ -113,6 +115,58 @@ static class DepsCommand
 
             var taskList = new TodoTaskList();
             Output.Result(taskList.RemoveBlocker(blockerId, blockedId));
+        }));
+
+        return command;
+    }
+
+    private static Command CreateAddRelatedCommand()
+    {
+        var command = new Command("add-related", "Mark two tasks as related to each other");
+        var taskId1Arg = new Argument<string>("taskId1") { Description = "First task ID" };
+        var taskId2Arg = new Argument<string>("taskId2") { Description = "Second task ID" };
+        command.Arguments.Add(taskId1Arg);
+        command.Arguments.Add(taskId2Arg);
+
+        command.SetAction(CommandHelper.WithErrorHandling(parseResult =>
+        {
+            var taskId1 = parseResult.GetValue(taskId1Arg);
+            var taskId2 = parseResult.GetValue(taskId2Arg);
+
+            if (string.IsNullOrWhiteSpace(taskId1) || string.IsNullOrWhiteSpace(taskId2))
+            {
+                Output.Error("Both task IDs are required");
+                return;
+            }
+
+            var taskList = new TodoTaskList();
+            Output.Result(taskList.AddRelated(taskId1, taskId2));
+        }));
+
+        return command;
+    }
+
+    private static Command CreateRemoveRelatedCommand()
+    {
+        var command = new Command("remove-related", "Remove a related relationship between two tasks");
+        var taskId1Arg = new Argument<string>("taskId1") { Description = "First task ID" };
+        var taskId2Arg = new Argument<string>("taskId2") { Description = "Second task ID" };
+        command.Arguments.Add(taskId1Arg);
+        command.Arguments.Add(taskId2Arg);
+
+        command.SetAction(CommandHelper.WithErrorHandling(parseResult =>
+        {
+            var taskId1 = parseResult.GetValue(taskId1Arg);
+            var taskId2 = parseResult.GetValue(taskId2Arg);
+
+            if (string.IsNullOrWhiteSpace(taskId1) || string.IsNullOrWhiteSpace(taskId2))
+            {
+                Output.Error("Both task IDs are required");
+                return;
+            }
+
+            var taskList = new TodoTaskList();
+            Output.Result(taskList.RemoveRelated(taskId1, taskId2));
         }));
 
         return command;

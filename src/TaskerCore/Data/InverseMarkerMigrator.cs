@@ -130,7 +130,8 @@ public static class InverseMarkerMigrator
                     task.Description, task.Priority, task.DueDate, task.Tags,
                     parsed.ParentId, parsed.BlocksIds,
                     existingSubtasks.Count > 0 ? existingSubtasks.ToArray() : null,
-                    existingBlockedBy.Count > 0 ? existingBlockedBy.ToArray() : null);
+                    existingBlockedBy.Count > 0 ? existingBlockedBy.ToArray() : null,
+                    parsed.RelatedIds);
 
                 if (synced != task.Description)
                 {

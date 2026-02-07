@@ -238,4 +238,106 @@ public class UndoDependencyTests : IDisposable
 
         Assert.Single(taskList.GetBlocks(blocker.Id));
     }
+
+    // --- Undo AddRelated ---
+
+    [Fact]
+    public void Undo_AddRelated_RemovesRelationship()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        var taskList = new TodoTaskList(_services);
+
+        taskList.AddRelated(a.Id, b.Id);
+
+        Assert.Single(taskList.GetRelated(a.Id));
+
+        _services.Undo.Undo();
+
+        Assert.Empty(taskList.GetRelated(a.Id));
+        Assert.Empty(taskList.GetRelated(b.Id));
+    }
+
+    [Fact]
+    public void Undo_RemoveRelated_RestoresRelationship()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        var taskList = new TodoTaskList(_services);
+
+        taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+        taskList.RemoveRelated(a.Id, b.Id);
+
+        Assert.Empty(taskList.GetRelated(a.Id));
+
+        _services.Undo.Undo();
+
+        Assert.Single(taskList.GetRelated(a.Id));
+        Assert.Single(taskList.GetRelated(b.Id));
+    }
+
+    [Fact]
+    public void Redo_AddRelated_ReappliesRelationship()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        var taskList = new TodoTaskList(_services);
+
+        taskList.AddRelated(a.Id, b.Id);
+        _services.Undo.Undo();
+
+        Assert.Empty(taskList.GetRelated(a.Id));
+
+        _services.Undo.Redo();
+
+        Assert.Single(taskList.GetRelated(a.Id));
+    }
+
+    [Fact]
+    public void Undo_AddRelated_SerializationRoundTrip()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        var taskList = new TodoTaskList(_services);
+
+        taskList.AddRelated(a.Id, b.Id);
+
+        // Force serialization round-trip by saving and reloading
+        _services.Undo.SaveHistory();
+
+        var freshServices = new TaskerServices(_testDir);
+        TaskerServices.SetDefault(freshServices);
+
+        // Undo from freshly loaded history
+        freshServices.Undo.Undo();
+
+        var freshTaskList = new TodoTaskList(freshServices);
+        Assert.Empty(freshTaskList.GetRelated(a.Id));
+
+        freshServices.Dispose();
+    }
+
+    [Fact]
+    public void Undo_RemoveRelated_SerializationRoundTrip()
+    {
+        var a = AddTask("task a");
+        var b = AddTask("task b");
+        var taskList = new TodoTaskList(_services);
+
+        taskList.AddRelated(a.Id, b.Id, recordUndo: false);
+        taskList.RemoveRelated(a.Id, b.Id);
+
+        // Force serialization round-trip
+        _services.Undo.SaveHistory();
+
+        var freshServices = new TaskerServices(_testDir);
+        TaskerServices.SetDefault(freshServices);
+
+        freshServices.Undo.Undo();
+
+        var freshTaskList = new TodoTaskList(freshServices);
+        Assert.Single(freshTaskList.GetRelated(a.Id));
+
+        freshServices.Dispose();
+    }
 }
