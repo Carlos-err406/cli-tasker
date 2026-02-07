@@ -125,6 +125,17 @@ public partial class TodoTaskViewModel : ObservableObject
         get
         {
             if (!DueDate.HasValue) return "";
+
+            // For completed tasks, freeze the label based on completion time
+            if (_task.Status == TaskStatus.Done && CompletedAt.HasValue)
+            {
+                var completedDate = DateOnly.FromDateTime(CompletedAt.Value.ToLocalTime());
+                var lateDays = completedDate.DayNumber - DueDate.Value.DayNumber;
+                return lateDays > 0
+                    ? $"Completed {lateDays}d late"
+                    : $"Due: {DueDate.Value:MMM d}";
+            }
+
             var today = DateOnly.FromDateTime(DateTime.Today);
             var diff = DueDate.Value.DayNumber - today.DayNumber;
 
@@ -140,9 +151,13 @@ public partial class TodoTaskViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Due date color for display.
+    /// Due date color for display. Gray for completed tasks (even if late).
     /// </summary>
-    public IBrush DueDateColor => IsOverdue ? Brushes.Red : (IsDueToday ? Brushes.Orange : Brushes.Gray);
+    public IBrush DueDateColor =>
+        _task.Status == TaskStatus.Done ? Brushes.Gray
+        : IsOverdue ? Brushes.Red
+        : IsDueToday ? Brushes.Orange
+        : Brushes.Gray;
 
     /// <summary>
     /// Tags display text.

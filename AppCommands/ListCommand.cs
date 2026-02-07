@@ -134,7 +134,7 @@ static class ListCommand
             };
             var taskId = $"[dim]({td.Id})[/]";
             var priority = Output.FormatPriority(td.Priority);
-            var dueDate = Output.FormatDueDate(td.DueDate);
+            var dueDate = Output.FormatDueDate(td.DueDate, td.Status, td.CompletedAt);
             var tags = Output.FormatTags(td.Tags);
             Output.Markup($"{taskId} {priority} {checkbox} {firstLine}{dueDate}{tags}{restLines}");
 

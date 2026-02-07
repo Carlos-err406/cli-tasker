@@ -138,7 +138,7 @@ public class TuiRenderer
         };
         var taskId = $"[dim]({task.Id})[/]";
         var priority = FormatPriority(task.Priority);
-        var dueDate = FormatDueDate(task.DueDate);
+        var dueDate = FormatDueDate(task.DueDate, task.Status, task.CompletedAt);
         var tags = FormatTags(task.Tags);
 
         var prefixLength = 1 + (mode == TuiMode.MultiSelect ? 3 : 0) + 5 + 1 + 3 + 3 + 1; // +3 for priority indicator
@@ -295,9 +295,20 @@ public class TuiRenderer
         _ => "[dim]·  [/]"
     };
 
-    private static string FormatDueDate(DateOnly? dueDate)
+    private static string FormatDueDate(DateOnly? dueDate, TaskStatus status = TaskStatus.Pending, DateTime? completedAt = null)
     {
         if (!dueDate.HasValue) return "";
+
+        // For completed tasks, freeze the label based on completion time
+        if (status == TaskStatus.Done && completedAt.HasValue)
+        {
+            var completedDate = DateOnly.FromDateTime(completedAt.Value.ToLocalTime());
+            var lateDays = completedDate.DayNumber - dueDate.Value.DayNumber;
+            return lateDays > 0
+                ? $"  [dim]Completed {lateDays}d late[/]"
+                : $"  [dim]Due: {dueDate.Value:MMM d}[/]";
+        }
+
         var today = DateOnly.FromDateTime(DateTime.Today);
         var diff = dueDate.Value.DayNumber - today.DayNumber;
 

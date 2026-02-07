@@ -4,6 +4,7 @@ using Spectre.Console;
 using TaskerCore.Models;
 using TaskerCore.Results;
 using TaskerCore.Utilities;
+using TaskStatus = TaskerCore.Models.TaskStatus;
 
 static class Output
 {
@@ -15,9 +16,20 @@ static class Output
         _ => "[dim]·  [/]"
     };
 
-    public static string FormatDueDate(DateOnly? dueDate)
+    public static string FormatDueDate(DateOnly? dueDate, TaskStatus status = TaskStatus.Pending, DateTime? completedAt = null)
     {
         if (!dueDate.HasValue) return "";
+
+        // For completed tasks, freeze the label based on completion time
+        if (status == TaskStatus.Done && completedAt.HasValue)
+        {
+            var completedDate = DateOnly.FromDateTime(completedAt.Value.ToLocalTime());
+            var lateDays = completedDate.DayNumber - dueDate.Value.DayNumber;
+            return lateDays > 0
+                ? $"  [dim]Completed {lateDays}d late[/]"
+                : $"  [dim]Due: {dueDate.Value:MMM d}[/]";
+        }
+
         var today = DateOnly.FromDateTime(DateTime.Today);
         var diff = dueDate.Value.DayNumber - today.DayNumber;
 
