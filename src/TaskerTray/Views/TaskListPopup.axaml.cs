@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -1303,31 +1304,31 @@ public partial class TaskListPopup : Window
         // Relationship indicators
         if (task.HasParent && task.ParentDisplay != null)
         {
-            AddRelationshipLabel(contentPanel, $"↑ {task.ParentDisplay}", "#777");
+            AddRelationshipLabel(contentPanel, $"↑ {task.ParentDisplay}", "#777", task.ParentStatus);
         }
 
         if (task.HasSubtasks)
         {
-            foreach (var line in task.SubtasksDisplay!)
-                AddRelationshipLabel(contentPanel, $"↳ {line}", "#777");
+            for (var i = 0; i < task.SubtasksDisplay!.Length; i++)
+                AddRelationshipLabel(contentPanel, $"↳ {task.SubtasksDisplay[i]}", "#777", task.SubtasksStatuses?[i]);
         }
 
         if (task.HasBlocks)
         {
-            foreach (var line in task.BlocksDisplay!)
-                AddRelationshipLabel(contentPanel, $"⊘ {line}", "#D4A054");
+            for (var i = 0; i < task.BlocksDisplay!.Length; i++)
+                AddRelationshipLabel(contentPanel, $"⊘ {task.BlocksDisplay[i]}", "#D4A054", task.BlocksStatuses?[i]);
         }
 
         if (task.HasBlockedBy)
         {
-            foreach (var line in task.BlockedByDisplay!)
-                AddRelationshipLabel(contentPanel, $"⊘ {line}", "#D4A054");
+            for (var i = 0; i < task.BlockedByDisplay!.Length; i++)
+                AddRelationshipLabel(contentPanel, $"⊘ {task.BlockedByDisplay[i]}", "#D4A054", task.BlockedByStatuses?[i]);
         }
 
         if (task.HasRelated)
         {
-            foreach (var line in task.RelatedDisplay!)
-                AddRelationshipLabel(contentPanel, $"~ {line}", "#5FB3B3");
+            for (var i = 0; i < task.RelatedDisplay!.Length; i++)
+                AddRelationshipLabel(contentPanel, $"~ {task.RelatedDisplay[i]}", "#5FB3B3", task.RelatedStatuses?[i]);
         }
 
         // Due date display
@@ -1457,16 +1458,32 @@ public partial class TaskListPopup : Window
         return border;
     }
 
-    private static void AddRelationshipLabel(StackPanel parent, string text, string color)
+    private static void AddRelationshipLabel(StackPanel parent, string text, string color, TaskStatus? linkedStatus = null)
     {
-        parent.Children.Add(new TextBlock
+        var tb = new TextBlock
         {
-            Text = text,
             FontSize = 10,
-            Foreground = new SolidColorBrush(Color.Parse(color)),
             TextTrimming = TextTrimming.CharacterEllipsis,
             Margin = new Thickness(0, 2, 0, 0)
-        });
+        };
+        tb.Inlines!.Add(new Run(text) { Foreground = new SolidColorBrush(Color.Parse(color)) });
+
+        var (statusLabel, statusColor) = linkedStatus switch
+        {
+            TaskStatus.Done => ("Done", "#10B981"),
+            TaskStatus.InProgress => ("In Progress", "#F59E0B"),
+            _ => ((string?)null, (string?)null)
+        };
+
+        if (statusLabel != null)
+        {
+            tb.Inlines.Add(new Run($" {statusLabel}")
+            {
+                Foreground = new SolidColorBrush(Color.Parse(statusColor!))
+            });
+        }
+
+        parent.Children.Add(tb);
     }
 
     private void OnCheckboxClicked(TodoTaskViewModel task, CheckBox checkbox)

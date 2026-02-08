@@ -8,6 +8,13 @@ using TaskStatus = TaskerCore.Models.TaskStatus;
 
 static class Output
 {
+    public static string FormatLinkedStatus(TaskStatus status) => status switch
+    {
+        TaskStatus.Done => " [green]Done[/]",
+        TaskStatus.InProgress => " [yellow]In Progress[/]",
+        _ => ""
+    };
+
     public static string FormatPriority(Priority? priority) => priority switch
     {
         Priority.High => "[red bold]>>>[/]",
