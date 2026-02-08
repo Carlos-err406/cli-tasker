@@ -1,0 +1,29 @@
+{
+  "name": "@tasker/core",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts",
+    "./queries": "./src/queries/index.ts",
+    "./types": "./src/types/index.ts",
+    "./parsers": "./src/parsers/index.ts",
+    "./undo": "./src/undo/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "drizzle-orm": "^0.38.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "drizzle-kit": "^0.30.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
