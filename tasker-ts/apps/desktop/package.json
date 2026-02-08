@@ -6,9 +6,12 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
-    "package": "electron-builder"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "package": "electron-builder",
+    "clean": "rm -rf dist dist-electron"
   },
   "dependencies": {
     "@tasker/core": "workspace:*",

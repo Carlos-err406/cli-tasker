@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r build",
-    "test": "vitest run",
+    "test": "pnpm -r test",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "typecheck": "pnpm -r --parallel typecheck",
+    "dev:desktop": "pnpm --filter @tasker/desktop dev",
+    "clean": "pnpm -r --parallel clean"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -10,7 +10,15 @@
   },
   "files": [
     "dist",
-    "dist-electron"
+    "dist-electron",
+    "!node_modules/**/*.{ts,map,md}"
+  ],
+  "extraResources": [
+    {
+      "from": "../../packages/core/node_modules/better-sqlite3",
+      "to": "better-sqlite3",
+      "filter": ["build/**", "prebuilds/**", "package.json"]
+    }
   ],
   "mac": {
     "extendInfo": {
