@@ -14,13 +14,25 @@ public record TodoTask(
     DateTime? CompletedAt = null,
     string? ParentId = null)
 {
+    private const string IdChars = "0123456789abcdefghijklmnopqrstuvwxyz";
+    private const int IdLength = 3;
+
+    public static string GenerateId()
+    {
+        return string.Create(IdLength, (object?)null, static (span, _) =>
+        {
+            for (var i = 0; i < span.Length; i++)
+                span[i] = IdChars[Random.Shared.Next(IdChars.Length)];
+        });
+    }
+
     public static TodoTask CreateTodoTask(string description, string listName)
     {
         var trimmed = description.Trim();
         var parsed = TaskDescriptionParser.Parse(trimmed);
 
         return new TodoTask(
-            Guid.NewGuid().ToString()[..3],
+            GenerateId(),
             trimmed,
             TaskStatus.Pending,
             DateTime.Now,
