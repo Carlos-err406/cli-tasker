@@ -147,7 +147,8 @@ static class ListCommand
                 var parentTitle = parent != null
                     ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0], 40))
                     : "?";
-                Output.Markup($"{indent}[dim]↑ Subtask of ({parsed.ParentId}) {parentTitle}[/]");
+                var parentStatus = parent != null ? Output.FormatLinkedStatus(parent.Status) : "";
+                Output.Markup($"{indent}[dim]↑ Subtask of ({parsed.ParentId}) {parentTitle}[/]{parentStatus}");
             }
 
             if (parsed.HasSubtaskIds != null)
@@ -158,7 +159,8 @@ static class ListCommand
                     var subTitle = sub != null
                         ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(sub.Description).Split('\n')[0], 40))
                         : "?";
-                    Output.Markup($"{indent}[dim]↳ Subtask ({subId}) {subTitle}[/]");
+                    var subStatus = sub != null ? Output.FormatLinkedStatus(sub.Status) : "";
+                    Output.Markup($"{indent}[dim]↳ Subtask ({subId}) {subTitle}[/]{subStatus}");
                 }
             }
 
@@ -170,7 +172,8 @@ static class ListCommand
                     var bTitle = b != null
                         ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0], 40))
                         : "?";
-                    Output.Markup($"{indent}[yellow dim]⊘ Blocks ({bId}) {bTitle}[/]");
+                    var bStatus = b != null ? Output.FormatLinkedStatus(b.Status) : "";
+                    Output.Markup($"{indent}[yellow dim]⊘ Blocks ({bId}) {bTitle}[/]{bStatus}");
                 }
             }
 
@@ -182,7 +185,8 @@ static class ListCommand
                     var bbTitle = bb != null
                         ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(bb.Description).Split('\n')[0], 40))
                         : "?";
-                    Output.Markup($"{indent}[yellow dim]⊘ Blocked by ({bbId}) {bbTitle}[/]");
+                    var bbStatus = bb != null ? Output.FormatLinkedStatus(bb.Status) : "";
+                    Output.Markup($"{indent}[yellow dim]⊘ Blocked by ({bbId}) {bbTitle}[/]{bbStatus}");
                 }
             }
 
@@ -194,7 +198,8 @@ static class ListCommand
                     var rTitle = r != null
                         ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(r.Description).Split('\n')[0], 40))
                         : "?";
-                    Output.Markup($"{indent}[cyan dim]~ Related to ({rId}) {rTitle}[/]");
+                    var rStatus = r != null ? Output.FormatLinkedStatus(r.Status) : "";
+                    Output.Markup($"{indent}[cyan dim]~ Related to ({rId}) {rTitle}[/]{rStatus}");
                 }
             }
         }

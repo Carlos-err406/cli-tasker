@@ -193,7 +193,8 @@ public class TuiRenderer
             var parentTitle = parent != null
                 ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0], 40))
                 : "?";
-            WriteLineCleared($"{indent}[dim]↑ Subtask of ({parsed.ParentId}) {parentTitle}[/]");
+            var parentStatus = parent != null ? Output.FormatLinkedStatus(parent.Status) : "";
+            WriteLineCleared($"{indent}[dim]↑ Subtask of ({parsed.ParentId}) {parentTitle}[/]{parentStatus}");
             linesRendered++;
         }
 
@@ -206,7 +207,8 @@ public class TuiRenderer
                 var subTitle = sub != null
                     ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(sub.Description).Split('\n')[0], 40))
                     : "?";
-                WriteLineCleared($"{indent}[dim]↳ Subtask ({subId}) {subTitle}[/]");
+                var subStatus = sub != null ? Output.FormatLinkedStatus(sub.Status) : "";
+                WriteLineCleared($"{indent}[dim]↳ Subtask ({subId}) {subTitle}[/]{subStatus}");
                 linesRendered++;
             }
         }
@@ -220,7 +222,8 @@ public class TuiRenderer
                 var bTitle = b != null
                     ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0], 40))
                     : "?";
-                WriteLineCleared($"{indent}[yellow]⊘ Blocks ({bId}) {bTitle}[/]");
+                var bStatus = b != null ? Output.FormatLinkedStatus(b.Status) : "";
+                WriteLineCleared($"{indent}[yellow]⊘ Blocks ({bId}) {bTitle}[/]{bStatus}");
                 linesRendered++;
             }
         }
@@ -234,7 +237,8 @@ public class TuiRenderer
                 var bbTitle = bb != null
                     ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(bb.Description).Split('\n')[0], 40))
                     : "?";
-                WriteLineCleared($"{indent}[yellow]⊘ Blocked by ({bbId}) {bbTitle}[/]");
+                var bbStatus = bb != null ? Output.FormatLinkedStatus(bb.Status) : "";
+                WriteLineCleared($"{indent}[yellow]⊘ Blocked by ({bbId}) {bbTitle}[/]{bbStatus}");
                 linesRendered++;
             }
         }
@@ -248,7 +252,8 @@ public class TuiRenderer
                 var rTitle = r != null
                     ? Markup.Escape(StringHelpers.Truncate(TaskDescriptionParser.GetDisplayDescription(r.Description).Split('\n')[0], 40))
                     : "?";
-                WriteLineCleared($"{indent}[cyan]~ Related to ({rId}) {rTitle}[/]");
+                var rStatus = r != null ? Output.FormatLinkedStatus(r.Status) : "";
+                WriteLineCleared($"{indent}[cyan]~ Related to ({rId}) {rTitle}[/]{rStatus}");
                 linesRendered++;
             }
         }

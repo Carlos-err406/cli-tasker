@@ -63,41 +63,44 @@ static class GetCommand
     {
         var parsed = TaskDescriptionParser.Parse(task.Description);
 
+        string FormatStatus(TaskStatus? s) => s switch
+        {
+            TaskStatus.Done => "done",
+            TaskStatus.InProgress => "in-progress",
+            _ => "pending"
+        };
+
+        var parentTask = parsed.ParentId != null ? taskList.GetTodoTaskById(parsed.ParentId) : null;
+
         var subtaskObjs = (parsed.HasSubtaskIds ?? []).Select(id =>
         {
             var s = taskList.GetTodoTaskById(id);
-            return new { id, description = s != null ? StringHelpers.Truncate(s.Description, 50) : "?" };
+            return new { id, description = s != null ? StringHelpers.Truncate(s.Description, 50) : "?", status = FormatStatus(s?.Status) };
         }).ToArray();
 
         var blocksObjs = (parsed.BlocksIds ?? []).Select(id =>
         {
             var b = taskList.GetTodoTaskById(id);
-            return new { id, description = b != null ? StringHelpers.Truncate(b.Description, 50) : "?" };
+            return new { id, description = b != null ? StringHelpers.Truncate(b.Description, 50) : "?", status = FormatStatus(b?.Status) };
         }).ToArray();
 
         var blockedByObjs = (parsed.BlockedByIds ?? []).Select(id =>
         {
             var b = taskList.GetTodoTaskById(id);
-            return new { id, description = b != null ? StringHelpers.Truncate(b.Description, 50) : "?" };
+            return new { id, description = b != null ? StringHelpers.Truncate(b.Description, 50) : "?", status = FormatStatus(b?.Status) };
         }).ToArray();
 
         var relatedObjs = (parsed.RelatedIds ?? []).Select(id =>
         {
             var r = taskList.GetTodoTaskById(id);
-            return new { id, description = r != null ? StringHelpers.Truncate(r.Description, 50) : "?" };
+            return new { id, description = r != null ? StringHelpers.Truncate(r.Description, 50) : "?", status = FormatStatus(r?.Status) };
         }).ToArray();
 
         var obj = new
         {
             id = task.Id,
             description = task.Description,
-            status = task.Status switch
-            {
-                TaskStatus.Pending => "pending",
-                TaskStatus.InProgress => "in-progress",
-                TaskStatus.Done => "done",
-                _ => "pending"
-            },
+            status = FormatStatus(task.Status),
             priority = task.Priority?.ToString().ToLower(),
             dueDate = task.DueDate?.ToString("yyyy-MM-dd"),
             tags = task.Tags,
@@ -105,6 +108,7 @@ static class GetCommand
             createdAt = task.CreatedAt.ToString("o"),
             completedAt = task.CompletedAt?.ToString("o"),
             parentId = parsed.ParentId,
+            parentStatus = parentTask != null ? FormatStatus(parentTask.Status) : null,
             subtasks = subtaskObjs,
             blocks = blocksObjs,
             blockedBy = blockedByObjs,
@@ -142,7 +146,8 @@ static class GetCommand
         {
             var parent = taskList.GetTodoTaskById(parsed.ParentId);
             var parentDesc = parent != null ? StringHelpers.Truncate(parent.Description, 40) : "?";
-            Output.Markup($"[bold]Parent:[/]      [dim]({parsed.ParentId}) {Spectre.Console.Markup.Escape(parentDesc)}[/]");
+            var parentStatus = parent != null ? Output.FormatLinkedStatus(parent.Status) : "";
+            Output.Markup($"[bold]Parent:[/]      [dim]({parsed.ParentId}) {Spectre.Console.Markup.Escape(parentDesc)}[/]{parentStatus}");
         }
 
         if (parsed.HasSubtaskIds is { Length: > 0 })
@@ -152,7 +157,8 @@ static class GetCommand
             {
                 var sub = taskList.GetTodoTaskById(subId);
                 var subDesc = sub != null ? StringHelpers.Truncate(sub.Description, 40) : "?";
-                Output.Markup($"               [dim]({subId}) {Spectre.Console.Markup.Escape(subDesc)}[/]");
+                var subStatus = sub != null ? Output.FormatLinkedStatus(sub.Status) : "";
+                Output.Markup($"               [dim]({subId}) {Spectre.Console.Markup.Escape(subDesc)}[/]{subStatus}");
             }
         }
 
@@ -163,7 +169,8 @@ static class GetCommand
             {
                 var b = taskList.GetTodoTaskById(bId);
                 var bDesc = b != null ? StringHelpers.Truncate(b.Description, 40) : "?";
-                Output.Markup($"               [dim]({bId}) {Spectre.Console.Markup.Escape(bDesc)}[/]");
+                var bStatus = b != null ? Output.FormatLinkedStatus(b.Status) : "";
+                Output.Markup($"               [dim]({bId}) {Spectre.Console.Markup.Escape(bDesc)}[/]{bStatus}");
             }
         }
 
@@ -174,7 +181,8 @@ static class GetCommand
             {
                 var bb = taskList.GetTodoTaskById(bbId);
                 var bbDesc = bb != null ? StringHelpers.Truncate(bb.Description, 40) : "?";
-                Output.Markup($"               [dim]({bbId}) {Spectre.Console.Markup.Escape(bbDesc)}[/]");
+                var bbStatus = bb != null ? Output.FormatLinkedStatus(bb.Status) : "";
+                Output.Markup($"               [dim]({bbId}) {Spectre.Console.Markup.Escape(bbDesc)}[/]{bbStatus}");
             }
         }
 
@@ -185,7 +193,8 @@ static class GetCommand
             {
                 var r = taskList.GetTodoTaskById(rId);
                 var rDesc = r != null ? StringHelpers.Truncate(r.Description, 40) : "?";
-                Output.Markup($"               [dim]({rId}) {Spectre.Console.Markup.Escape(rDesc)}[/]");
+                var rStatus = r != null ? Output.FormatLinkedStatus(r.Status) : "";
+                Output.Markup($"               [dim]({rId}) {Spectre.Console.Markup.Escape(rDesc)}[/]{rStatus}");
             }
         }
 

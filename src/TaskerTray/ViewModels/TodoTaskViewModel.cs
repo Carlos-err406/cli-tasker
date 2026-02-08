@@ -36,13 +36,18 @@ public partial class TodoTaskViewModel : ObservableObject
 
     // Relationship display (populated via LoadRelationships)
     public string? ParentDisplay { get; private set; }
+    public TaskStatus? ParentStatus { get; private set; }
     public string[]? SubtasksDisplay { get; private set; }
+    public TaskStatus[]? SubtasksStatuses { get; private set; }
     public bool HasSubtasks => SubtasksDisplay is { Length: > 0 };
     public string[]? BlocksDisplay { get; private set; }
+    public TaskStatus[]? BlocksStatuses { get; private set; }
     public bool HasBlocks => BlocksDisplay is { Length: > 0 };
     public string[]? BlockedByDisplay { get; private set; }
+    public TaskStatus[]? BlockedByStatuses { get; private set; }
     public bool HasBlockedBy => BlockedByDisplay is { Length: > 0 };
     public string[]? RelatedDisplay { get; private set; }
+    public TaskStatus[]? RelatedStatuses { get; private set; }
     public bool HasRelated => RelatedDisplay is { Length: > 0 };
     public bool HasRelationships => HasParent || HasSubtasks || HasBlocks || HasBlockedBy || HasRelated;
 
@@ -255,58 +260,79 @@ public partial class TodoTaskViewModel : ObservableObject
                 ? TaskDescriptionParser.GetDisplayDescription(parent.Description).Split('\n')[0]
                 : "?";
             ParentDisplay = $"Subtask of ({parsed.ParentId}) {parentTitle}";
+            ParentStatus = parent?.Status;
         }
 
         // Subtasks with id + title (from -^abc markers)
         if (parsed.HasSubtaskIds is { Length: > 0 })
         {
-            SubtasksDisplay = parsed.HasSubtaskIds.Select(subId =>
+            var displays = new List<string>();
+            var statuses = new List<TaskStatus>();
+            foreach (var subId in parsed.HasSubtaskIds)
             {
                 var sub = taskList.GetTodoTaskById(subId);
                 var title = sub != null
                     ? TaskDescriptionParser.GetDisplayDescription(sub.Description).Split('\n')[0]
                     : "?";
-                return $"Subtask ({subId}) {title}";
-            }).ToArray();
+                displays.Add($"Subtask ({subId}) {title}");
+                statuses.Add(sub?.Status ?? TaskStatus.Pending);
+            }
+            SubtasksDisplay = displays.ToArray();
+            SubtasksStatuses = statuses.ToArray();
         }
 
         // Blocks with id + title (from !abc markers)
         if (parsed.BlocksIds is { Length: > 0 })
         {
-            BlocksDisplay = parsed.BlocksIds.Select(bId =>
+            var displays = new List<string>();
+            var statuses = new List<TaskStatus>();
+            foreach (var bId in parsed.BlocksIds)
             {
                 var b = taskList.GetTodoTaskById(bId);
                 var title = b != null
                     ? TaskDescriptionParser.GetDisplayDescription(b.Description).Split('\n')[0]
                     : "?";
-                return $"Blocks ({bId}) {title}";
-            }).ToArray();
+                displays.Add($"Blocks ({bId}) {title}");
+                statuses.Add(b?.Status ?? TaskStatus.Pending);
+            }
+            BlocksDisplay = displays.ToArray();
+            BlocksStatuses = statuses.ToArray();
         }
 
         // Blocked by with id + title (from -!abc markers)
         if (parsed.BlockedByIds is { Length: > 0 })
         {
-            BlockedByDisplay = parsed.BlockedByIds.Select(bbId =>
+            var displays = new List<string>();
+            var statuses = new List<TaskStatus>();
+            foreach (var bbId in parsed.BlockedByIds)
             {
                 var bb = taskList.GetTodoTaskById(bbId);
                 var title = bb != null
                     ? TaskDescriptionParser.GetDisplayDescription(bb.Description).Split('\n')[0]
                     : "?";
-                return $"Blocked by ({bbId}) {title}";
-            }).ToArray();
+                displays.Add($"Blocked by ({bbId}) {title}");
+                statuses.Add(bb?.Status ?? TaskStatus.Pending);
+            }
+            BlockedByDisplay = displays.ToArray();
+            BlockedByStatuses = statuses.ToArray();
         }
 
         // Related with id + title (from ~abc markers)
         if (parsed.RelatedIds is { Length: > 0 })
         {
-            RelatedDisplay = parsed.RelatedIds.Select(rId =>
+            var displays = new List<string>();
+            var statuses = new List<TaskStatus>();
+            foreach (var rId in parsed.RelatedIds)
             {
                 var r = taskList.GetTodoTaskById(rId);
                 var title = r != null
                     ? TaskDescriptionParser.GetDisplayDescription(r.Description).Split('\n')[0]
                     : "?";
-                return $"Related to ({rId}) {title}";
-            }).ToArray();
+                displays.Add($"Related to ({rId}) {title}");
+                statuses.Add(r?.Status ?? TaskStatus.Pending);
+            }
+            RelatedDisplay = displays.ToArray();
+            RelatedStatuses = statuses.ToArray();
         }
     }
 
