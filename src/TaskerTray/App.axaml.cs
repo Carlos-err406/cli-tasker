@@ -132,7 +132,7 @@ public class App : Application
 
         if (_popup.IsVisible)
         {
-            _popup.Hide();
+            _ = _popup.HideWithAnimation();
         }
         else
         {
