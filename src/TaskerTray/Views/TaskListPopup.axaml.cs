@@ -1236,6 +1236,7 @@ public partial class TaskListPopup : Window
         {
             Text = task.Id,
             FontSize = 10,
+            FontFamily = new FontFamily("Menlo, Monaco, Courier New, monospace"),
             Foreground = new SolidColorBrush(Color.Parse("#aaa")),
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center

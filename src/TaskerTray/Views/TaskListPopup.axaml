@@ -3,7 +3,7 @@
         x:Class="TaskerTray.Views.TaskListPopup"
         Title="Tasker"
         Width="400"
-        Height="520"
+        Height="600"
         WindowStartupLocation="Manual"
         SystemDecorations="None"
         ExtendClientAreaToDecorationsHint="True"
