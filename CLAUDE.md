@@ -43,6 +43,8 @@ tasker wip <taskId>           # Mark as in-progress when starting
 tasker check <taskId>         # Mark as done (AFTER update.sh, so user can test first)
 ```
 
+**When a task has subtasks, blockers, or related tasks:** Ask the user if they want to work on those as well, or just the specified task. Don't assume — the user may only want the specific task they referenced.
+
 ## Reference Docs
 
 ### Models and Schema

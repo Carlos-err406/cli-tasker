@@ -1202,13 +1202,15 @@ public partial class TaskListPopup : Window
         {
             IsChecked = task.Status == TaskStatus.Done,
             IsThreeState = true,
-            Margin = new Thickness(0, 0, 10, 0),
+            Margin = new Thickness(0),
+            Padding = new Thickness(0),
+            MinWidth = 0,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             Cursor = new Cursor(StandardCursorType.Arrow)
         };
         if (task.Status == TaskStatus.InProgress)
             checkbox.IsChecked = null;
-        Grid.SetColumn(checkbox, 0);
         checkbox.Click += (_, _) => OnCheckboxClicked(task, checkbox);
         checkbox.PointerPressed += (_, e) =>
         {
@@ -1218,8 +1220,27 @@ public partial class TaskListPopup : Window
                 OnSetInProgress(task);
             }
         };
-        grid.Children.Add(checkbox);
         _taskCheckboxes[task.Id] = checkbox;
+
+        var checkboxColumn = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Vertical,
+            Spacing = 2,
+            Margin = new Thickness(0, 0, 10, 0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+        };
+        checkboxColumn.Children.Add(checkbox);
+        checkboxColumn.Children.Add(new TextBlock
+        {
+            Text = task.Id,
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.Parse("#aaa")),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center
+        });
+        Grid.SetColumn(checkboxColumn, 0);
+        grid.Children.Add(checkboxColumn);
 
         // Task content (title + description + metadata)
         var contentPanel = new StackPanel
