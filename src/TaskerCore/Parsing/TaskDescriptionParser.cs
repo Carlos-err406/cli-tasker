@@ -21,7 +21,8 @@ public static partial class TaskDescriptionParser
         string[]? BlocksIds = null,
         string[]? HasSubtaskIds = null,
         string[]? BlockedByIds = null,
-        string[]? RelatedIds = null);
+        string[]? RelatedIds = null,
+        string? DueDateRaw = null);
 
     public static ParsedTask Parse(string input)
     {
@@ -49,6 +50,7 @@ public static partial class TaskDescriptionParser
 
         Priority? priority = null;
         DateOnly? dueDate = null;
+        string? dueDateRaw = null;
         var tags = new List<string>();
         string? parentId = null;
         var blocksIds = new List<string>();
@@ -73,8 +75,8 @@ public static partial class TaskDescriptionParser
         var dueDateMatch = DueDateRegex().Match(lastLine);
         if (dueDateMatch.Success)
         {
-            var dateStr = dueDateMatch.Groups[1].Value;
-            dueDate = DateParser.Parse(dateStr);
+            dueDateRaw = dueDateMatch.Groups[1].Value;
+            dueDate = DateParser.Parse(dueDateRaw);
         }
 
         // Extract tags: #tag
@@ -124,7 +126,8 @@ public static partial class TaskDescriptionParser
             parentId, blocksIds.Count > 0 ? blocksIds.ToArray() : null,
             hasSubtaskIds.Count > 0 ? hasSubtaskIds.ToArray() : null,
             blockedByIds.Count > 0 ? blockedByIds.ToArray() : null,
-            relatedIds.Count > 0 ? relatedIds.ToArray() : null);
+            relatedIds.Count > 0 ? relatedIds.ToArray() : null,
+            dueDateRaw);
     }
 
     /// <summary>

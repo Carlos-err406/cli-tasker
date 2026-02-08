@@ -780,7 +780,7 @@ public class TodoTaskList
         }
 
         CreateBackup();
-        var renamedTask = todoTask.Rename(newDescription);
+        var renamedTask = todoTask.Rename(newDescription, oldParsed);
 
         // Validate new parent if metadata line changed it
         if (newParsed.LastLineIsMetadataOnly && newParsed.ParentId != null)
