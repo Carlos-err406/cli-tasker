@@ -63,16 +63,21 @@ public record TodoTask(
         CompletedAt = status == TaskStatus.Done ? DateTime.UtcNow : null
     };
 
-    public TodoTask Rename(string newDescription)
+    public TodoTask Rename(string newDescription, TaskDescriptionParser.ParsedTask? oldParsed = null)
     {
         var trimmed = newDescription.Trim();
         var parsed = TaskDescriptionParser.Parse(trimmed);
+
+        // Preserve existing due date if the date marker text hasn't changed
+        var newDueDate = parsed.DueDate;
+        if (oldParsed != null && parsed.DueDateRaw == oldParsed.DueDateRaw)
+            newDueDate = DueDate;
 
         return this with
         {
             Description = trimmed,
             Priority = parsed.Priority,
-            DueDate = parsed.DueDate,
+            DueDate = newDueDate,
             Tags = parsed.Tags.Length > 0 ? parsed.Tags : null,
             // If metadata line exists, use parsed parent (null = cleared).
             // If no metadata line, preserve existing parent.
