@@ -33,7 +33,10 @@ public class TuiRenderer
         _taskList = new TodoTaskList();
 
         RenderHeader(state, tasks.Count);
-        RenderTasks(state, tasks);
+        if (state.ShowHelp)
+            RenderHelpPanel();
+        else
+            RenderTasks(state, tasks);
         RenderStatusBar(state, tasks.Count);
 
         Console.SetCursorPosition(0, 0);
@@ -43,14 +46,16 @@ public class TuiRenderer
     private void RenderHeader(TuiState state, int taskCount)
     {
         var listName = state.CurrentList ?? "all lists";
-        var modeIndicator = state.Mode switch
-        {
-            TuiMode.Search => $" [yellow]/[/][bold]{Markup.Escape(state.SearchQuery ?? "")}[/]",
-            TuiMode.MultiSelect => $" [blue]({state.SelectedTaskIds.Count} selected)[/]",
-            TuiMode.InputAdd => " [yellow]+ new task[/]",
-            TuiMode.InputRename => " [yellow]editing[/]",
-            _ => ""
-        };
+        var modeIndicator = state.ShowHelp
+            ? " [yellow]? help[/]"
+            : state.Mode switch
+            {
+                TuiMode.Search => $" [yellow]/[/][bold]{Markup.Escape(state.SearchQuery ?? "")}[/]",
+                TuiMode.MultiSelect => $" [blue]({state.SelectedTaskIds.Count} selected)[/]",
+                TuiMode.InputAdd => " [yellow]+ new task[/]",
+                TuiMode.InputRename => " [yellow]editing[/]",
+                _ => ""
+            };
 
         WriteLineCleared($"[bold underline]tasker[/] [dim]([/]{Markup.Escape(listName)}[dim])[/]{modeIndicator}");
         ClearLine(); // Empty line after header
@@ -119,6 +124,70 @@ public class TuiRenderer
             linesRendered += taskLines;
         }
 
+        for (var i = linesRendered; i < availableLines; i++)
+            ClearLine();
+    }
+
+    private void RenderHelpPanel()
+    {
+        var availableLines = Math.Max(1, Console.WindowHeight - 6);
+        var linesRendered = 0;
+
+        void HelpLine(string markup)
+        {
+            if (linesRendered >= availableLines) return;
+            WriteLineCleared(markup);
+            linesRendered++;
+        }
+
+        void BlankLine()
+        {
+            if (linesRendered >= availableLines) return;
+            ClearLine();
+            linesRendered++;
+        }
+
+        // Metadata Prefixes
+        HelpLine("[bold underline]Metadata Prefixes[/]");
+        HelpLine("  [yellow]p1[/] [yellow]p2[/] [yellow]p3[/]    Priority (high / medium / low)");
+        HelpLine("  [yellow]@date[/]        Due date (see formats below)");
+        HelpLine("  [yellow]#tag[/]         Tag (e.g. #work, #cli-only)");
+        HelpLine("  [yellow]^abc[/]         Subtask of task abc");
+        HelpLine("  [yellow]!abc[/]         Blocks task abc");
+        HelpLine("  [yellow]-^abc[/]        Has subtask abc");
+        HelpLine("  [yellow]-!abc[/]        Blocked by task abc");
+        HelpLine("  [yellow]~abc[/]         Related to task abc");
+        HelpLine("[dim]  Add on the last line of a task description[/]");
+
+        BlankLine();
+
+        // Date Formats
+        HelpLine("[bold underline]Date Formats[/]  [dim](use with @)[/]");
+        HelpLine("  [yellow]today[/] [yellow]tomorrow[/] [yellow]yesterday[/]");
+        HelpLine("  [yellow]monday[/]..[yellow]sunday[/]  [dim](or mon..sun)[/]");
+        HelpLine("  [yellow]jan15[/]        Month + day (e.g. feb1, dec25)");
+        HelpLine("  [yellow]+3d[/] [yellow]+2w[/] [yellow]+1m[/]  Relative (days / weeks / months)");
+        HelpLine("  [yellow]2026-02-15[/]   Absolute date");
+
+        BlankLine();
+
+        // Keyboard Shortcuts
+        HelpLine("[bold underline]Keyboard Shortcuts[/]");
+        HelpLine("[dim]  Normal[/]");
+        HelpLine("    [yellow]↑↓[/] navigate  [yellow]space[/] cycle status  [yellow]x[/] delete");
+        HelpLine("    [yellow]a[/] add task  [yellow]s[/] add subtask  [yellow]r[/] rename");
+        HelpLine("    [yellow]1[/]/[yellow]2[/]/[yellow]3[/] priority  [yellow]0[/] clear priority");
+        HelpLine("    [yellow]d[/] set due date  [yellow]D[/] clear due date");
+        HelpLine("    [yellow]z[/] undo  [yellow]Z[/] redo  [yellow]l[/] switch list  [yellow]m[/] move");
+        HelpLine("    [yellow]/[/] search  [yellow]v[/] multi-select  [yellow]q[/] quit");
+        HelpLine("[dim]  Search[/]");
+        HelpLine("    type to filter  [yellow]enter[/] done  [yellow]esc[/] clear");
+        HelpLine("[dim]  Multi-select[/]");
+        HelpLine("    [yellow]space[/] toggle  [yellow]x[/] delete  [yellow]c[/] check  [yellow]u[/] uncheck");
+        HelpLine("[dim]  Input[/]");
+        HelpLine("    [yellow]^S[/] save  [yellow]enter[/] newline  [yellow]esc[/] cancel  [yellow]⌥←→[/] word");
+
+        // Fill remaining lines
         for (var i = linesRendered; i < availableLines; i++)
             ClearLine();
     }
@@ -418,13 +487,15 @@ public class TuiRenderer
             ClearLine();
         }
 
-        var hints = state.Mode switch
-        {
-            TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:cycle [dim]x[/]:del [dim]1/2/3[/]:priority [dim]d[/]:due [dim]z[/]:undo [dim]a[/]:add [dim]s[/]:subtask [dim]q[/]:quit",
-            TuiMode.Search => "[dim]type[/]:filter [dim]enter[/]:done [dim]esc[/]:clear",
-            TuiMode.MultiSelect => "[dim]space[/]:toggle [dim]x[/]:del [dim]c[/]:check [dim]u[/]:uncheck [dim]esc[/]:exit",
-            _ => ""
-        };
+        var hints = state.ShowHelp
+            ? "[dim]?[/]:close [dim]esc[/]:close"
+            : state.Mode switch
+            {
+                TuiMode.Normal => "[dim]↑↓[/]:nav [dim]space[/]:cycle [dim]x[/]:del [dim]1/2/3[/]:priority [dim]d[/]:due [dim]z[/]:undo [dim]a[/]:add [dim]s[/]:subtask [dim]?[/]:help [dim]q[/]:quit",
+                TuiMode.Search => "[dim]type[/]:filter [dim]enter[/]:done [dim]esc[/]:clear",
+                TuiMode.MultiSelect => "[dim]space[/]:toggle [dim]x[/]:del [dim]c[/]:check [dim]u[/]:uncheck [dim]esc[/]:exit",
+                _ => ""
+            };
 
         WriteLineCleared(hints);
     }

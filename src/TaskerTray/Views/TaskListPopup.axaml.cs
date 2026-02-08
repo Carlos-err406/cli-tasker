@@ -43,6 +43,7 @@ public partial class TaskListPopup : Window
     private string? _newlyAddedTaskId; // Track newly added task for entrance animation
     private string? _searchQuery; // Current search filter text
     private DispatcherTimer? _searchDebounceTimer;
+    private bool _showHelp;
     private Dictionary<string, Border> _taskBorders = new(); // Track task borders for animations
     private Dictionary<string, CheckBox> _taskCheckboxes = new();
     private Dictionary<string, TextBlock> _taskTitles = new();
@@ -156,6 +157,11 @@ public partial class TaskListPopup : Window
                 CancelInlineEdit();
                 e.Handled = true;
             }
+            else if (_showHelp)
+            {
+                ToggleHelp();
+                e.Handled = true;
+            }
             else if (!string.IsNullOrEmpty(SearchTextBox.Text))
             {
                 SearchTextBox.Text = "";
@@ -192,6 +198,12 @@ public partial class TaskListPopup : Window
         else if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Meta) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
         {
             HandleUndoRedo(isRedo: false);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Oem2 && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+        {
+            // Cmd+? (Cmd+Shift+/) or Cmd+/ toggles help
+            ToggleHelp();
             e.Handled = true;
         }
         else if (e.Key == Key.Q && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
@@ -1669,12 +1681,105 @@ public partial class TaskListPopup : Window
         QuitRequested?.Invoke();
     }
 
+    private void OnHelpClick(object? sender, RoutedEventArgs e)
+    {
+        ToggleHelp();
+    }
+
+    private void ToggleHelp()
+    {
+        _showHelp = !_showHelp;
+        HelpPanel.IsVisible = _showHelp;
+        TaskListScrollViewer.IsVisible = !_showHelp;
+
+        if (_showHelp)
+            BuildHelpPanel();
+    }
+
+    private void BuildHelpPanel()
+    {
+        HelpPanelContent.Children.Clear();
+
+        void AddHeader(string text)
+        {
+            HelpPanelContent.Children.Add(new TextBlock
+            {
+                Text = text,
+                FontWeight = FontWeight.Bold,
+                FontSize = 13,
+                Foreground = new SolidColorBrush(Color.Parse("#FFFFFF")),
+                Margin = new Thickness(0, 8, 0, 4)
+            });
+        }
+
+        void AddItem(string label, string description)
+        {
+            var panel = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+            panel.Children.Add(new TextBlock
+            {
+                Text = label,
+                FontSize = 12,
+                FontFamily = new FontFamily("Menlo, Monaco, monospace"),
+                Foreground = new SolidColorBrush(Color.Parse("#E0A040")),
+                MinWidth = 100
+            });
+            panel.Children.Add(new TextBlock
+            {
+                Text = description,
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.Parse("#999"))
+            });
+            HelpPanelContent.Children.Add(panel);
+        }
+
+        // Metadata Prefixes
+        AddHeader("Metadata Prefixes");
+        AddItem("p1  p2  p3", "Priority (high / medium / low)");
+        AddItem("@date", "Due date (see formats below)");
+        AddItem("#tag", "Tag (e.g. #work, #cli-only)");
+        AddItem("^abc", "Subtask of task abc");
+        AddItem("!abc", "Blocks task abc");
+        AddItem("-^abc", "Has subtask abc");
+        AddItem("-!abc", "Blocked by task abc");
+        AddItem("~abc", "Related to task abc");
+        HelpPanelContent.Children.Add(new TextBlock
+        {
+            Text = "Add on the last line of a task description",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.Parse("#666")),
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+
+        // Date Formats
+        AddHeader("Date Formats (use with @)");
+        AddItem("today", "Today's date");
+        AddItem("tomorrow", "Tomorrow's date");
+        AddItem("yesterday", "Yesterday's date");
+        AddItem("mon..sun", "Next occurrence of weekday");
+        AddItem("jan15", "Month + day (e.g. feb1, dec25)");
+        AddItem("+3d  +2w  +1m", "Relative (days / weeks / months)");
+        AddItem("2026-02-15", "Absolute date");
+
+        // Keyboard Shortcuts
+        AddHeader("Keyboard Shortcuts");
+        AddItem("\u2318K", "Focus search");
+        AddItem("\u2318R", "Refresh tasks");
+        AddItem("\u2318Z", "Undo");
+        AddItem("\u2318\u21e7Z", "Redo");
+        AddItem("\u2318W", "Close popup");
+        AddItem("\u2318?", "Toggle this help");
+        AddItem("Esc", "Cancel / clear / close");
+    }
+
     public void ShowAtPosition(PixelPoint position)
     {
         _showCount++; // Increment to invalidate any pending LostFocus handlers from previous show
         SearchTextBox.Text = "";
         _searchQuery = null;
         _searchDebounceTimer?.Stop();
+        _showHelp = false;
+        HelpPanel.IsVisible = false;
+        TaskListScrollViewer.IsVisible = true;
         Position = position;
         CancelInlineEdit();
         TaskerServices.Default.Undo.ReloadHistory();

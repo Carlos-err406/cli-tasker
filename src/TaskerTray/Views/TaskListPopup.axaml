@@ -151,7 +151,7 @@
                     Background="#303030"
                     CornerRadius="14,14,0,0"
                     Padding="12,10">
-                <Grid ColumnDefinitions="*,Auto,Auto">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                     <TextBlock Text="Tasker"
                                FontWeight="SemiBold"
                                FontSize="14"
@@ -183,6 +183,21 @@
                             VerticalContentAlignment="Center"
                             ToolTip.Tip="Create new list"
                             Click="OnCreateListClick"/>
+                    <Button Grid.Column="3"
+                            x:Name="HelpButton"
+                            Content="?"
+                            Width="28"
+                            Height="28"
+                            FontSize="16"
+                            Padding="0"
+                            Margin="6,0,0,0"
+                            Background="Transparent"
+                            Foreground="#888"
+                            CornerRadius="6"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
+                            ToolTip.Tip="Shortcuts &amp; metadata help"
+                            Click="OnHelpClick"/>
                 </Grid>
             </Border>
 
@@ -198,9 +213,19 @@
 
             <!-- Task List - built programmatically for grouping support -->
             <ScrollViewer Grid.Row="2"
+                          x:Name="TaskListScrollViewer"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto">
                 <StackPanel x:Name="TaskListPanel" Margin="8" Spacing="4"/>
+            </ScrollViewer>
+
+            <!-- Help Panel - toggled visibility, replaces task list -->
+            <ScrollViewer Grid.Row="2"
+                          x:Name="HelpPanel"
+                          IsVisible="False"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="HelpPanelContent" Margin="12" Spacing="4"/>
             </ScrollViewer>
 
             <!-- Footer -->

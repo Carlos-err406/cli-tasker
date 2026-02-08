@@ -18,6 +18,14 @@ public class TuiKeyHandler
 
     public TuiState Handle(ConsoleKeyInfo key, TuiState state, IReadOnlyList<TodoTask> tasks)
     {
+        // Help overlay intercepts all keys
+        if (state.ShowHelp)
+        {
+            if (key.Key == ConsoleKey.Escape || key.KeyChar == '?')
+                return state with { ShowHelp = false };
+            return state;
+        }
+
         return state.Mode switch
         {
             TuiMode.Normal => HandleNormalMode(key, state, tasks),
@@ -34,6 +42,10 @@ public class TuiKeyHandler
 
     private TuiState HandleNormalMode(ConsoleKeyInfo key, TuiState state, IReadOnlyList<TodoTask> tasks)
     {
+        // Check KeyChar for ? since ConsoleKey mapping varies across terminals
+        if (key.KeyChar == '?')
+            return state with { ShowHelp = true };
+
         var taskCount = tasks.Count;
 
         switch (key.Key)
@@ -86,8 +98,8 @@ public class TuiKeyHandler
             case ConsoleKey.M:
                 return StartMoveTask(state, tasks);
 
-            // Search
-            case ConsoleKey.Oem2: // '/' key
+            // Search (/)
+            case ConsoleKey.Oem2:
                 return state with { Mode = TuiMode.Search, SearchQuery = "" };
 
             // Multi-select
