@@ -3,20 +3,15 @@
  * Port of TodoTaskList from C# — the largest single file in the codebase.
  */
 
-import { eq, and, sql, like } from 'drizzle-orm';
 import type { TaskerDb } from '../db.js';
 import { getRawDb } from '../db.js';
-import { tasks } from '../schema/tasks.js';
-import { lists } from '../schema/lists.js';
-import { taskDependencies } from '../schema/task-dependencies.js';
-import { taskRelations } from '../schema/task-relations.js';
 import type { Task, TaskId, ListName } from '../types/task.js';
 import type { TaskResult, BatchResult } from '../types/results.js';
 import type { TaskStatus } from '../types/task-status.js';
 import { TaskStatus as TS } from '../types/task-status.js';
 import type { Priority } from '../types/priority.js';
 import {
-  generateId, createTask, withStatus, statusLabel,
+  createTask, withStatus, statusLabel,
   sortTasksForDisplay, serializeTags, deserializeTags,
 } from './task-helpers.js';
 import {
@@ -306,8 +301,8 @@ export function addTask(db: TaskerDb, description: string, listName: ListName): 
 /** Set a task's status, with cascade to descendants when marking Done */
 export function setStatus(db: TaskerDb, taskId: TaskId, status: TaskStatus): TaskResult {
   const task = getTaskById(db, taskId);
-  if (!task) return { kind: 'not-found', taskId };
-  if (task.status === status) return { kind: 'no-change', message: `Task ${taskId} is already ${statusLabel(status)}` };
+  if (!task) return { type: 'not-found', taskId };
+  if (task.status === status) return { type: 'no-change', message: `Task ${taskId} is already ${statusLabel(status)}` };
 
   // Cascade: when marking Done, also mark all non-Done descendants
   const cascadeIds: string[] = [];
@@ -329,13 +324,13 @@ export function setStatus(db: TaskerDb, taskId: TaskId, status: TaskStatus): Tas
   const msg = cascadeIds.length > 0
     ? `Set ${taskId} and ${cascadeIds.length} subtask(s) to ${statusLabel(status)}`
     : `Set ${taskId} to ${statusLabel(status)}`;
-  return { kind: 'success', message: msg };
+  return { type: 'success', message: msg };
 }
 
 /** Move task to trash (soft delete), cascading to descendants */
 export function deleteTask(db: TaskerDb, taskId: TaskId): TaskResult {
   const task = getTaskById(db, taskId);
-  if (!task) return { kind: 'not-found', taskId };
+  if (!task) return { type: 'not-found', taskId };
 
   const descendantIds = getAllDescendantIds(db, taskId);
   const raw = getRawDb(db);
@@ -347,7 +342,7 @@ export function deleteTask(db: TaskerDb, taskId: TaskId): TaskResult {
   const msg = descendantIds.length > 0
     ? `Deleted task (${taskId}) and ${descendantIds.length} subtask(s)`
     : `Deleted task: ${taskId}`;
-  return { kind: 'success', message: msg };
+  return { type: 'success', message: msg };
 }
 
 /** Batch delete (trash) multiple tasks */
@@ -358,9 +353,9 @@ export function deleteTasks(db: TaskerDb, taskIds: TaskId[]): BatchResult {
   const run = raw.transaction(() => {
     for (const taskId of taskIds) {
       const task = getTaskById(db, taskId);
-      if (!task) { results.push({ kind: 'not-found', taskId }); continue; }
+      if (!task) { results.push({ type: 'not-found', taskId }); continue; }
       raw.prepare('UPDATE tasks SET is_trashed = 1 WHERE id = ?').run(taskId);
-      results.push({ kind: 'success', message: `Deleted task: ${taskId}` });
+      results.push({ type: 'success', message: `Deleted task: ${taskId}` });
     }
   });
   run();
@@ -376,12 +371,12 @@ export function setStatuses(db: TaskerDb, taskIds: TaskId[], status: TaskStatus)
   const run = raw.transaction(() => {
     for (const taskId of taskIds) {
       const task = getTaskById(db, taskId);
-      if (!task) { results.push({ kind: 'not-found', taskId }); continue; }
-      if (task.status === status) { results.push({ kind: 'no-change', message: `Task ${taskId} is already ${statusLabel(status)}` }); continue; }
+      if (!task) { results.push({ type: 'not-found', taskId }); continue; }
+      if (task.status === status) { results.push({ type: 'no-change', message: `Task ${taskId} is already ${statusLabel(status)}` }); continue; }
 
       const updated = withStatus(task, status);
       updateTask(db, updated);
-      results.push({ kind: 'success', message: `Set ${taskId} to ${statusLabel(status)}` });
+      results.push({ type: 'success', message: `Set ${taskId} to ${statusLabel(status)}` });
     }
   });
   run();
@@ -392,7 +387,7 @@ export function setStatuses(db: TaskerDb, taskIds: TaskId[], status: TaskStatus)
 /** Rename a task, processing metadata changes */
 export function renameTask(db: TaskerDb, taskId: TaskId, newDescription: string): TaskResult {
   const task = getTaskById(db, taskId);
-  if (!task) return { kind: 'not-found', taskId };
+  if (!task) return { type: 'not-found', taskId };
 
   const trimmed = newDescription.trim();
   const oldParsed = parseDescription(task.description);
@@ -449,15 +444,15 @@ export function renameTask(db: TaskerDb, taskId: TaskId, newDescription: string)
     syncRelatedRelationships(db, taskId, currentRelatedIds, newParsed.relatedIds);
   }
 
-  return { kind: 'success', message: `Renamed task: ${taskId}` };
+  return { type: 'success', message: `Renamed task: ${taskId}` };
 }
 
 /** Move a task to a different list, cascading to descendants */
 export function moveTask(db: TaskerDb, taskId: TaskId, targetList: ListName): TaskResult {
   const task = getTaskById(db, taskId);
-  if (!task) return { kind: 'not-found', taskId };
-  if (task.listName === targetList) return { kind: 'no-change', message: `Task is already in '${targetList}'` };
-  if (task.parentId) return { kind: 'error', message: `Cannot move subtask (${taskId}) to a different list. Remove parent first, or move its parent.` };
+  if (!task) return { type: 'not-found', taskId };
+  if (task.listName === targetList) return { type: 'no-change', message: `Task is already in '${targetList}'` };
+  if (task.parentId) return { type: 'error', message: `Cannot move subtask (${taskId}) to a different list. Remove parent first, or move its parent.` };
 
   const descendantIds = getAllDescendantIds(db, taskId);
 
@@ -473,7 +468,7 @@ export function moveTask(db: TaskerDb, taskId: TaskId, targetList: ListName): Ta
   const msg = descendantIds.length > 0
     ? `Moved (${taskId}) and ${descendantIds.length} subtask(s) from '${task.listName}' to '${targetList}'`
     : `Moved task ${taskId} from '${task.listName}' to '${targetList}'`;
-  return { kind: 'success', message: msg };
+  return { type: 'success', message: msg };
 }
 
 /** Clear all non-trashed tasks in a list (move to trash) */
@@ -495,7 +490,7 @@ export function clearTasks(db: TaskerDb, listName?: ListName): number {
 /** Set a task's due date (or clear it) */
 export function setTaskDueDate(db: TaskerDb, taskId: TaskId, dueDate: string | null): TaskResult {
   const task = getTaskById(db, taskId);
-  if (!task) return { kind: 'not-found', taskId };
+  if (!task) return { type: 'not-found', taskId };
 
   const updated: Task = { ...task, dueDate };
   const parsed = parseDescription(updated.description);
@@ -507,13 +502,13 @@ export function setTaskDueDate(db: TaskerDb, taskId: TaskId, dueDate: string | n
   bumpSortOrder(db, taskId, updated.listName);
 
   const msg = dueDate ? `Set due date for ${taskId}: ${dueDate}` : `Cleared due date for ${taskId}`;
-  return { kind: 'success', message: msg };
+  return { type: 'success', message: msg };
 }
 
 /** Set a task's priority (or clear it) */
 export function setTaskPriority(db: TaskerDb, taskId: TaskId, priority: Priority | null): TaskResult {
   const task = getTaskById(db, taskId);
-  if (!task) return { kind: 'not-found', taskId };
+  if (!task) return { type: 'not-found', taskId };
 
   const updated: Task = { ...task, priority };
   const parsed = parseDescription(updated.description);
@@ -525,14 +520,14 @@ export function setTaskPriority(db: TaskerDb, taskId: TaskId, priority: Priority
   bumpSortOrder(db, taskId, updated.listName);
 
   const msg = priority != null ? `Set priority for ${taskId}: ${priority}` : `Cleared priority for ${taskId}`;
-  return { kind: 'success', message: msg };
+  return { type: 'success', message: msg };
 }
 
 /** Restore a trashed task and its descendants */
 export function restoreFromTrash(db: TaskerDb, taskId: TaskId): TaskResult {
   const raw = getRawDb(db);
   const row = raw.prepare('SELECT * FROM tasks WHERE id = ? AND is_trashed = 1').get(taskId) as any;
-  if (!row) return { kind: 'not-found', taskId };
+  if (!row) return { type: 'not-found', taskId };
 
   const descendantIds: string[] = (raw.prepare(`
     WITH RECURSIVE desc AS (
@@ -551,7 +546,7 @@ export function restoreFromTrash(db: TaskerDb, taskId: TaskId): TaskResult {
   const msg = descendantIds.length > 0
     ? `Restored (${taskId}) and ${descendantIds.length} subtask(s)`
     : `Restored task: ${taskId}`;
-  return { kind: 'success', message: msg };
+  return { type: 'success', message: msg };
 }
 
 /** Permanently delete all trashed tasks, optionally in a specific list */
@@ -712,15 +707,15 @@ export function getRelated(db: TaskerDb, taskId: TaskId): Task[] {
 /** Set parent on a task */
 export function setParent(db: TaskerDb, taskId: TaskId, parentId: TaskId): TaskResult {
   const task = getTaskById(db, taskId);
-  if (!task) return { kind: 'not-found', taskId };
+  if (!task) return { type: 'not-found', taskId };
 
   const parent = getTaskById(db, parentId);
-  if (!parent) return { kind: 'error', message: `Parent task not found: ${parentId}` };
-  if (task.id === parentId) return { kind: 'error', message: 'A task cannot be its own parent' };
-  if (task.listName !== parent.listName) return { kind: 'error', message: `Cannot set parent: task (${taskId}) and parent (${parentId}) are in different lists.` };
+  if (!parent) return { type: 'error', message: `Parent task not found: ${parentId}` };
+  if (task.id === parentId) return { type: 'error', message: 'A task cannot be its own parent' };
+  if (task.listName !== parent.listName) return { type: 'error', message: `Cannot set parent: task (${taskId}) and parent (${parentId}) are in different lists.` };
 
   const descendants = getAllDescendantIds(db, taskId);
-  if (descendants.includes(parentId)) return { kind: 'error', message: `Circular reference: (${parentId}) is already a descendant of (${taskId})` };
+  if (descendants.includes(parentId)) return { type: 'error', message: `Circular reference: (${parentId}) is already a descendant of (${taskId})` };
 
   const oldParentId = task.parentId;
   const raw = getRawDb(db);
@@ -740,14 +735,14 @@ export function setParent(db: TaskerDb, taskId: TaskId, parentId: TaskId): TaskR
   if (oldParentId && oldParentId !== parentId) removeInverseMarker(db, oldParentId, taskId, true);
   addInverseMarker(db, parentId, taskId, true);
 
-  return { kind: 'success', message: `Set (${taskId}) as subtask of (${parentId})` };
+  return { type: 'success', message: `Set (${taskId}) as subtask of (${parentId})` };
 }
 
 /** Remove parent from a task */
 export function unsetParent(db: TaskerDb, taskId: TaskId): TaskResult {
   const task = getTaskById(db, taskId);
-  if (!task) return { kind: 'not-found', taskId };
-  if (!task.parentId) return { kind: 'no-change', message: `Task (${taskId}) has no parent` };
+  if (!task) return { type: 'not-found', taskId };
+  if (!task.parentId) return { type: 'no-change', message: `Task (${taskId}) has no parent` };
 
   const oldParentId = task.parentId;
   const raw = getRawDb(db);
@@ -763,63 +758,63 @@ export function unsetParent(db: TaskerDb, taskId: TaskId): TaskResult {
   }
 
   removeInverseMarker(db, oldParentId, taskId, true);
-  return { kind: 'success', message: `Removed parent from (${taskId})` };
+  return { type: 'success', message: `Removed parent from (${taskId})` };
 }
 
 /** Add a blocker relationship */
 export function addBlocker(db: TaskerDb, blockerId: TaskId, blockedId: TaskId): TaskResult {
-  if (blockerId === blockedId) return { kind: 'error', message: 'A task cannot block itself' };
+  if (blockerId === blockedId) return { type: 'error', message: 'A task cannot block itself' };
 
   const blocker = getTaskById(db, blockerId);
-  if (!blocker) return { kind: 'not-found', taskId: blockerId };
+  if (!blocker) return { type: 'not-found', taskId: blockerId };
 
   const blocked = getTaskById(db, blockedId);
-  if (!blocked) return { kind: 'error', message: `Blocked task not found: ${blockedId}` };
+  if (!blocked) return { type: 'error', message: `Blocked task not found: ${blockedId}` };
 
-  if (hasCircularBlocking(db, blockerId, blockedId)) return { kind: 'error', message: `Circular dependency: (${blockedId}) already blocks (${blockerId})` };
+  if (hasCircularBlocking(db, blockerId, blockedId)) return { type: 'error', message: `Circular dependency: (${blockedId}) already blocks (${blockerId})` };
 
   const raw = getRawDb(db);
   const exists = (raw.prepare('SELECT COUNT(*) as cnt FROM task_dependencies WHERE task_id = ? AND blocks_task_id = ?').get(blockerId, blockedId) as any).cnt;
-  if (exists > 0) return { kind: 'no-change', message: `(${blockerId}) already blocks (${blockedId})` };
+  if (exists > 0) return { type: 'no-change', message: `(${blockerId}) already blocks (${blockedId})` };
 
   raw.prepare('INSERT INTO task_dependencies (task_id, blocks_task_id) VALUES (?, ?)').run(blockerId, blockedId);
   addInverseMarker(db, blockedId, blockerId, false);
 
-  return { kind: 'success', message: `(${blockerId}) now blocks (${blockedId})` };
+  return { type: 'success', message: `(${blockerId}) now blocks (${blockedId})` };
 }
 
 /** Remove a blocker relationship */
 export function removeBlocker(db: TaskerDb, blockerId: TaskId, blockedId: TaskId): TaskResult {
   const raw = getRawDb(db);
   const exists = (raw.prepare('SELECT COUNT(*) as cnt FROM task_dependencies WHERE task_id = ? AND blocks_task_id = ?').get(blockerId, blockedId) as any).cnt;
-  if (exists === 0) return { kind: 'no-change', message: `(${blockerId}) does not block (${blockedId})` };
+  if (exists === 0) return { type: 'no-change', message: `(${blockerId}) does not block (${blockedId})` };
 
   raw.prepare('DELETE FROM task_dependencies WHERE task_id = ? AND blocks_task_id = ?').run(blockerId, blockedId);
   removeInverseMarker(db, blockedId, blockerId, false);
 
-  return { kind: 'success', message: `(${blockerId}) no longer blocks (${blockedId})` };
+  return { type: 'success', message: `(${blockerId}) no longer blocks (${blockedId})` };
 }
 
 /** Add a related relationship */
 export function addRelated(db: TaskerDb, taskId1: TaskId, taskId2: TaskId): TaskResult {
-  if (taskId1 === taskId2) return { kind: 'error', message: 'A task cannot be related to itself' };
+  if (taskId1 === taskId2) return { type: 'error', message: 'A task cannot be related to itself' };
 
   const task1 = getTaskById(db, taskId1);
-  if (!task1) return { kind: 'not-found', taskId: taskId1 };
+  if (!task1) return { type: 'not-found', taskId: taskId1 };
 
   const task2 = getTaskById(db, taskId2);
-  if (!task2) return { kind: 'error', message: `Related task not found: ${taskId2}` };
+  if (!task2) return { type: 'error', message: `Related task not found: ${taskId2}` };
 
   const [id1, id2] = taskId1 < taskId2 ? [taskId1, taskId2] : [taskId2, taskId1];
   const raw = getRawDb(db);
   const exists = (raw.prepare('SELECT COUNT(*) as cnt FROM task_relations WHERE task_id_1 = ? AND task_id_2 = ?').get(id1, id2) as any).cnt;
-  if (exists > 0) return { kind: 'no-change', message: `(${taskId1}) is already related to (${taskId2})` };
+  if (exists > 0) return { type: 'no-change', message: `(${taskId1}) is already related to (${taskId2})` };
 
   raw.prepare('INSERT INTO task_relations (task_id_1, task_id_2) VALUES (?, ?)').run(id1, id2);
   syncRelatedMetadata(db, taskId1);
   syncRelatedMetadata(db, taskId2);
 
-  return { kind: 'success', message: `(${taskId1}) is now related to (${taskId2})` };
+  return { type: 'success', message: `(${taskId1}) is now related to (${taskId2})` };
 }
 
 /** Remove a related relationship */
@@ -827,13 +822,13 @@ export function removeRelated(db: TaskerDb, taskId1: TaskId, taskId2: TaskId): T
   const [id1, id2] = taskId1 < taskId2 ? [taskId1, taskId2] : [taskId2, taskId1];
   const raw = getRawDb(db);
   const exists = (raw.prepare('SELECT COUNT(*) as cnt FROM task_relations WHERE task_id_1 = ? AND task_id_2 = ?').get(id1, id2) as any).cnt;
-  if (exists === 0) return { kind: 'no-change', message: `(${taskId1}) is not related to (${taskId2})` };
+  if (exists === 0) return { type: 'no-change', message: `(${taskId1}) is not related to (${taskId2})` };
 
   raw.prepare('DELETE FROM task_relations WHERE task_id_1 = ? AND task_id_2 = ?').run(id1, id2);
   syncRelatedMetadata(db, taskId1);
   syncRelatedMetadata(db, taskId2);
 
-  return { kind: 'success', message: `(${taskId1}) is no longer related to (${taskId2})` };
+  return { type: 'success', message: `(${taskId1}) is no longer related to (${taskId2})` };
 }
 
 // ---------------------------------------------------------------------------

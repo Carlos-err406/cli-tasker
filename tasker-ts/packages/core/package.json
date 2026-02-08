@@ -9,7 +9,8 @@
     "./queries": "./src/queries/index.ts",
     "./types": "./src/types/index.ts",
     "./parsers": "./src/parsers/index.ts",
-    "./undo": "./src/undo/index.ts"
+    "./undo": "./src/undo/index.ts",
+    "./backup": "./src/backup/index.ts"
   },
   "scripts": {
     "build": "tsc",

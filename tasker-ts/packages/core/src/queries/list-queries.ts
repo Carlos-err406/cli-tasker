@@ -5,7 +5,6 @@
 import type { TaskerDb } from '../db.js';
 import { getRawDb } from '../db.js';
 import type { ListName } from '../types/task.js';
-import type { Task } from '../types/task.js';
 
 const DEFAULT_LIST = 'tasks';
 

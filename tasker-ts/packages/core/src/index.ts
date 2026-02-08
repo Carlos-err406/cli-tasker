@@ -17,3 +17,11 @@ export type { ParsedTask } from './parsers/index.js';
 
 // Queries
 export * from './queries/index.js';
+
+// Undo
+export { UndoManager, getCommandDescription } from './undo/index.js';
+export type { UndoCommand } from './undo/index.js';
+
+// Backup
+export { BackupManager } from './backup/index.js';
+export type { BackupInfo } from './backup/index.js';

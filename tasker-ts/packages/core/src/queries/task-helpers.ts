@@ -1,5 +1,4 @@
 import type { TaskId, Task } from '../types/task.js';
-import type { Priority } from '../types/priority.js';
 import { TaskStatus } from '../types/task-status.js';
 import { parse as parseDescription } from '../parsers/task-description-parser.js';
 

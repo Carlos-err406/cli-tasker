@@ -94,7 +94,7 @@ describe('setStatus', () => {
   it('changes status', () => {
     const { task } = addTask(db, 'test', 'tasks');
     const result = setStatus(db, task.id, TaskStatus.Done);
-    expect(result.kind).toBe('success');
+    expect(result.type).toBe('success');
     const updated = getTaskById(db, task.id)!;
     expect(updated.status).toBe(TaskStatus.Done);
     expect(updated.completedAt).not.toBeNull();
@@ -103,12 +103,12 @@ describe('setStatus', () => {
   it('returns no-change when already at target status', () => {
     const { task } = addTask(db, 'test', 'tasks');
     const result = setStatus(db, task.id, TaskStatus.Pending);
-    expect(result.kind).toBe('no-change');
+    expect(result.type).toBe('no-change');
   });
 
   it('returns not-found for missing task', () => {
     const result = setStatus(db, 'zzz', TaskStatus.Done);
-    expect(result.kind).toBe('not-found');
+    expect(result.type).toBe('not-found');
   });
 
   it('cascades to descendants when marking Done', () => {
@@ -126,7 +126,7 @@ describe('deleteTask', () => {
   it('moves task to trash', () => {
     const { task } = addTask(db, 'test', 'tasks');
     const result = deleteTask(db, task.id);
-    expect(result.kind).toBe('success');
+    expect(result.type).toBe('success');
     expect(getTaskById(db, task.id)).toBeNull();
     expect(getTrash(db)).toHaveLength(1);
   });
@@ -145,7 +145,7 @@ describe('renameTask', () => {
   it('updates description', () => {
     const { task } = addTask(db, 'old name', 'tasks');
     const result = renameTask(db, task.id, 'new name');
-    expect(result.kind).toBe('success');
+    expect(result.type).toBe('success');
     const updated = getTaskById(db, task.id)!;
     expect(updated.description).toBe('new name');
   });
@@ -163,7 +163,7 @@ describe('moveTask', () => {
   it('moves task to a different list', () => {
     const { task } = addTask(db, 'test', 'tasks');
     const result = moveTask(db, task.id, 'work');
-    expect(result.kind).toBe('success');
+    expect(result.type).toBe('success');
     const updated = getTaskById(db, task.id)!;
     expect(updated.listName).toBe('work');
   });
@@ -172,7 +172,7 @@ describe('moveTask', () => {
     const { task: parent } = addTask(db, 'parent', 'tasks');
     const { task: child } = addTask(db, `child\n^${parent.id}`, 'tasks');
     const result = moveTask(db, child.id, 'work');
-    expect(result.kind).toBe('error');
+    expect(result.type).toBe('error');
   });
 });
 
@@ -257,12 +257,12 @@ describe('parent/child relationships', () => {
     const { task: child } = addTask(db, 'child', 'tasks');
 
     const setResult = setParent(db, child.id, parent.id);
-    expect(setResult.kind).toBe('success');
+    expect(setResult.type).toBe('success');
     expect(getTaskById(db, child.id)!.parentId).toBe(parent.id);
     expect(getSubtasks(db, parent.id)).toHaveLength(1);
 
     const unsetResult = unsetParent(db, child.id);
-    expect(unsetResult.kind).toBe('success');
+    expect(unsetResult.type).toBe('success');
     expect(getTaskById(db, child.id)!.parentId).toBeNull();
   });
 
@@ -272,13 +272,13 @@ describe('parent/child relationships', () => {
     setParent(db, b.id, a.id);
 
     const result = setParent(db, a.id, b.id);
-    expect(result.kind).toBe('error');
+    expect(result.type).toBe('error');
   });
 
   it('prevents self-parent', () => {
     const { task } = addTask(db, 'task', 'tasks');
     const result = setParent(db, task.id, task.id);
-    expect(result.kind).toBe('error');
+    expect(result.type).toBe('error');
   });
 });
 
@@ -288,12 +288,12 @@ describe('blocker relationships', () => {
     const { task: b } = addTask(db, 'b', 'tasks');
 
     const addResult = addBlocker(db, a.id, b.id);
-    expect(addResult.kind).toBe('success');
+    expect(addResult.type).toBe('success');
     expect(getBlocksIds(db, a.id)).toContain(b.id);
     expect(getBlockedByIds(db, b.id)).toContain(a.id);
 
     const removeResult = removeBlocker(db, a.id, b.id);
-    expect(removeResult.kind).toBe('success');
+    expect(removeResult.type).toBe('success');
     expect(getBlocksIds(db, a.id)).toHaveLength(0);
   });
 
@@ -303,7 +303,7 @@ describe('blocker relationships', () => {
     addBlocker(db, a.id, b.id);
 
     const result = addBlocker(db, b.id, a.id);
-    expect(result.kind).toBe('error');
+    expect(result.type).toBe('error');
   });
 });
 
@@ -313,12 +313,12 @@ describe('related relationships', () => {
     const { task: b } = addTask(db, 'b', 'tasks');
 
     const addResult = addRelated(db, a.id, b.id);
-    expect(addResult.kind).toBe('success');
+    expect(addResult.type).toBe('success');
     expect(getRelatedIds(db, a.id)).toContain(b.id);
     expect(getRelatedIds(db, b.id)).toContain(a.id);
 
     const removeResult = removeRelated(db, a.id, b.id);
-    expect(removeResult.kind).toBe('success');
+    expect(removeResult.type).toBe('success');
     expect(getRelatedIds(db, a.id)).toHaveLength(0);
   });
 });
