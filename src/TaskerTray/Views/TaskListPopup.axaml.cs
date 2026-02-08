@@ -51,15 +51,6 @@ public partial class TaskListPopup : Window
     {
         InitializeComponent();
 
-        // Close when clicking outside or pressing Escape
-        Deactivated += async (_, _) =>
-        {
-            // Save any pending inline add before closing (don't wait for LostFocus which may fire late)
-            SavePendingInlineAdd();
-            CancelInlineEdit();
-            CancelDrag(); // Cancel any in-progress drag
-            await HideWithAnimation();
-        };
         KeyDown += OnKeyDown;
 
         // Window-level pointer handlers for smooth drag tracking
@@ -1716,8 +1707,12 @@ public partial class TaskListPopup : Window
         }
     }
 
-    private async Task HideWithAnimation()
+    public async Task HideWithAnimation()
     {
+        SavePendingInlineAdd();
+        CancelInlineEdit();
+        CancelDrag();
+
         // Trigger fade-out animation
         PopupContent.Classes.Remove("visible");
 
