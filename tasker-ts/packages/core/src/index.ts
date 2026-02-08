@@ -9,7 +9,8 @@ export { isSuccess, isError, successCount, anyFailed } from './types/results.js'
 export * from './schema/index.js';
 
 // Database
-export { createDb, getDefaultDbPath, withRetry } from './db.js';
+export type { TaskerDb } from './db.js';
+export { createDb, createTestDb, getDefaultDbPath, withRetry } from './db.js';
 
 // Parsers
 export { parseDate, parseTaskDescription, getDisplayDescription, syncMetadataToDescription } from './parsers/index.js';

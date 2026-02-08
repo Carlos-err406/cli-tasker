@@ -7,6 +7,12 @@ import { getRawDb } from '../db.js';
 import type { ListName } from '../types/task.js';
 
 const DEFAULT_LIST = 'tasks';
+const VALID_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+/** Check if a list name is valid (letters, numbers, hyphens, underscores) */
+export function isValidListName(name: string): boolean {
+  return name.length > 0 && VALID_NAME_RE.test(name);
+}
 
 /** Get all list names ordered by sort_order */
 export function getAllListNames(db: TaskerDb): string[] {

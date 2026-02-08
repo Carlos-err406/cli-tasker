@@ -62,4 +62,13 @@ export {
   setListCollapsed,
   reorderList,
   getListIndex,
+  isValidListName,
 } from './list-queries.js';
+
+// Config queries
+export {
+  getConfig,
+  setConfig,
+  getDefaultList,
+  setDefaultList,
+} from './config-queries.js';
