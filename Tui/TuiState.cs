@@ -21,6 +21,7 @@ public record TuiState
     public HashSet<string> SelectedTaskIds { get; init; } = new();
     public string? StatusMessage { get; init; } = null;
     public DateTime? StatusMessageTime { get; init; } = null;
+    public bool ShowHelp { get; init; } = false;
 
     // Input mode state
     public string InputBuffer { get; init; } = "";
