@@ -10,7 +10,7 @@ All command files live in `AppCommands/`.
 | `DeleteCommand.cs` | `delete`, `clear` | Returns tuple, multiple IDs, `--all` |
 | `StatusCommand.cs` | `status`, `wip` | Returns tuple. `wip` = shortcut for in-progress |
 | `RenameCommand.cs` | `rename` | Single task by ID |
-| `GetCommand.cs` | `get` | `--json` output, shows relationships |
+| `GetCommand.cs` | `get` | `--json` output, shows relationships, `--recursive` (`-r`) for full tree |
 | `MoveCommand.cs` | `move` | Validates target list |
 | `DueCommand.cs` | `due` | `due <id> <date>`, `--clear` |
 | `PriorityCommand.cs` | `priority` | `high\|medium\|low\|none` |
