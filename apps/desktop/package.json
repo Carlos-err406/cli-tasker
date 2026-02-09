@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "package": "electron-builder",
+    "package": "electron-builder --config electron-builder.json5 --publish=never",
     "clean": "rm -rf dist dist-electron"
   },
   "dependencies": {
