@@ -17,8 +17,6 @@ publish/
 
 # NuGet
 *.nupkg
-packages/
-!tasker-ts/packages/
 
 # OS files
 .DS_Store
