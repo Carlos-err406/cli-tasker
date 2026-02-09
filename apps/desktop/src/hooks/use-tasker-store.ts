@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { Task, TaskStatus } from '@tasker/core/types';
+import { TaskStatus as TS } from '@tasker/core/types';
 import { parseTaskDescription } from '@tasker/core/parsers';
 import { arrayMove } from '@dnd-kit/sortable';
 import * as taskService from '@/lib/services/tasks.js';
@@ -22,6 +23,30 @@ export interface TaskRelDetails {
   related: RelEntry[];
 }
 
+/** Sort tasks by status → priority → due date → createdAt (mirrors core's sortTasksForDisplay) */
+function systemSortTasks(tasks: Task[]): Task[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const statusOrder = (s: number) => s === TS.InProgress ? 0 : s === TS.Pending ? 1 : 2;
+  const dueOrder = (d: string | null) => {
+    if (!d) return 99;
+    if (d < today) return 0;
+    return Math.round((new Date(d + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000);
+  };
+
+  const active = tasks.filter(t => t.status !== TS.Done).sort((a, b) => {
+    const s = statusOrder(a.status) - statusOrder(b.status);
+    if (s !== 0) return s;
+    const pa = a.priority ?? 99, pb = b.priority ?? 99;
+    if (pa !== pb) return pa - pb;
+    const da = dueOrder(a.dueDate), db = dueOrder(b.dueDate);
+    if (da !== db) return da - db;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+  const done = tasks.filter(t => t.status === TS.Done).sort((a, b) =>
+    (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
+  return [...active, ...done];
+}
+
 interface TaskerState {
   tasks: Task[];
   lists: string[];
@@ -31,6 +56,7 @@ interface TaskerState {
   searchQuery: string;
   statusMessage: string;
   filterList: string | null; // null = all lists
+  systemSort: boolean;
   loading: boolean;
 }
 
@@ -47,7 +73,8 @@ type Action =
   | { type: 'SET_LOADING'; loading: boolean }
   | { type: 'REORDER_TASKS'; listName: string; oldIndex: number; newIndex: number }
   | { type: 'REORDER_LISTS'; oldIndex: number; newIndex: number }
-  | { type: 'UPDATE_TASK_STATUS'; taskId: string; status: TaskStatus };
+  | { type: 'UPDATE_TASK_STATUS'; taskId: string; status: TaskStatus }
+  | { type: 'TOGGLE_SYSTEM_SORT' };
 
 function reducer(state: TaskerState, action: Action): TaskerState {
   switch (action.type) {
@@ -112,6 +139,8 @@ function reducer(state: TaskerState, action: Action): TaskerState {
         relDetails: updatedRel,
       };
     }
+    case 'TOGGLE_SYSTEM_SORT':
+      return { ...state, systemSort: !state.systemSort };
   }
 }
 
@@ -124,6 +153,7 @@ const initialState: TaskerState = {
   searchQuery: '',
   statusMessage: '',
   filterList: null,
+  systemSort: false,
   loading: true,
 };
 
@@ -252,7 +282,6 @@ export function useTaskerStore() {
 
   const toggleStatus = useCallback(
     async (taskId: string, currentStatus: TaskStatus) => {
-      const { TaskStatus: TS } = await import('@tasker/core/types');
       const newStatus = currentStatus === TS.Done ? TS.Pending : TS.Done;
       dispatch({ type: 'UPDATE_TASK_STATUS', taskId, status: newStatus });
       try {
@@ -423,9 +452,15 @@ export function useTaskerStore() {
     dispatch({ type: 'SET_FILTER_LIST', list });
   }, []);
 
-  // Group tasks by list
+  // Toggle system sort
+  const toggleSystemSort = useCallback(() => {
+    dispatch({ type: 'TOGGLE_SYSTEM_SORT' });
+  }, []);
+
+  // Group tasks by list (apply system sort if enabled)
   const tasksByList = state.lists.reduce<Record<string, Task[]>>((acc, listName) => {
-    acc[listName] = state.tasks.filter((t) => t.listName === listName);
+    const listTasks = state.tasks.filter((t) => t.listName === listName);
+    acc[listName] = state.systemSort ? systemSortTasks(listTasks) : listTasks;
     return acc;
   }, {});
 
@@ -458,6 +493,7 @@ export function useTaskerStore() {
     redo: redoAction,
     setSearch,
     setFilterList,
+    toggleSystemSort,
     showStatus,
   };
 }

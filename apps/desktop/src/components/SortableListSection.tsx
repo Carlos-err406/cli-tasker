@@ -11,6 +11,7 @@ interface SortableListSectionProps {
   relDetails: Record<string, TaskRelDetails>;
   isDefault: boolean;
   collapsed: boolean;
+  sortDisabled?: boolean;
   onToggleCollapsed: () => void;
   onAddTask: (description: string, listName: string) => void;
   onToggleStatus: (taskId: string, currentStatus: TaskStatus) => void;

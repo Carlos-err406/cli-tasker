@@ -16,6 +16,7 @@ interface ListSectionProps {
   relDetails: Record<string, TaskRelDetails>;
   isDefault: boolean;
   collapsed: boolean;
+  sortDisabled?: boolean;
   onToggleCollapsed: () => void;
   onAddTask: (description: string, listName: string) => void;
   onToggleStatus: (taskId: string, currentStatus: TaskStatus) => void;
@@ -35,6 +36,7 @@ export function ListSection({
   relDetails,
   isDefault,
   collapsed,
+  sortDisabled,
   onToggleCollapsed,
   onAddTask,
   onToggleStatus,
@@ -218,6 +220,7 @@ export function ListSection({
                 task={task}
                 lists={lists}
                 relDetails={relDetails[task.id]}
+                sortDisabled={sortDisabled}
                 onToggleStatus={onToggleStatus}
                 onSetStatus={onSetStatus}
                 onRename={onRename}

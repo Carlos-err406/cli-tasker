@@ -22,7 +22,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { ChevronDown, Plus, CircleHelp } from 'lucide-react';
+import { ChevronDown, Plus, CircleHelp, ArrowUpDown } from 'lucide-react';
 import { SortableListSection } from '@/components/SortableListSection.js';
 import { TaskItem } from '@/components/TaskItem.js';
 import { SearchBar } from '@/components/SearchBar.js';
@@ -86,6 +86,7 @@ export default function App() {
     onRefresh: store.refresh,
     onFocusSearch: () => searchRef.current?.focus(),
     onToggleHelp: handleToggleHelp,
+    onToggleSort: store.toggleSystemSort,
     onEscape: handleEscape,
   });
 
@@ -137,8 +138,8 @@ export default function App() {
         if (oldIndex !== -1 && newIndex !== -1) {
           store.reorderList(activeName, newIndex, oldIndex);
         }
-      } else if (!activeStr.startsWith('list::') && !overStr.startsWith('list::')) {
-        // Task reorder — find which list the active task belongs to
+      } else if (!activeStr.startsWith('list::') && !overStr.startsWith('list::') && !store.systemSort) {
+        // Task reorder — disabled when system sort is active
         const task = store.tasks.find((t) => t.id === activeStr);
         if (!task) return;
         const listTasks = store.tasksByList[task.listName] ?? [];
@@ -244,6 +245,19 @@ export default function App() {
         </button>
 
         <button
+          onClick={store.toggleSystemSort}
+          className={cn(
+            'p-0.5',
+            store.systemSort
+              ? 'text-primary'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+          title={`${store.systemSort ? 'User' : 'System'} sort (⌘J)`}
+        >
+          <ArrowUpDown className="h-4 w-4" />
+        </button>
+
+        <button
           onClick={handleToggleHelp}
           className="text-muted-foreground hover:text-foreground p-0.5"
           title="Help (&#8984;/)"
@@ -317,6 +331,7 @@ export default function App() {
                       relDetails={store.relDetails}
                       isDefault={listName === store.defaultList}
                       collapsed={collapsed}
+                      sortDisabled={store.systemSort}
                       onToggleCollapsed={() => store.toggleCollapsed(listName)}
                       onAddTask={store.addTask}
                       onToggleStatus={store.toggleStatus}

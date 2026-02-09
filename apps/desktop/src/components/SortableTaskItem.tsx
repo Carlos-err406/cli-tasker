@@ -8,6 +8,7 @@ interface SortableTaskItemProps {
   task: Task;
   lists: string[];
   relDetails?: TaskRelDetails;
+  sortDisabled?: boolean;
   onToggleStatus: (taskId: string, currentStatus: TaskStatus) => void;
   onSetStatus: (taskId: string, status: TaskStatus) => void;
   onRename: (taskId: string, newDescription: string) => void;
@@ -16,7 +17,7 @@ interface SortableTaskItemProps {
   onShowStatus: (message: string) => void;
 }
 
-export function SortableTaskItem({ task, ...rest }: SortableTaskItemProps) {
+export function SortableTaskItem({ task, sortDisabled, ...rest }: SortableTaskItemProps) {
   const {
     attributes,
     listeners,
@@ -24,7 +25,7 @@ export function SortableTaskItem({ task, ...rest }: SortableTaskItemProps) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id });
+  } = useSortable({ id: task.id, disabled: sortDisabled });
 
   const style = {
     transform: CSS.Transform.toString(transform),

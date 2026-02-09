@@ -65,6 +65,8 @@ export function HelpPanel({ onClose }: HelpPanelProps) {
             <span>Undo</span>
             <span className="font-mono">&#8984;&#8679;Z</span>
             <span>Redo</span>
+            <span className="font-mono">&#8984;J</span>
+            <span>Toggle sort mode</span>
             <span className="font-mono">&#8984;W</span>
             <span>Close popup</span>
             <span className="font-mono">&#8984;/</span>

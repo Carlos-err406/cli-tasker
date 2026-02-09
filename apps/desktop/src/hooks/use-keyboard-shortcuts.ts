@@ -7,6 +7,7 @@ interface ShortcutHandlers {
   onRefresh: () => void;
   onFocusSearch: () => void;
   onToggleHelp: () => void;
+  onToggleSort: () => void;
   onEscape: () => void;
 }
 
@@ -41,6 +42,13 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       if (meta && e.key === 'w') {
         e.preventDefault();
         hideWindow();
+        return;
+      }
+
+      // Cmd+J - toggle sort mode
+      if (meta && e.key === 'j') {
+        e.preventDefault();
+        handlers.onToggleSort();
         return;
       }
 
