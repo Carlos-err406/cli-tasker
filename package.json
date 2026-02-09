@@ -1,0 +1,25 @@
+{
+  "name": "tasker",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "dev:desktop": "pnpm --filter @tasker/desktop dev",
+    "clean": "pnpm -r --parallel clean"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "libsql",
+      "esbuild",
+      "electron"
+    ]
+  }
+}

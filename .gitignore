@@ -27,3 +27,8 @@ Thumbs.db
 # Logs
 *.log
 .claude
+
+node_modules
+dist
+tsconfig.tsbuildinfo
+dist-electron
