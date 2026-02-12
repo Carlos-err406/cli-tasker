@@ -2,6 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.cli-tasker.desktop",
   "productName": "Tasker",
+  "electronVersion": "33.4.11",
+  "icon": "public/icon.png",
   "asar": true,
   "compression": "maximum",
   "removePackageScripts": true,

@@ -1,6 +1,8 @@
 {
   "name": "@tasker/desktop",
   "version": "3.0.0",
+  "description": "Tasker - lightweight task manager",
+  "author": "Carlos",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
