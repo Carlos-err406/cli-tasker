@@ -8,6 +8,12 @@ import { startDbWatcher, stopDbWatcher } from './lib/watcher.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Use a different app name in dev to avoid single-instance conflict with installed app
+if (process.env['VITE_DEV_SERVER_URL']) {
+  app.setName('Tasker (Dev)');
+  app.setPath('userData', path.join(app.getPath('appData'), 'Tasker (Dev)'));
+}
+
 process.env['APP_ROOT'] = path.join(__dirname, '..');
 process.env['VITE_PUBLIC'] = process.env['VITE_DEV_SERVER_URL']
   ? path.join(process.env['APP_ROOT'], 'public')
