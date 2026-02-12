@@ -114,7 +114,7 @@ export function ListSection({
   return (
     <div className="border-b border-border/50">
       {/* List header */}
-      <div className="group/header flex items-center gap-2 px-3 py-2 bg-secondary/30 hover:bg-secondary/50 transition-colors">
+      <div className="group/header sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-secondary/80 backdrop-blur-sm hover:bg-secondary/90 transition-colors">
         <button
           onClick={onToggleCollapsed}
           className="text-muted-foreground hover:text-foreground transition-transform flex-shrink-0"
