@@ -14,7 +14,7 @@ fi
 cd "$(dirname "$0")"
 
 echo "==> Installing dependencies..."
-pnpm install
+pnpm install --frozen-lockfile
 
 echo "==> Building core..."
 pnpm --filter @tasker/core run build
@@ -23,7 +23,8 @@ echo "==> Building desktop (vite)..."
 pnpm --filter @tasker/desktop run build
 
 echo "==> Packaging app (electron-builder)..."
-pnpm --filter @tasker/desktop run package
+ARCH_FLAG="--${ARCH}"
+pnpm --filter @tasker/desktop exec electron-builder --config electron-builder.json5 --publish=never --dir "$ARCH_FLAG" -c.compression=store
 
 echo "==> Installing ${APP_NAME}.app to ${INSTALL_DIR}..."
 if [[ -d "${INSTALL_DIR}/${APP_NAME}.app" ]]; then
