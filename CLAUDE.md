@@ -34,6 +34,10 @@ pnpm --filter @tasker/cli run build     # Build CLI
 
 **Important:** After changing `@tasker/core` source, rebuild it (`pnpm --filter @tasker/core run build`) before the desktop or CLI can pick up the changes. The desktop dev server (`pnpm dev:desktop`) must be restarted to pick up core changes.
 
+### Releasing
+
+Release is done via `./release.sh <version>` (e.g. `./release.sh 3.1.0`). It tags the commit and pushes the tag, which triggers the GitHub Actions release workflow. Do NOT use `electron-builder` or `pnpm run package` directly.
+
 ### Interpreting task references
 
 When the user provides 3 hex characters (e.g. `0e0`, `a3f`, `1b2`), it's a tasker task ID. Run `tasker get <id>` to see the full task before proceeding.
