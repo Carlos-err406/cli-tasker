@@ -420,6 +420,17 @@ export function useTaskerStore() {
     [state.collapsedLists],
   );
 
+  const toggleCollapseAll = useCallback(async () => {
+    const allCollapsed = state.lists.every((name) => state.collapsedLists.has(name));
+    const target = !allCollapsed;
+    const map = new Map<string, boolean>();
+    for (const name of state.lists) {
+      map.set(name, target);
+      await listService.setListCollapsed(name, target);
+    }
+    dispatch({ type: 'SET_COLLAPSED_MAP', map });
+  }, [state.lists, state.collapsedLists]);
+
   // Undo/redo
   const undoAction = useCallback(async () => {
     try {
@@ -489,6 +500,7 @@ export function useTaskerStore() {
     renameList: renameListAction,
     reorderList: reorderListAction,
     toggleCollapsed,
+    toggleCollapseAll,
     undo: undoAction,
     redo: redoAction,
     setSearch,

@@ -22,7 +22,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { ChevronDown, Plus, CircleHelp, ArrowUpDown } from 'lucide-react';
+import { ChevronDown, Plus, CircleHelp, ArrowUpDown, ChevronsDownUp } from 'lucide-react';
 import { SortableListSection } from '@/components/SortableListSection.js';
 import { TaskItem } from '@/components/TaskItem.js';
 import { SearchBar } from '@/components/SearchBar.js';
@@ -87,6 +87,7 @@ export default function App() {
     onFocusSearch: () => searchRef.current?.focus(),
     onToggleHelp: handleToggleHelp,
     onToggleSort: store.toggleSystemSort,
+    onToggleCollapseAll: store.toggleCollapseAll,
     onEscape: handleEscape,
   });
 
@@ -242,6 +243,14 @@ export default function App() {
           title="Create list"
         >
           <Plus className="h-4 w-4" />
+        </button>
+
+        <button
+          onClick={store.toggleCollapseAll}
+          className="text-muted-foreground hover:text-foreground p-0.5"
+          title="Collapse/expand all (⌘E)"
+        >
+          <ChevronsDownUp className="h-4 w-4" />
         </button>
 
         <button

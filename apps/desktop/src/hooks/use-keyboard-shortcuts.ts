@@ -8,6 +8,7 @@ interface ShortcutHandlers {
   onFocusSearch: () => void;
   onToggleHelp: () => void;
   onToggleSort: () => void;
+  onToggleCollapseAll: () => void;
   onEscape: () => void;
 }
 
@@ -49,6 +50,13 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       if (meta && e.key === 'j') {
         e.preventDefault();
         handlers.onToggleSort();
+        return;
+      }
+
+      // Cmd+E - collapse/expand all lists
+      if (meta && e.key === 'e') {
+        e.preventDefault();
+        handlers.onToggleCollapseAll();
         return;
       }
 
