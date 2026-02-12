@@ -351,6 +351,7 @@ export default function App() {
                       onRenameList={store.renameList}
                       onDeleteList={store.deleteList}
                       onShowStatus={store.showStatus}
+                      onNavigateToTask={store.navigateToTask}
                     />
                   );
                 })}
@@ -369,6 +370,7 @@ export default function App() {
                       onDelete={() => {}}
                       onMove={() => {}}
                       onShowStatus={() => {}}
+                      onNavigateToTask={() => {}}
                     />
                   </div>
                 )}

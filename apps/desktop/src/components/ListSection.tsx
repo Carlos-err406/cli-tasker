@@ -27,6 +27,7 @@ interface ListSectionProps {
   onRenameList: (oldName: string, newName: string) => void;
   onDeleteList: (name: string) => void;
   onShowStatus: (message: string) => void;
+  onNavigateToTask: (taskId: string) => void;
 }
 
 export function ListSection({
@@ -47,6 +48,7 @@ export function ListSection({
   onRenameList,
   onDeleteList,
   onShowStatus,
+  onNavigateToTask,
 }: ListSectionProps) {
   const [adding, setAdding] = useState(false);
   const [addValue, setAddValue] = useState('');
@@ -227,6 +229,7 @@ export function ListSection({
                 onDelete={onDelete}
                 onMove={onMove}
                 onShowStatus={onShowStatus}
+                onNavigateToTask={onNavigateToTask}
               />
             ))}
           </SortableContext>

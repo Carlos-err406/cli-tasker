@@ -149,3 +149,12 @@ html, body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
+
+/* Highlight flash for navigate-to-task */
+@keyframes task-highlight {
+  0% { background-color: oklch(0.488 0.243 264.376 / 0.3); }
+  100% { background-color: transparent; }
+}
+.task-highlight {
+  animation: task-highlight 1.5s ease-out;
+}

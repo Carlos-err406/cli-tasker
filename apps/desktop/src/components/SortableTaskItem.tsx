@@ -15,6 +15,7 @@ interface SortableTaskItemProps {
   onDelete: (taskId: string) => void;
   onMove: (taskId: string, targetList: string) => void;
   onShowStatus: (message: string) => void;
+  onNavigateToTask: (taskId: string) => void;
 }
 
 export function SortableTaskItem({ task, sortDisabled, ...rest }: SortableTaskItemProps) {
@@ -34,7 +35,7 @@ export function SortableTaskItem({ task, sortDisabled, ...rest }: SortableTaskIt
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} data-task-id={task.id}>
       <TaskItem task={task} {...rest} />
     </div>
   );

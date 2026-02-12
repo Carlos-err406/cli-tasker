@@ -474,6 +474,36 @@ export function useTaskerStore() {
     dispatch({ type: 'TOGGLE_SYSTEM_SORT' });
   }, []);
 
+  // Navigate to a linked task: expand its list if collapsed, scroll into view, highlight
+  const navigateToTask = useCallback(
+    async (taskId: string) => {
+      const task = state.tasks.find((t) => t.id === taskId);
+      if (!task) {
+        showStatus(`Task ${taskId} not found`);
+        return;
+      }
+
+      // Expand the list if collapsed
+      if (state.collapsedLists.has(task.listName)) {
+        dispatch({ type: 'SET_COLLAPSED', name: task.listName, collapsed: false });
+        await listService.setListCollapsed(task.listName, false);
+      }
+
+      // Wait a frame for DOM to update after expanding
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-task-id="${taskId}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.remove('task-highlight');
+          // Force reflow to restart animation
+          void (el as HTMLElement).offsetWidth;
+          el.classList.add('task-highlight');
+        }
+      });
+    },
+    [state.tasks, state.collapsedLists, showStatus],
+  );
+
   // Group tasks by list (apply system sort if enabled)
   const tasksByList = state.lists.reduce<Record<string, Task[]>>((acc, listName) => {
     const listTasks = state.tasks.filter((t) => t.listName === listName);
@@ -512,6 +542,7 @@ export function useTaskerStore() {
     setSearch,
     setFilterList,
     toggleSystemSort,
+    navigateToTask,
     showStatus,
   };
 }

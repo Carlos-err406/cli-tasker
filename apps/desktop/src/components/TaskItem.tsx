@@ -30,6 +30,7 @@ interface TaskItemProps {
   onDelete: (taskId: string) => void;
   onMove: (taskId: string, targetList: string) => void;
   onShowStatus: (message: string) => void;
+  onNavigateToTask: (taskId: string) => void;
 }
 
 export function TaskItem({
@@ -42,6 +43,7 @@ export function TaskItem({
   onDelete,
   onMove,
   onShowStatus,
+  onNavigateToTask,
 }: TaskItemProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
@@ -182,49 +184,49 @@ export function TaskItem({
 
             {/* Relationship lines */}
             {relDetails?.parent && (
-              <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5">
+              <button onClick={() => onNavigateToTask(relDetails.parent!.id)} className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5 hover:text-foreground transition-colors text-left">
                 <CornerLeftUp className="h-3 w-3 flex-shrink-0" />
                 Subtask of ({relDetails.parent.id}) {relDetails.parent.title}
                 {getLinkedStatusLabel(relDetails.parent.status) && (
                   <span className={getLinkedStatusColor(relDetails.parent.status)}>{getLinkedStatusLabel(relDetails.parent.status)}</span>
                 )}
-              </div>
+              </button>
             )}
             {relDetails?.subtasks.map((s) => (
-              <div key={s.id} className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5">
+              <button key={s.id} onClick={() => onNavigateToTask(s.id)} className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5 hover:text-foreground transition-colors text-left">
                 <CornerRightDown className="h-3 w-3 flex-shrink-0" />
                 Subtask ({s.id}) {s.title}
                 {getLinkedStatusLabel(s.status) && (
                   <span className={getLinkedStatusColor(s.status)}>{getLinkedStatusLabel(s.status)}</span>
                 )}
-              </div>
+              </button>
             ))}
             {relDetails?.blocks.map((b) => (
-              <div key={b.id} className="flex items-center gap-1 text-[10px] text-amber-400/80 mt-0.5">
+              <button key={b.id} onClick={() => onNavigateToTask(b.id)} className="flex items-center gap-1 text-[10px] text-amber-400/80 mt-0.5 hover:text-foreground transition-colors text-left">
                 <Ban className="h-3 w-3 flex-shrink-0" />
                 Blocks ({b.id}) {b.title}
                 {getLinkedStatusLabel(b.status) && (
                   <span className={getLinkedStatusColor(b.status)}>{getLinkedStatusLabel(b.status)}</span>
                 )}
-              </div>
+              </button>
             ))}
             {relDetails?.blockedBy.map((b) => (
-              <div key={b.id} className="flex items-center gap-1 text-[10px] text-amber-400/80 mt-0.5">
+              <button key={b.id} onClick={() => onNavigateToTask(b.id)} className="flex items-center gap-1 text-[10px] text-amber-400/80 mt-0.5 hover:text-foreground transition-colors text-left">
                 <Ban className="h-3 w-3 flex-shrink-0" />
                 Blocked by ({b.id}) {b.title}
                 {getLinkedStatusLabel(b.status) && (
                   <span className={getLinkedStatusColor(b.status)}>{getLinkedStatusLabel(b.status)}</span>
                 )}
-              </div>
+              </button>
             ))}
             {relDetails?.related.map((r) => (
-              <div key={r.id} className="flex items-center gap-1 text-[10px] text-teal-400/80 mt-0.5">
+              <button key={r.id} onClick={() => onNavigateToTask(r.id)} className="flex items-center gap-1 text-[10px] text-teal-400/80 mt-0.5 hover:text-foreground transition-colors text-left">
                 <Link2 className="h-3 w-3 flex-shrink-0" />
                 Related to ({r.id}) {r.title}
                 {getLinkedStatusLabel(r.status) && (
                   <span className={getLinkedStatusColor(r.status)}>{getLinkedStatusLabel(r.status)}</span>
                 )}
-              </div>
+              </button>
             ))}
 
             {/* Due date */}
