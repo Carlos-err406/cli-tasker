@@ -258,12 +258,18 @@ export function useTaskerStore() {
     return unsubscribe;
   }, [refresh]);
 
-  // Refresh when popup is hidden (re-sort ready for next open)
+  // Refresh when popup is shown (pick up external changes) or hidden (re-sort ready for next open)
   useEffect(() => {
-    const unsubscribe = window.ipc.onPopupHidden(() => {
+    const unsubShown = window.ipc.onPopupShown(() => {
       refresh();
     });
-    return unsubscribe;
+    const unsubHidden = window.ipc.onPopupHidden(() => {
+      refresh();
+    });
+    return () => {
+      unsubShown();
+      unsubHidden();
+    };
   }, [refresh]);
 
   // Task operations

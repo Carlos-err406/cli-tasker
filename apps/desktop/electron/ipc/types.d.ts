@@ -22,4 +22,5 @@ export type IPC = ReturnType<typeof tasksInvokerFactory> &
   ReturnType<typeof windowInvokerFactory> & {
     onDbChanged: (callback: () => void) => () => void;
     onPopupHidden: (callback: () => void) => () => void;
+    onPopupShown: (callback: () => void) => () => void;
   };

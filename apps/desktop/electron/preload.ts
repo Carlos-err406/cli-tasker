@@ -21,4 +21,10 @@ contextBridge.exposeInMainWorld('ipc', {
       ipcRenderer.removeListener('popup:hidden', callback);
     };
   },
+  onPopupShown: (callback: () => void) => {
+    ipcRenderer.on('popup:shown', callback);
+    return () => {
+      ipcRenderer.removeListener('popup:shown', callback);
+    };
+  },
 });

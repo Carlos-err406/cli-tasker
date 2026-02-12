@@ -78,6 +78,7 @@ function showPopup(): void {
 
   popup.show();
   popup.focus();
+  popup.webContents.send('popup:shown');
 
   // On macOS, ensure the window becomes key
   if (process.platform === 'darwin') {
