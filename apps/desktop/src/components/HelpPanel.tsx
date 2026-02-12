@@ -30,9 +30,9 @@ export function HelpPanel({ onClose }: HelpPanelProps) {
             <span className="font-mono">!abc</span>
             <span>Blocks task</span>
             <span className="font-mono">-^abc</span>
-            <span>Remove parent</span>
+            <span>Has subtask</span>
             <span className="font-mono">-!abc</span>
-            <span>Remove blocker</span>
+            <span>Blocked by task</span>
             <span className="font-mono">~abc</span>
             <span>Related task</span>
           </div>
