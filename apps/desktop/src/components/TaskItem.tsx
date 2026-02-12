@@ -113,12 +113,12 @@ export function TaskItem({
   return (
     <div
       className={cn(
-        'group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/50',
+        'group flex items-start gap-2 px-3 py-2 transition-colors hover:bg-accent/50',
         done && 'opacity-60',
       )}
     >
       {/* Checkbox + ID column */}
-      <div className="flex flex-col items-center">
+      <div className="flex flex-col items-center mt-0.5">
         <button
           onClick={handleCheckboxClick}
           onContextMenu={handleCheckboxContextMenu}
