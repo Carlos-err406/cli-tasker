@@ -1,10 +1,11 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import type { IPCRegisterFunction } from '../types.js';
 import {
   WINDOW_HIDE,
   WINDOW_SHOW,
   WINDOW_TOGGLE_DEV_TOOLS,
   APP_QUIT,
+  SHELL_OPEN_EXTERNAL,
 } from './channels.js';
 import { log } from './utils.js';
 
@@ -33,5 +34,12 @@ export const windowRegister: IPCRegisterFunction = (ipcMain, _widget, _ctx) => {
   ipcMain.handle(APP_QUIT, () => {
     log('quit');
     app.quit();
+  });
+
+  ipcMain.handle(SHELL_OPEN_EXTERNAL, (_event, url: string) => {
+    log('openExternal', url);
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      return shell.openExternal(url);
+    }
   });
 };

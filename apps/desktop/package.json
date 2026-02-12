@@ -18,7 +18,9 @@
   "dependencies": {
     "@tasker/core": "workspace:*",
     "chokidar": "^4.0.0",
-    "electron-traywindow-positioner": "^1.2.0"
+    "electron-traywindow-positioner": "^1.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@dnd-kit/core": "^6.3.0",

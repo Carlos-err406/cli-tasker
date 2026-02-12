@@ -12,11 +12,14 @@ export function getDescriptionPreview(task: Task): string | null {
   const display = getDisplayDescription(task.description);
   const lines = display.split('\n');
   if (lines.length <= 1) return null;
-  const preview = lines
-    .slice(1)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-    .join('\n');
+  const rest = lines.slice(1);
+  // Trim leading/trailing blank lines but preserve internal ones for markdown
+  let start = 0;
+  while (start < rest.length && rest[start]!.trim() === '') start++;
+  let end = rest.length - 1;
+  while (end >= start && rest[end]!.trim() === '') end--;
+  if (start > end) return null;
+  const preview = rest.slice(start, end + 1).join('\n');
   return preview || null;
 }
 

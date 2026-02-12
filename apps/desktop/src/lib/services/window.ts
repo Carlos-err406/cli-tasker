@@ -15,3 +15,7 @@ export function toggleDevTools() {
 export function quitApp() {
   return IPC['app:quit']();
 }
+
+export function openExternal(url: string) {
+  return IPC['shell:openExternal'](url);
+}

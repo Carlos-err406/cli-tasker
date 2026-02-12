@@ -5,6 +5,7 @@ import type { TaskRelDetails } from '@/hooks/use-tasker-store.js';
 import { cn } from '@/lib/utils.js';
 import { useClickOutside } from '@/hooks/use-click-outside.js';
 import { Check, Minus, Ellipsis, CornerLeftUp, CornerRightDown, Ban, Link2, Calendar, Tag } from 'lucide-react';
+import { MarkdownContent } from '@/components/MarkdownContent.js';
 import {
   getDisplayTitle,
   getDescriptionPreview,
@@ -176,11 +177,7 @@ export function TaskItem({
             </div>
 
             {/* Description preview */}
-            {descPreview && (
-              <div className="text-[11px] text-muted-foreground mt-0.5 whitespace-pre-line">
-                {descPreview}
-              </div>
-            )}
+            {descPreview && <MarkdownContent content={descPreview} />}
 
             {/* Relationship lines */}
             {relDetails?.parent && (
