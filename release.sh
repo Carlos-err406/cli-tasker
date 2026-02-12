@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $# -ne 1 ]]; then
+  echo "Usage: ./release.sh <version> (e.g. 3.1.0)" >&2
+  exit 1
+fi
+
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "Error: working directory is not clean" >&2
   exit 1
 fi
 
-CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
-echo "Current tag: ${CURRENT_TAG}"
-
-read -rp "New version (e.g. 3.1.0): " VERSION
-
+VERSION="$1"
 TAG="v${VERSION}"
 
 if git rev-parse "$TAG" >/dev/null 2>&1; then
