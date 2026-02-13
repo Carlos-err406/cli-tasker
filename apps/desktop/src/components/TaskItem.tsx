@@ -32,6 +32,7 @@ interface TaskItemProps {
   onMove: (taskId: string, targetList: string) => void;
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;
+  onCreateSubtask: (taskId: string) => void;
 }
 
 export function TaskItem({
@@ -45,6 +46,7 @@ export function TaskItem({
   onMove,
   onShowStatus,
   onNavigateToTask,
+  onCreateSubtask,
 }: TaskItemProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
@@ -117,11 +119,10 @@ export function TaskItem({
     <div
       className={cn(
         'group flex items-start gap-2 px-3 py-2 transition-colors hover:bg-accent/50',
-        done && 'opacity-60',
       )}
     >
       {/* Checkbox + ID column */}
-      <div className="flex flex-col items-center mt-0.5">
+      <div className={cn('flex flex-col items-center mt-0.5', done && 'opacity-60')}>
         <button
           onClick={handleCheckboxClick}
           onContextMenu={handleCheckboxContextMenu}
@@ -147,7 +148,7 @@ export function TaskItem({
       </div>
 
       {/* Content column */}
-      <div className="flex-1 min-w-0">
+      <div className={cn('flex-1 min-w-0', done && 'opacity-60')}>
         {editing ? (
           <textarea
             ref={inputRef}
@@ -278,6 +279,15 @@ export function TaskItem({
               className="w-full text-left px-3 py-1.5 hover:bg-accent"
             >
               Edit
+            </button>
+            <button
+              onClick={() => {
+                onCreateSubtask(task.id);
+                closeMenus();
+              }}
+              className="w-full text-left px-3 py-1.5 hover:bg-accent"
+            >
+              Create subtask
             </button>
             <button
               onClick={() => setShowMoveMenu(!showMoveMenu)}

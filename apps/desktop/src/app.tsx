@@ -371,6 +371,7 @@ export default function App() {
                       onMove={() => {}}
                       onShowStatus={() => {}}
                       onNavigateToTask={() => {}}
+                      onCreateSubtask={() => {}}
                     />
                   </div>
                 )}

@@ -41,5 +41,16 @@ export const windowRegister: IPCRegisterFunction = (ipcMain, _widget, _ctx) => {
     if (url.startsWith('https://') || url.startsWith('http://')) {
       return shell.openExternal(url);
     }
+    if (url.startsWith('file://')) {
+      return shell.openPath(decodeURIComponent(url.replace('file://', '')));
+    }
+    // Local path (absolute or ~)
+    if (url.startsWith('/') || url.startsWith('~')) {
+      const decoded = decodeURIComponent(url);
+      const resolved = decoded.startsWith('~')
+        ? decoded.replace('~', app.getPath('home'))
+        : decoded;
+      return shell.openPath(resolved);
+    }
   });
 };

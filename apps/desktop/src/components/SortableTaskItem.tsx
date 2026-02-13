@@ -16,6 +16,7 @@ interface SortableTaskItemProps {
   onMove: (taskId: string, targetList: string) => void;
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;
+  onCreateSubtask: (taskId: string) => void;
 }
 
 export function SortableTaskItem({ task, sortDisabled, ...rest }: SortableTaskItemProps) {

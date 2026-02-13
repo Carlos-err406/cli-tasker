@@ -69,12 +69,20 @@ export function ListSection({
     ? `${totalCount} task${totalCount !== 1 ? 's' : ''}, ${pendingCount} pending`
     : `${totalCount} task${totalCount !== 1 ? 's' : ''}`;
 
-  const startAdd = () => {
+  const startAdd = (initialValue?: string) => {
     setAdding(true);
-    setAddValue('');
+    setAddValue(initialValue ?? '');
     // Expand if collapsed
     if (collapsed) onToggleCollapsed();
-    setTimeout(() => addInputRef.current?.focus(), 0);
+    setTimeout(() => {
+      const el = addInputRef.current;
+      if (el) {
+        el.focus();
+        if (initialValue) {
+          el.selectionStart = el.selectionEnd = 0;
+        }
+      }
+    }, 0);
   };
 
   const submitAdd = () => {
@@ -149,7 +157,7 @@ export function ListSection({
 
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
-            onClick={startAdd}
+            onClick={() => startAdd()}
             className="text-muted-foreground hover:text-foreground p-0.5"
             title="Add task"
           >
@@ -230,6 +238,7 @@ export function ListSection({
                 onMove={onMove}
                 onShowStatus={onShowStatus}
                 onNavigateToTask={onNavigateToTask}
+                onCreateSubtask={(taskId) => startAdd(`\n^${taskId}`)}
               />
             ))}
           </SortableContext>
