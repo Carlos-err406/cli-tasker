@@ -148,19 +148,20 @@ export function TaskItem({
       </div>
 
       {/* Content column */}
-      <div className={cn('flex-1 min-w-0', done && 'opacity-60')}>
+      <div className="flex-1 min-w-0">
         {editing ? (
           <textarea
             ref={inputRef}
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
             onKeyDown={handleEditKeyDown}
+            onPointerDown={(e) => e.stopPropagation()}
             onBlur={submitEdit}
             className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none"
             rows={2}
           />
         ) : (
-          <>
+          <div className={cn(done && 'opacity-60')}>
             <div className="flex items-center gap-1.5">
               {priorityIndicator && (
                 <span className={cn('text-xs font-bold', priorityColor)}>
@@ -252,7 +253,7 @@ export function TaskItem({
                 ))}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
 
