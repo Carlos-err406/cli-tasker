@@ -16,6 +16,7 @@ import {
   TASKS_RESTORE,
   TASKS_GET_REL_COUNTS,
   TASKS_GET_TITLES,
+  TASKS_APPLY_SYSTEM_SORT,
 } from './channels.js';
 
 export const tasksInvokerFactory = (ipcRenderer: Electron.IpcRenderer) => ({
@@ -100,4 +101,9 @@ export const tasksInvokerFactory = (ipcRenderer: Electron.IpcRenderer) => ({
     ipcRenderer.invoke(TASKS_GET_TITLES, taskIds)) as (
     taskIds: string[],
   ) => TryResult<Record<string, TaskSummary>>,
+
+  [TASKS_APPLY_SYSTEM_SORT]: ((listName?: string) =>
+    ipcRenderer.invoke(TASKS_APPLY_SYSTEM_SORT, listName)) as (
+    listName?: string,
+  ) => TryResult<number>,
 });

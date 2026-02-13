@@ -13,3 +13,4 @@ export const TASKS_GET_STATS = 'tasks:getStats';
 export const TASKS_RESTORE = 'tasks:restore';
 export const TASKS_GET_REL_COUNTS = 'tasks:getRelCounts';
 export const TASKS_GET_TITLES = 'tasks:getTitles';
+export const TASKS_APPLY_SYSTEM_SORT = 'tasks:applySystemSort';

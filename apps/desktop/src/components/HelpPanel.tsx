@@ -86,7 +86,7 @@ export function HelpPanel({ onClose }: HelpPanelProps) {
             <span className="font-mono">&#8984;E</span>
             <span>Collapse/expand all</span>
             <span className="font-mono">&#8984;J</span>
-            <span>Toggle sort mode</span>
+            <span>Apply system sort</span>
             <span className="font-mono">&#8984;W</span>
             <span>Close popup</span>
             <span className="font-mono">&#8984;/</span>

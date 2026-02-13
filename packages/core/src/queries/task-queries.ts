@@ -26,6 +26,7 @@ import {
 } from '../parsers/task-description-parser.js';
 import { parseSearchFilters } from '../parsers/search-filter-parser.js';
 import { formatDate, addDays } from '../parsers/date-parser.js';
+import { getAllListNames } from './list-queries.js';
 
 // ---------------------------------------------------------------------------
 // Row mapper
@@ -991,6 +992,26 @@ export function getTaskTitles(db: TaskerDb, taskIds: TaskId[]): Record<string, T
     };
   }
   return result;
+}
+
+/** Apply system sort order to the database, persisting it as the user's sort order */
+export function applySystemSort(db: TaskerDb, listName?: ListName): number {
+  const raw = getRawDb(db);
+  const listNames = listName ? [listName] : getAllListNames(db);
+
+  const run = raw.transaction(() => {
+    for (const name of listNames) {
+      const listTasks = getAllTasks(db, name);
+      const sorted = sortTasksForDisplay(listTasks);
+      // Highest sort_order = first in display (sorted[0])
+      for (let i = 0; i < sorted.length; i++) {
+        db.update(tasks).set({ sortOrder: sorted.length - 1 - i }).where(eq(tasks.id, sorted[i]!.id)).run();
+      }
+    }
+  });
+  run();
+
+  return listNames.length;
 }
 
 // ---------------------------------------------------------------------------

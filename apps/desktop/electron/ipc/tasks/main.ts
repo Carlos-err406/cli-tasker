@@ -14,6 +14,7 @@ import {
   getStats,
   getRelationshipCounts,
   getTaskTitles,
+  applySystemSort,
 } from '@tasker/core';
 import type { TaskStatus, Priority } from '@tasker/core';
 import $try from '@utils/try.js';
@@ -34,6 +35,7 @@ import {
   TASKS_RESTORE,
   TASKS_GET_REL_COUNTS,
   TASKS_GET_TITLES,
+  TASKS_APPLY_SYSTEM_SORT,
 } from './channels.js';
 import { log } from './utils.js';
 
@@ -233,5 +235,10 @@ export const tasksRegister: IPCRegisterFunction = (ipcMain, _widget, { db, undo 
   ipcMain.handle(TASKS_GET_TITLES, (_, taskIds: string[]) => {
     log('getTitles', `${taskIds.length} tasks`);
     return $try(() => getTaskTitles(db, taskIds));
+  });
+
+  ipcMain.handle(TASKS_APPLY_SYSTEM_SORT, (_, listName?: string) => {
+    log('applySystemSort', listName ?? 'all');
+    return $try(() => applySystemSort(db, listName));
   });
 };

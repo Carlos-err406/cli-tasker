@@ -49,6 +49,7 @@ export {
   removeRelated,
   getRelationshipCounts,
   getTaskTitles,
+  applySystemSort,
 } from './task-queries.js';
 export type { AddResult, TaskRelCounts, TaskSummary } from './task-queries.js';
 

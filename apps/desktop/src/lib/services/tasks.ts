@@ -67,3 +67,7 @@ export async function getRelationshipCounts(taskIds: string[]): Promise<Record<s
 export async function getTaskTitles(taskIds: string[]): Promise<Record<string, TaskSummary>> {
   return unwrap(IPC['tasks:getTitles'](taskIds));
 }
+
+export async function applySystemSort(listName?: string): Promise<number> {
+  return unwrap(IPC['tasks:applySystemSort'](listName));
+}
