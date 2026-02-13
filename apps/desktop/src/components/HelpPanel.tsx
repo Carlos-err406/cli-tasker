@@ -55,6 +55,24 @@ export function HelpPanel({ onClose }: HelpPanelProps) {
         </section>
 
         <section>
+          <h3 className="font-medium text-sm mb-1.5">Search Filters</h3>
+          <div className="grid grid-cols-2 gap-1 text-muted-foreground">
+            <span className="font-mono">tag:name</span>
+            <span>Filter by tag</span>
+            <span className="font-mono">status:done</span>
+            <span>pending, wip, done</span>
+            <span className="font-mono">priority:high</span>
+            <span>high/p1, medium/p2, low/p3</span>
+            <span className="font-mono">due:today</span>
+            <span>today, overdue, week, month</span>
+            <span className="font-mono">list:name</span>
+            <span>Filter by list</span>
+            <span className="font-mono">has:subtasks</span>
+            <span>subtasks, parent, due, tags</span>
+          </div>
+        </section>
+
+        <section>
           <h3 className="font-medium text-sm mb-1.5">Keyboard Shortcuts</h3>
           <div className="grid grid-cols-2 gap-1 text-muted-foreground">
             <span className="font-mono">&#8984;K</span>

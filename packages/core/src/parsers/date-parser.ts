@@ -24,7 +24,7 @@ const MONTH_MAP: Record<string, number> = {
 };
 
 /** Format a Date as yyyy-MM-dd */
-function formatDate(d: Date): string {
+export function formatDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -32,7 +32,7 @@ function formatDate(d: Date): string {
 }
 
 /** Add days to a date (returns new Date) */
-function addDays(d: Date, n: number): Date {
+export function addDays(d: Date, n: number): Date {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
   return r;

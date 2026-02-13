@@ -24,6 +24,8 @@ import {
   getDisplayDescription,
   syncMetadataToDescription,
 } from '../parsers/task-description-parser.js';
+import { parseSearchFilters } from '../parsers/search-filter-parser.js';
+import { formatDate, addDays } from '../parsers/date-parser.js';
 
 // ---------------------------------------------------------------------------
 // Row mapper
@@ -85,7 +87,7 @@ export function getSortedTasks(
     taskList = taskList.filter(t => t.priority === opts.priority);
   }
   if (opts?.overdue) {
-    const today = formatDateNow();
+    const today = formatDate(new Date());
     taskList = taskList.filter(t => t.dueDate != null && t.dueDate < today);
   }
 
@@ -101,16 +103,96 @@ export function getTrash(db: TaskerDb, listName?: ListName): Task[] {
   return rows.map(toTask);
 }
 
-/** Search tasks by description (case-insensitive LIKE) */
+/** Search tasks by description and/or smart filters (tag:x status:done due:today etc.) */
 export function searchTasks(db: TaskerDb, query: string): Task[] {
-  const escaped = query.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-  const rows = db.select().from(tasks).where(
-    and(
-      eq(tasks.isTrashed, 0),
-      sql`${tasks.description} LIKE ${'%' + escaped + '%'} ESCAPE '\\' COLLATE NOCASE`,
-    ),
-  ).orderBy(desc(tasks.sortOrder)).all();
-  return sortTasksForDisplay(rows.map(toTask));
+  const filters = parseSearchFilters(query);
+  const conditions: ReturnType<typeof eq>[] = [eq(tasks.isTrashed, 0)];
+
+  // Description free-text search
+  if (filters.descriptionQuery) {
+    const escaped = filters.descriptionQuery.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+    conditions.push(sql`${tasks.description} LIKE ${'%' + escaped + '%'} ESCAPE '\\' COLLATE NOCASE` as any);
+  }
+
+  // Status filter
+  if (filters.status != null) {
+    conditions.push(eq(tasks.status, filters.status));
+  }
+
+  // Priority filter
+  if (filters.priority != null) {
+    conditions.push(eq(tasks.priority, filters.priority));
+  }
+
+  // List filter
+  if (filters.listName != null) {
+    conditions.push(eq(tasks.listName, filters.listName));
+  }
+
+  // Due date filters
+  if (filters.dueFilter) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = formatDate(today);
+
+    switch (filters.dueFilter) {
+      case 'today':
+        conditions.push(eq(tasks.dueDate, todayStr));
+        break;
+      case 'overdue':
+        conditions.push(sql`${tasks.dueDate} IS NOT NULL AND ${tasks.dueDate} < ${todayStr}` as any);
+        break;
+      case 'week': {
+        const weekEnd = formatDate(addDays(today, 7));
+        conditions.push(sql`${tasks.dueDate} IS NOT NULL AND ${tasks.dueDate} >= ${todayStr} AND ${tasks.dueDate} <= ${weekEnd}` as any);
+        break;
+      }
+      case 'month': {
+        const monthEnd = formatDate(addDays(today, 30));
+        conditions.push(sql`${tasks.dueDate} IS NOT NULL AND ${tasks.dueDate} >= ${todayStr} AND ${tasks.dueDate} <= ${monthEnd}` as any);
+        break;
+      }
+    }
+  }
+
+  // has:due — tasks with a due date set
+  if (filters.has.due) {
+    conditions.push(sql`${tasks.dueDate} IS NOT NULL` as any);
+  }
+
+  // has:tags — tasks with non-null tags
+  if (filters.has.tags) {
+    conditions.push(sql`${tasks.tags} IS NOT NULL` as any);
+  }
+
+  // has:parent — tasks that are subtasks
+  if (filters.has.parent) {
+    conditions.push(sql`${tasks.parentId} IS NOT NULL` as any);
+  }
+
+  const rows = db.select().from(tasks).where(and(...conditions)).orderBy(desc(tasks.sortOrder)).all();
+  let results = rows.map(toTask);
+
+  // Post-filter: tags (stored as JSON array)
+  if (filters.tags.length > 0) {
+    results = results.filter(t => {
+      if (!t.tags) return false;
+      const lowerTags = t.tags.map(tag => tag.toLowerCase());
+      return filters.tags.every(ft => lowerTags.includes(ft));
+    });
+  }
+
+  // Post-filter: has:subtasks (needs child lookup)
+  if (filters.has.subtasks) {
+    const raw = getRawDb(db);
+    const parentIds = new Set(
+      (raw.prepare(`SELECT DISTINCT parent_id FROM tasks WHERE parent_id IS NOT NULL AND is_trashed = 0`).all() as any[])
+        .map(r => r.parent_id as string),
+    );
+    results = results.filter(t => parentIds.has(t.id));
+  }
+
+  return sortTasksForDisplay(results);
 }
 
 // ---------------------------------------------------------------------------
@@ -1023,10 +1105,3 @@ function syncRelatedRelationships(db: TaskerDb, taskId: TaskId, oldIds: string[]
   }
 }
 
-function formatDateNow(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
