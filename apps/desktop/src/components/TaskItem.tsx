@@ -77,7 +77,14 @@ export function TaskItem({
     setEditValue(task.description);
     setEditing(true);
     setShowMenu(false);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    setTimeout(() => {
+      const el = inputRef.current;
+      if (el) {
+        el.focus();
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+      }
+    }, 0);
   };
 
   const submitEdit = () => {
@@ -153,12 +160,16 @@ export function TaskItem({
           <textarea
             ref={inputRef}
             value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
+            onChange={(e) => {
+              setEditValue(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = e.target.scrollHeight + 'px';
+            }}
             onKeyDown={handleEditKeyDown}
             onPointerDown={(e) => e.stopPropagation()}
             onBlur={submitEdit}
             className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none"
-            rows={2}
+            rows={1}
           />
         ) : (
           <div className={cn(done && 'opacity-60')}>

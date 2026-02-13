@@ -40,7 +40,7 @@ Release is done via `./release.sh <version>` (e.g. `./release.sh 3.1.0`). It tag
 
 ### Interpreting task references
 
-When the user provides 3 hex characters (e.g. `0e0`, `a3f`, `1b2`), it's a tasker task ID. Run `tasker get <id>` to see the full task before proceeding.
+When the user provides 3 alphanumeric characters (e.g. `chj`, `a3f`, `1b2`), it's a tasker task ID. Run `tasker get <id>` to see the full task before proceeding.
 
 ### Working on tasks from the backlog
 

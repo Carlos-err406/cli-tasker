@@ -79,6 +79,8 @@ export function ListSection({
         if (initialValue) {
           el.selectionStart = el.selectionEnd = 0;
         }
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
       }
     }, 0);
   };
@@ -202,7 +204,11 @@ export function ListSection({
               <textarea
                 ref={addInputRef}
                 value={addValue}
-                onChange={(e) => setAddValue(e.target.value)}
+                onChange={(e) => {
+                  setAddValue(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
                 onKeyDown={handleAddKeyDown}
                 onBlur={() => {
                   if (addValue.trim()) submitAdd();
@@ -210,7 +216,7 @@ export function ListSection({
                 }}
                 placeholder="New task... (Cmd+Enter to submit)"
                 className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none placeholder:text-muted-foreground/50"
-                rows={2}
+                rows={1}
               />
             </div>
           )}
