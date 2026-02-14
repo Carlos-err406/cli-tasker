@@ -20,7 +20,7 @@ const components: Components = {
         e.stopPropagation();
         if (href) openExternal(href);
       }}
-      className="text-blue-400 hover:underline"
+      className="text-blue-400 hover:underline break-all"
     >
       {children}
     </a>
