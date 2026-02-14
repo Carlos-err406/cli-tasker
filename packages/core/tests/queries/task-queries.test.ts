@@ -197,23 +197,32 @@ describe('renameTask', () => {
     expect(getTaskById(db, child.id)!.parentId).toBeNull();
   });
 
-  it('removing -! inverse marker removes blocking relationship', () => {
-    const { task: blocker } = addTask(db, 'blocker', 'tasks');
-    const { task: blocked } = addTask(db, 'blocked', 'tasks');
-    addBlocker(db, blocker.id, blocked.id);
+  it('removing -! inverse marker removes blocking relationship and forward marker', () => {
+    // Setup: create tasks "123" and "abc"
+    const { task: task123 } = addTask(db, '123', 'tasks');
+    const { task: taskAbc } = addTask(db, 'abc', 'tasks');
 
-    // Blocked task description should have -!blockerId
-    const blockedAfterSet = getTaskById(db, blocked.id)!;
-    expect(blockedAfterSet.description).toContain(`-!${blocker.id}`);
-    expect(getBlockedByIds(db, blocked.id)).toContain(blocker.id);
+    // User types !abcId on task 123's description (creates relationship via rename)
+    renameTask(db, task123.id, `123\n!${taskAbc.id}`);
 
-    // Remove the -! marker by renaming without it
-    const descWithout = blockedAfterSet.description.replace(new RegExp(`\\s*-!${blocker.id}`), '');
-    renameTask(db, blocked.id, descWithout);
+    // Verify: 123 has !abc in description, abc has -!123, DB relationship exists
+    const t123After = getTaskById(db, task123.id)!;
+    const abcAfter = getTaskById(db, taskAbc.id)!;
+    expect(t123After.description).toContain(`!${taskAbc.id}`);
+    expect(abcAfter.description).toContain(`-!${task123.id}`);
+    expect(getBlocksIds(db, task123.id)).toContain(taskAbc.id);
+    expect(getBlockedByIds(db, taskAbc.id)).toContain(task123.id);
 
-    // Blocking relationship should be removed
-    expect(getBlockedByIds(db, blocked.id)).not.toContain(blocker.id);
-    expect(getBlocksIds(db, blocker.id)).not.toContain(blocked.id);
+    // User edits abc removing -!123 from its description
+    const descWithout = abcAfter.description.replace(new RegExp(`\\s*-!${task123.id}`), '');
+    renameTask(db, taskAbc.id, descWithout);
+
+    // 123 should no longer have !abc in its description
+    const t123Final = getTaskById(db, task123.id)!;
+    expect(t123Final.description).not.toContain(`!${taskAbc.id}`);
+    // DB relationship should be gone
+    expect(getBlockedByIds(db, taskAbc.id)).not.toContain(task123.id);
+    expect(getBlocksIds(db, task123.id)).not.toContain(taskAbc.id);
   });
 });
 

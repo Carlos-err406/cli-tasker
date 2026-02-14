@@ -503,12 +503,29 @@ export function renameTask(db: TaskerDb, taskId: TaskId, newDescription: string)
     }
   }
 
-  // Sync inverse blocker markers (-!blockerId removed = remove blocking relationship)
+  // Sync inverse blocker markers (-!blockerId removed = remove blocking relationship + forward marker)
   const oldBlockedBy = new Set(oldParsed.blockedByIds ?? []);
   const newBlockedBy = new Set(newParsed.blockedByIds ?? []);
   for (const removed of oldBlockedBy) {
     if (!newBlockedBy.has(removed)) {
-      removeBlocker(db, removed, taskId);
+      // Remove the DB relationship
+      db.delete(taskDependencies).where(
+        and(eq(taskDependencies.taskId, removed), eq(taskDependencies.blocksTaskId, taskId)),
+      ).run();
+      // Remove the forward !taskId marker from the blocker's description
+      const blocker = getTaskById(db, removed);
+      if (blocker) {
+        const blockerParsed = parseDescription(blocker.description);
+        const updatedBlocksIds = (blockerParsed.blocksIds ?? []).filter(id => id !== taskId);
+        const synced = syncMetadataToDescription(
+          blocker.description, blocker.priority, blocker.dueDate, blocker.tags,
+          blockerParsed.parentId, updatedBlocksIds.length > 0 ? updatedBlocksIds : null,
+          blockerParsed.hasSubtaskIds, blockerParsed.blockedByIds, blockerParsed.relatedIds,
+        );
+        if (synced !== blocker.description) {
+          db.update(tasks).set({ description: synced }).where(eq(tasks.id, removed)).run();
+        }
+      }
     }
   }
 
