@@ -1,7 +1,9 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import type { Task, TaskStatus } from '@tasker/core/types';
 import type { TaskRelDetails } from '@/hooks/use-tasker-store.js';
 import { useClickOutside } from '@/hooks/use-click-outside.js';
+import { useMetadataAutocomplete } from '@/hooks/use-metadata-autocomplete.js';
+import { AutocompleteDropdown } from '@/components/AutocompleteDropdown.js';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -61,6 +63,13 @@ export function ListSection({
 
   useClickOutside(listMenuRef, useCallback(() => setShowListMenu(false), []));
 
+  const ac = useMetadataAutocomplete(addValue, addInputRef);
+
+  // Trigger autocomplete detection on value changes
+  useEffect(() => {
+    if (adding) ac.detect();
+  }, [addValue, adding]);
+
   const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
 
   const pendingCount = tasks.filter((t) => t.status === 0).length;
@@ -99,6 +108,14 @@ export function ListSection({
   const handleAddKeyDown = (e: React.KeyboardEvent) => {
     // Stop propagation so dnd-kit keyboard listeners don't intercept (e.g. Space)
     e.stopPropagation();
+    // Let autocomplete handle its keys first
+    if (ac.onKeyDown(e)) {
+      if ((e.key === 'Enter' || e.key === 'Tab') && ac.isOpen) {
+        const newVal = ac.select(ac.selectedIndex);
+        if (newVal !== null) setAddValue(newVal);
+      }
+      return;
+    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       submitAdd();
@@ -206,23 +223,37 @@ export function ListSection({
         <div className="overflow-hidden">
           {adding && (
             <div className="px-3 py-2 border-b border-border/30">
-              <textarea
-                ref={addInputRef}
-                value={addValue}
-                onChange={(e) => {
-                  setAddValue(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = e.target.scrollHeight + 'px';
-                }}
-                onKeyDown={handleAddKeyDown}
-                onBlur={() => {
-                  if (addValue.trim()) submitAdd();
-                  else setAdding(false);
-                }}
-                placeholder="New task... (Cmd+Enter to submit)"
-                className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none overflow-hidden placeholder:text-muted-foreground/50"
-                rows={1}
-              />
+              <div className="relative">
+                <textarea
+                  ref={addInputRef}
+                  value={addValue}
+                  onChange={(e) => {
+                    setAddValue(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = e.target.scrollHeight + 'px';
+                  }}
+                  onKeyDown={handleAddKeyDown}
+                  onBlur={() => {
+                    if (!ac.isOpen) {
+                      if (addValue.trim()) submitAdd();
+                      else setAdding(false);
+                    }
+                  }}
+                  placeholder="New task... (Cmd+Enter to submit)"
+                  className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none overflow-hidden placeholder:text-muted-foreground/50"
+                  rows={1}
+                />
+                {ac.isOpen && (
+                  <AutocompleteDropdown
+                    suggestions={ac.suggestions}
+                    selectedIndex={ac.selectedIndex}
+                    onSelect={(i) => {
+                      const newVal = ac.select(i);
+                      if (newVal !== null) setAddValue(newVal);
+                    }}
+                  />
+                )}
+              </div>
             </div>
           )}
 

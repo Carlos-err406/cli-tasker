@@ -1,9 +1,11 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { Task, TaskStatus } from '@tasker/core/types';
 import { TaskStatus as TS } from '@tasker/core/types';
 import type { TaskRelDetails } from '@/hooks/use-tasker-store.js';
 import { cn } from '@/lib/utils.js';
 import { useClickOutside } from '@/hooks/use-click-outside.js';
+import { useMetadataAutocomplete } from '@/hooks/use-metadata-autocomplete.js';
+import { AutocompleteDropdown } from '@/components/AutocompleteDropdown.js';
 import { Check, Minus, Ellipsis, CornerLeftUp, CornerRightDown, Ban, Link2, Calendar, Tag } from 'lucide-react';
 import { MarkdownContent } from '@/components/MarkdownContent.js';
 import {
@@ -65,6 +67,13 @@ export function TaskItem({
   }, []);
   useClickOutside(menuRef, closeMenus);
 
+  const ac = useMetadataAutocomplete(editValue, inputRef, task.id);
+
+  // Trigger autocomplete detection on value changes
+  useEffect(() => {
+    if (editing) ac.detect();
+  }, [editValue, editing]);
+
   const done = isDone(task);
   const inProg = isInProgress(task);
   const title = getDisplayTitle(task);
@@ -100,6 +109,14 @@ export function TaskItem({
   const handleEditKeyDown = (e: React.KeyboardEvent) => {
     // Stop propagation so dnd-kit keyboard listeners don't intercept (e.g. Space)
     e.stopPropagation();
+    // Let autocomplete handle its keys first
+    if (ac.onKeyDown(e)) {
+      if ((e.key === 'Enter' || e.key === 'Tab') && ac.isOpen) {
+        const newVal = ac.select(ac.selectedIndex);
+        if (newVal !== null) setEditValue(newVal);
+      }
+      return;
+    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       submitEdit();
@@ -159,20 +176,34 @@ export function TaskItem({
       {/* Content column */}
       <div className="flex-1 min-w-0 select-text">
         {editing ? (
-          <textarea
-            ref={inputRef}
-            value={editValue}
-            onChange={(e) => {
-              setEditValue(e.target.value);
-              e.target.style.height = 'auto';
-              e.target.style.height = e.target.scrollHeight + 'px';
-            }}
-            onKeyDown={handleEditKeyDown}
-            onPointerDown={(e) => e.stopPropagation()}
-            onBlur={submitEdit}
-            className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none overflow-hidden"
-            rows={1}
-          />
+          <div className="relative">
+            <textarea
+              ref={inputRef}
+              value={editValue}
+              onChange={(e) => {
+                setEditValue(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = e.target.scrollHeight + 'px';
+              }}
+              onKeyDown={handleEditKeyDown}
+              onPointerDown={(e) => e.stopPropagation()}
+              onBlur={() => {
+                if (!ac.isOpen) submitEdit();
+              }}
+              className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none overflow-hidden"
+              rows={1}
+            />
+            {ac.isOpen && (
+              <AutocompleteDropdown
+                suggestions={ac.suggestions}
+                selectedIndex={ac.selectedIndex}
+                onSelect={(i) => {
+                  const newVal = ac.select(i);
+                  if (newVal !== null) setEditValue(newVal);
+                }}
+              />
+            )}
+          </div>
         ) : (
           <div className={cn(done && 'opacity-60')}>
             <div className="flex items-start gap-1.5">
