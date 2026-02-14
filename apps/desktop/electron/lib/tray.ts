@@ -1,7 +1,8 @@
-import { BrowserWindow, Menu, Tray, app, screen } from 'electron';
+import { BrowserWindow, Menu, Notification, Tray, app, screen } from 'electron';
 import path from 'node:path';
 import { getPublicPath } from './config.js';
 import { createPopupWindow } from './window.js';
+import { getSettings, updateSettings } from './reminder-sync/index.js';
 
 let tray: Tray | null = null;
 let popup: BrowserWindow | null = null;
@@ -11,15 +12,45 @@ export function createTray(): Tray {
   const iconPath = path.join(getPublicPath(), 'trayTemplate.png');
   tray = new Tray(iconPath);
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Open', click: () => togglePopup() },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
-  ]);
-
   tray.setToolTip('Tasker');
   tray.on('click', () => togglePopup());
-  tray.on('right-click', () => tray?.popUpContextMenu(contextMenu));
+  tray.on('right-click', () => {
+    const reminderSettings = getSettings();
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'Open', click: () => togglePopup() },
+      { type: 'separator' },
+      {
+        label: 'Reminder Sync',
+        type: 'checkbox',
+        checked: reminderSettings.enabled,
+        click: (menuItem) => {
+          updateSettings({
+            ...getSettings(),
+            enabled: menuItem.checked,
+          }).then((status) => {
+            if (menuItem.checked) {
+              if (status.lastError) {
+                new Notification({
+                  title: 'Tasker Reminder Sync',
+                  body: `Sync failed: ${status.lastError}`,
+                }).show();
+              } else {
+                new Notification({
+                  title: 'Tasker Reminder Sync',
+                  body: `Enabled — ${status.eventCount} reminder${status.eventCount === 1 ? '' : 's'} synced`,
+                }).show();
+              }
+            }
+          }).catch((err) => {
+            console.error('[REMINDER-SYNC]: tray toggle error:', err);
+          });
+        },
+      },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
+    ]);
+    tray?.popUpContextMenu(contextMenu);
+  });
 
   return tray;
 }

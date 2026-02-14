@@ -18,7 +18,9 @@
   "extraResources": [],
   "mac": {
     "extendInfo": {
-      "LSUIElement": true
+      "LSUIElement": true,
+      "NSCalendarsUsageDescription": "Tasker syncs tasks with due dates to your calendar.",
+      "NSRemindersUsageDescription": "Tasker syncs tasks with due dates as reminders for two-way completion tracking."
     },
     "target": [
       { "target": "dmg", "arch": ["x64", "arm64"] },

@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { watch } from 'chokidar';
 import { getDefaultDbPath } from '@tasker/core';
+import { triggerSync } from './reminder-sync/index.js';
 
 let watcher: ReturnType<typeof watch> | null = null;
 
@@ -22,6 +23,7 @@ export function startDbWatcher(getWindow: () => BrowserWindow | null): void {
     if (win && !win.isDestroyed()) {
       win.webContents.send('db:changed');
     }
+    triggerSync();
   });
 }
 

@@ -19,7 +19,8 @@
     "onlyBuiltDependencies": [
       "libsql",
       "esbuild",
-      "electron"
+      "electron",
+      "eventkit-node"
     ]
   }
 }

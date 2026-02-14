@@ -5,6 +5,7 @@ import { createDb, getDefaultDbPath, UndoManager } from '@tasker/core';
 import registerIPCs from './ipc/register.js';
 import { createTray, getPopupWindow } from './lib/tray.js';
 import { startDbWatcher, stopDbWatcher } from './lib/watcher.js';
+import { startReminderSync, stopReminderSync } from './lib/reminder-sync/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +55,9 @@ if (!gotLock) {
 
     // Watch for external database changes
     startDbWatcher(getPopupWindow);
+
+    // Start reminder sync (reads settings, syncs if enabled)
+    startReminderSync(db);
   });
 
   app.on('window-all-closed', () => {
@@ -62,5 +66,6 @@ if (!gotLock) {
 
   app.on('before-quit', () => {
     stopDbWatcher();
+    stopReminderSync();
   });
 }

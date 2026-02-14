@@ -17,7 +17,7 @@ export default defineConfig({
         vite: {
           build: {
             rollupOptions: {
-              external: ['better-sqlite3', /\.node$/],
+              external: ['better-sqlite3', 'eventkit-node', /\.node$/],
             },
           },
           resolve: {
@@ -34,7 +34,7 @@ export default defineConfig({
         vite: {
           build: {
             rollupOptions: {
-              external: ['better-sqlite3', /\.node$/],
+              external: ['better-sqlite3', 'eventkit-node', /\.node$/],
             },
           },
           resolve: {

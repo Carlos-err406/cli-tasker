@@ -3,12 +3,14 @@ import { tasksInvokerFactory } from './ipc/tasks/preload.js';
 import { listsInvokerFactory } from './ipc/lists/preload.js';
 import { undoInvokerFactory } from './ipc/undo/preload.js';
 import { windowInvokerFactory } from './ipc/window/preload.js';
+import { reminderInvokerFactory } from './ipc/reminder/preload.js';
 
 contextBridge.exposeInMainWorld('ipc', {
   ...tasksInvokerFactory(ipcRenderer),
   ...listsInvokerFactory(ipcRenderer),
   ...undoInvokerFactory(ipcRenderer),
   ...windowInvokerFactory(ipcRenderer),
+  ...reminderInvokerFactory(ipcRenderer),
   onDbChanged: (callback: () => void) => {
     ipcRenderer.on('db:changed', callback);
     return () => {

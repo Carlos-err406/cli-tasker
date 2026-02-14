@@ -4,6 +4,7 @@ import type { tasksInvokerFactory } from './tasks/preload.js';
 import type { listsInvokerFactory } from './lists/preload.js';
 import type { undoInvokerFactory } from './undo/preload.js';
 import type { windowInvokerFactory } from './window/preload.js';
+import type { reminderInvokerFactory } from './reminder/preload.js';
 
 export interface IPCContext {
   db: TaskerDb;
@@ -19,7 +20,8 @@ export type IPCRegisterFunction = (
 export type IPC = ReturnType<typeof tasksInvokerFactory> &
   ReturnType<typeof listsInvokerFactory> &
   ReturnType<typeof undoInvokerFactory> &
-  ReturnType<typeof windowInvokerFactory> & {
+  ReturnType<typeof windowInvokerFactory> &
+  ReturnType<typeof reminderInvokerFactory> & {
     onDbChanged: (callback: () => void) => () => void;
     onPopupHidden: (callback: () => void) => () => void;
     onPopupShown: (callback: () => void) => () => void;
