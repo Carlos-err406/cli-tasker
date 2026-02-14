@@ -9,6 +9,7 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
+  PointerSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
@@ -16,7 +17,6 @@ import {
   type DragEndEvent,
   type Modifier,
 } from '@dnd-kit/core';
-import { VerticalPointerSensor } from '@/lib/vertical-pointer-sensor.js';
 import {
   SortableContext,
   sortableKeyboardCoordinates,
@@ -47,7 +47,7 @@ export default function App() {
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
-    useSensor(VerticalPointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
