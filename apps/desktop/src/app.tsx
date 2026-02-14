@@ -47,7 +47,7 @@ export default function App() {
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
-    useSensor(VerticalPointerSensor),
+    useSensor(VerticalPointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 

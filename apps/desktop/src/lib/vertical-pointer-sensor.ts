@@ -1,76 +1,34 @@
 import { PointerSensor } from '@dnd-kit/core';
 
 /**
- * Custom pointer sensor that only activates drag when initial movement
- * is primarily vertical. This allows horizontal text selection in task
- * titles while still supporting vertical drag-and-drop reordering.
+ * Custom pointer sensor that cancels drag activation when initial movement
+ * is primarily horizontal. This allows text selection in task titles while
+ * still supporting vertical drag-and-drop reordering.
+ *
+ * Works by intercepting handleMove before the distance constraint is checked:
+ * if the user moves more horizontally than vertically, we cancel instead of
+ * starting a drag.
  */
-export class VerticalPointerSensor extends PointerSensor {
-  static activators = [
-    {
-      eventName: 'onPointerDown' as const,
-      handler(
-        { nativeEvent: event }: { nativeEvent: PointerEvent },
-        { onActivation }: { onActivation?: (event: { event: PointerEvent }) => void },
-      ) {
-        if (
-          !event.isPrimary ||
-          event.button !== 0 ||
-          isInteractiveElement(event.target as Element)
-        ) {
-          return false;
-        }
 
-        const startX = event.clientX;
-        const startY = event.clientY;
-        let decided = false;
+const originalHandleMove = (PointerSensor.prototype as any).handleMove;
 
-        const threshold = 5;
+export class VerticalPointerSensor extends PointerSensor {}
 
-        function onPointerMove(e: PointerEvent) {
-          if (decided) return;
+(VerticalPointerSensor.prototype as any).handleMove = function (
+  this: any,
+  event: PointerEvent,
+) {
+  const { activated, initialCoordinates } = this;
 
-          const dx = Math.abs(e.clientX - startX);
-          const dy = Math.abs(e.clientY - startY);
+  if (!activated && initialCoordinates) {
+    const dx = Math.abs(event.clientX - initialCoordinates.x);
+    const dy = Math.abs(event.clientY - initialCoordinates.y);
 
-          if (dx < threshold && dy < threshold) return;
+    // Once movement is significant, cancel if primarily horizontal
+    if (dx > dy && dx + dy > 3) {
+      return this.handleCancel();
+    }
+  }
 
-          decided = true;
-          cleanup();
-
-          // Only allow drag if movement is primarily vertical
-          if (dy > dx) {
-            onActivation?.({ event });
-          }
-        }
-
-        function onPointerUp() {
-          decided = true;
-          cleanup();
-        }
-
-        function cleanup() {
-          document.removeEventListener('pointermove', onPointerMove);
-          document.removeEventListener('pointerup', onPointerUp);
-        }
-
-        document.addEventListener('pointermove', onPointerMove);
-        document.addEventListener('pointerup', onPointerUp);
-
-        return false;
-      },
-    },
-  ];
-}
-
-function isInteractiveElement(element: Element | null): boolean {
-  if (!element) return false;
-  const tag = element.tagName;
-  return (
-    tag === 'INPUT' ||
-    tag === 'TEXTAREA' ||
-    tag === 'SELECT' ||
-    tag === 'BUTTON' ||
-    (element as HTMLElement).isContentEditable
-  );
-}
+  return originalHandleMove.call(this, event);
+};
