@@ -33,6 +33,7 @@ interface TaskItemProps {
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;
   onCreateSubtask: (taskId: string) => void;
+  onTagClick?: (tag: string) => void;
 }
 
 export function TaskItem({
@@ -47,6 +48,7 @@ export function TaskItem({
   onShowStatus,
   onNavigateToTask,
   onCreateSubtask,
+  onTagClick,
 }: TaskItemProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
@@ -251,16 +253,20 @@ export function TaskItem({
             {task.tags && task.tags.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 mt-1">
                 {task.tags.map((tag) => (
-                  <span
+                  <button
                     key={tag}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTagClick?.(tag);
+                    }}
                     className={cn(
-                      'inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0 rounded-full',
+                      'inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0 rounded-full hover:brightness-125 transition-all',
                       getTagColor(tag),
                     )}
                   >
                     <Tag className="h-2.5 w-2.5" />
                     {tag}
-                  </span>
+                  </button>
                 ))}
               </div>
             )}

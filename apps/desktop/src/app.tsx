@@ -346,6 +346,7 @@ export default function App() {
                       onDeleteList={store.deleteList}
                       onShowStatus={store.showStatus}
                       onNavigateToTask={store.navigateToTask}
+                      onTagClick={(tag) => setSearchInput(`tag:${tag}`)}
                     />
                   );
                 })}

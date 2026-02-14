@@ -22,6 +22,7 @@ interface SortableListSectionProps {
   onDeleteList: (name: string) => void;
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;
+  onTagClick?: (tag: string) => void;
 }
 
 export function SortableListSection({ listName, ...rest }: SortableListSectionProps) {

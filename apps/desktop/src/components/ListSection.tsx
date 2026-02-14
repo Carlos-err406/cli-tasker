@@ -27,6 +27,7 @@ interface ListSectionProps {
   onDeleteList: (name: string) => void;
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;
+  onTagClick?: (tag: string) => void;
 }
 
 export function ListSection({
@@ -47,6 +48,7 @@ export function ListSection({
   onDeleteList,
   onShowStatus,
   onNavigateToTask,
+  onTagClick,
 }: ListSectionProps) {
   const [adding, setAdding] = useState(false);
   const [addValue, setAddValue] = useState('');
@@ -245,6 +247,7 @@ export function ListSection({
                 onShowStatus={onShowStatus}
                 onNavigateToTask={onNavigateToTask}
                 onCreateSubtask={(taskId) => startAdd(`\n^${taskId}`)}
+                onTagClick={onTagClick}
               />
             ))}
           </SortableContext>

@@ -491,6 +491,27 @@ export function renameTask(db: TaskerDb, taskId: TaskId, newDescription: string)
 
   updateTask(db, renamedTask);
 
+  // Sync inverse parent markers (-^childId removed = unset parent on child)
+  const oldSubtasks = new Set(oldParsed.hasSubtaskIds ?? []);
+  const newSubtasks = new Set(newParsed.hasSubtaskIds ?? []);
+  for (const removed of oldSubtasks) {
+    if (!newSubtasks.has(removed)) {
+      const child = getTaskById(db, removed);
+      if (child && child.parentId === taskId) {
+        unsetParent(db, removed);
+      }
+    }
+  }
+
+  // Sync inverse blocker markers (-!blockerId removed = remove blocking relationship)
+  const oldBlockedBy = new Set(oldParsed.blockedByIds ?? []);
+  const newBlockedBy = new Set(newParsed.blockedByIds ?? []);
+  for (const removed of oldBlockedBy) {
+    if (!newBlockedBy.has(removed)) {
+      removeBlocker(db, removed, taskId);
+    }
+  }
+
   if (newParsed.lastLineIsMetadataOnly) {
     // Sync blocking relationships
     const currentBlocksIds = getBlocksIds(db, taskId);

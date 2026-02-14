@@ -178,6 +178,43 @@ describe('renameTask', () => {
     const after = getAllTasks(db, 'tasks');
     expect(after.map(t => t.id)).toEqual([c.id, b.id, a.id]);
   });
+
+  it('removing -^ inverse marker unsets parent on child', () => {
+    const { task: parent } = addTask(db, 'parent', 'tasks');
+    const { task: child } = addTask(db, 'child', 'tasks');
+    setParent(db, child.id, parent.id);
+
+    // Parent description should now have -^childId
+    const parentAfterSet = getTaskById(db, parent.id)!;
+    expect(parentAfterSet.description).toContain(`-^${child.id}`);
+    expect(getTaskById(db, child.id)!.parentId).toBe(parent.id);
+
+    // Remove the -^ marker by renaming without it
+    const descWithout = parentAfterSet.description.replace(new RegExp(`\\s*-\\^${child.id}`), '');
+    renameTask(db, parent.id, descWithout);
+
+    // Child should no longer have parent
+    expect(getTaskById(db, child.id)!.parentId).toBeNull();
+  });
+
+  it('removing -! inverse marker removes blocking relationship', () => {
+    const { task: blocker } = addTask(db, 'blocker', 'tasks');
+    const { task: blocked } = addTask(db, 'blocked', 'tasks');
+    addBlocker(db, blocker.id, blocked.id);
+
+    // Blocked task description should have -!blockerId
+    const blockedAfterSet = getTaskById(db, blocked.id)!;
+    expect(blockedAfterSet.description).toContain(`-!${blocker.id}`);
+    expect(getBlockedByIds(db, blocked.id)).toContain(blocker.id);
+
+    // Remove the -! marker by renaming without it
+    const descWithout = blockedAfterSet.description.replace(new RegExp(`\\s*-!${blocker.id}`), '');
+    renameTask(db, blocked.id, descWithout);
+
+    // Blocking relationship should be removed
+    expect(getBlockedByIds(db, blocked.id)).not.toContain(blocker.id);
+    expect(getBlocksIds(db, blocker.id)).not.toContain(blocked.id);
+  });
 });
 
 describe('moveTask', () => {
