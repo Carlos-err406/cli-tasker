@@ -197,8 +197,11 @@ export function ListSection({
       </div>
 
       {/* Tasks */}
-      {!collapsed && (
-        <div>
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-in-out"
+        style={{ gridTemplateRows: collapsed ? '0fr' : '1fr' }}
+      >
+        <div className="overflow-hidden">
           {adding && (
             <div className="px-3 py-2 border-b border-border/30">
               <textarea
@@ -215,7 +218,7 @@ export function ListSection({
                   else setAdding(false);
                 }}
                 placeholder="New task... (Cmd+Enter to submit)"
-                className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none placeholder:text-muted-foreground/50"
+                className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none overflow-hidden placeholder:text-muted-foreground/50"
                 rows={1}
               />
             </div>
@@ -246,7 +249,7 @@ export function ListSection({
             ))}
           </SortableContext>
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -168,7 +168,7 @@ export function TaskItem({
             onKeyDown={handleEditKeyDown}
             onPointerDown={(e) => e.stopPropagation()}
             onBlur={submitEdit}
-            className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none"
+            className="w-full bg-background border border-border rounded px-2 py-1 text-sm resize-none overflow-hidden"
             rows={1}
           />
         ) : (
