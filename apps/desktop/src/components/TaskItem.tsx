@@ -173,9 +173,9 @@ export function TaskItem({
           />
         ) : (
           <div className={cn(done && 'opacity-60')}>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-start gap-1.5">
               {priorityIndicator && (
-                <span className={cn('text-xs font-bold', priorityColor)}>
+                <span className={cn('text-xs font-bold mt-0.5', priorityColor)}>
                   {priorityIndicator}
                 </span>
               )}
