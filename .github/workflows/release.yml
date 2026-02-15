@@ -99,6 +99,9 @@ jobs:
         env:
           CI: true
 
+      - name: Install setuptools for node-gyp
+        run: pip3 install setuptools
+
       - name: Package for macOS
         run: pnpm --filter @tasker/desktop run package -- --mac
         env:
