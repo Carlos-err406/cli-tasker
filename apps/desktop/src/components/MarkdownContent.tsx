@@ -56,24 +56,20 @@ const components: Components = {
   ),
   hr: () => <hr className="border-t border-border my-1" />,
   ul: ({ children, className }) => (
-    <ul className={className?.includes("contains-task-list") ? "list-none ml-1" : "list-disc list-inside ml-1"}>{children}</ul>
+    <ul className={className?.includes("contains-task-list") ? "list-none pl-3" : "list-disc pl-4"}>{children}</ul>
   ),
   ol: ({ children }) => (
-    <ol className="list-decimal list-inside ml-1">{children}</ol>
+    <ol className="list-decimal pl-4">{children}</ol>
   ),
-  li: ({ children }) => (
-    <li>
-      <span className="inline-flex items-center">{children}</span>
-    </li>
-  ),
+  li: ({ children }) => <li>{children}</li>,
   p: ({ children }) => (
     <p className="my-0.5 first:mt-0 last:mb-0">{children}</p>
   ),
   input: ({ checked }) =>
     checked ? (
-      <CheckSquare className="size-4 mr-1" />
+      <CheckSquare className="size-4 mr-1 inline align-middle" />
     ) : (
-      <Square className="size-4 mr-1" />
+      <Square className="size-4 mr-1 inline align-middle" />
     ),
 };
 
