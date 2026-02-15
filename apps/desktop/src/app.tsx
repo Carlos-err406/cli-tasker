@@ -65,6 +65,14 @@ export default function App() {
     store.setSearch(debouncedSearch);
   }, [debouncedSearch, store.setSearch]);
 
+  // Listen for search queries pushed from main process (e.g. notification click)
+  useEffect(() => {
+    return window.ipc.onSetSearch((query: string) => {
+      setSearchInput(query);
+      store.setSearch(query);
+    });
+  }, [store.setSearch]);
+
   const handleToggleHelp = useCallback(() => {
     setShowHelp((v) => !v);
   }, []);

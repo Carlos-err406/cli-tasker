@@ -39,4 +39,11 @@ contextBridge.exposeInMainWorld('ipc', {
       ipcRenderer.removeListener('popup:shown', callback);
     };
   },
+  onSetSearch: (callback: (query: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, query: string) => callback(query);
+    ipcRenderer.on('set-search', handler);
+    return () => {
+      ipcRenderer.removeListener('set-search', handler);
+    };
+  },
 });

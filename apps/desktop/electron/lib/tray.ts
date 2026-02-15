@@ -3,12 +3,15 @@ import path from 'node:path';
 import { getPublicPath } from './config.js';
 import { createPopupWindow } from './window.js';
 import { getSettings, updateSettings } from './reminder-sync/index.js';
+import { getSettings as getDueDateSettings, setEnabled as setDueDateEnabled } from './due-date-notifier.js';
 
 let tray: Tray | null = null;
 let popup: BrowserWindow | null = null;
 let lastHideTime = 0;
+let dbRef: import('@tasker/core').TaskerDb | null = null;
 
-export function createTray(): Tray {
+export function createTray(db?: import('@tasker/core').TaskerDb): Tray {
+  if (db) dbRef = db;
   const iconPath = path.join(getPublicPath(), 'trayTemplate.png');
   tray = new Tray(iconPath);
 
@@ -16,6 +19,7 @@ export function createTray(): Tray {
   tray.on('click', () => togglePopup());
   tray.on('right-click', () => {
     const reminderSettings = getSettings();
+    const dueDateSettings = getDueDateSettings();
     const contextMenu = Menu.buildFromTemplate([
       { label: 'Open', click: () => togglePopup() },
       { type: 'separator' },
@@ -46,6 +50,16 @@ export function createTray(): Tray {
           });
         },
       },
+      {
+        label: 'Due Date Alerts',
+        type: 'checkbox',
+        checked: dueDateSettings.enabled,
+        click: (menuItem) => {
+          if (dbRef) {
+            setDueDateEnabled(dbRef, menuItem.checked);
+          }
+        },
+      },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() },
     ]);
@@ -69,6 +83,16 @@ function togglePopup(): void {
   }
 
   // Create a new popup
+  ensurePopup(() => showPopup());
+}
+
+/** Ensure popup window exists, then call the callback once ready. */
+function ensurePopup(onReady: () => void): void {
+  if (popup && !popup.isDestroyed()) {
+    onReady();
+    return;
+  }
+
   const trayBounds = tray?.getBounds();
   popup = createPopupWindow(trayBounds);
 
@@ -83,11 +107,11 @@ function togglePopup(): void {
   });
 
   popup.once('ready-to-show', () => {
-    showPopup();
+    onReady();
   });
 }
 
-function showPopup(): void {
+export function showPopup(): void {
   if (!popup || popup.isDestroyed()) return;
 
   // Reposition relative to tray
@@ -115,6 +139,20 @@ function showPopup(): void {
   if (process.platform === 'darwin') {
     app.dock.hide();
   }
+}
+
+/**
+ * Open the popup and send a search query to the renderer.
+ * Creates the popup if it doesn't exist yet.
+ */
+export function openPopupWithSearch(query: string): void {
+  ensurePopup(() => {
+    showPopup();
+    // Send the search query after a short delay so the renderer has time to mount
+    if (popup && !popup.isDestroyed()) {
+      popup.webContents.send('set-search', query);
+    }
+  });
 }
 
 function hidePopup(): void {

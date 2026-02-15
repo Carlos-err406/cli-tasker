@@ -3,9 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDb, getDefaultDbPath, UndoManager } from '@tasker/core';
 import registerIPCs from './ipc/register.js';
-import { createTray, getPopupWindow } from './lib/tray.js';
+import { createTray, getPopupWindow, openPopupWithSearch } from './lib/tray.js';
 import { startDbWatcher, stopDbWatcher } from './lib/watcher.js';
 import { startReminderSync, stopReminderSync } from './lib/reminder-sync/index.js';
+import { startDueDateNotifier, stopDueDateNotifier } from './lib/due-date-notifier.js';
 import { initLogCapture } from './lib/log-buffer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,7 +55,7 @@ if (!gotLock) {
 
     // Create the tray icon
     console.log('[tasker-desktop] Creating tray icon...');
-    createTray();
+    createTray(db);
     console.log('[tasker-desktop] Tray created. Look for icon in menu bar.');
 
     // Watch for external database changes
@@ -62,6 +63,11 @@ if (!gotLock) {
 
     // Start reminder sync (reads settings, syncs if enabled)
     startReminderSync(db);
+
+    // Start due-date notifications (reads settings, polls if enabled)
+    startDueDateNotifier(db, {
+      onNotificationClick: (searchQuery) => openPopupWithSearch(searchQuery),
+    });
   });
 
   app.on('window-all-closed', () => {
@@ -71,5 +77,6 @@ if (!gotLock) {
   app.on('before-quit', () => {
     stopDbWatcher();
     stopReminderSync();
+    stopDueDateNotifier();
   });
 }
