@@ -492,6 +492,13 @@ export function deleteTask(db: TaskerDb, taskId: TaskId): TaskResult {
   if (!task) return { type: 'not-found', taskId };
 
   const descendantIds = getAllDescendantIds(db, taskId);
+
+  // Clean up metadata markers on related tasks before trashing
+  cleanupRelationshipMarkers(db, taskId);
+  for (const descId of descendantIds) {
+    cleanupRelationshipMarkers(db, descId);
+  }
+
   db.update(tasks).set({ isTrashed: 1 }).where(eq(tasks.id, taskId)).run();
   for (const descId of descendantIds) {
     db.update(tasks).set({ isTrashed: 1 }).where(eq(tasks.id, descId)).run();
@@ -512,6 +519,7 @@ export function deleteTasks(db: TaskerDb, taskIds: TaskId[]): BatchResult {
     for (const taskId of taskIds) {
       const task = getTaskById(db, taskId);
       if (!task) { results.push({ type: 'not-found', taskId }); continue; }
+      cleanupRelationshipMarkers(db, taskId);
       db.update(tasks).set({ isTrashed: 1 }).where(eq(tasks.id, taskId)).run();
       results.push({ type: 'success', message: `Deleted task: ${taskId}` });
     }
@@ -736,6 +744,12 @@ export function restoreFromTrash(db: TaskerDb, taskId: TaskId): TaskResult {
   db.update(tasks).set({ isTrashed: 0 }).where(eq(tasks.id, taskId)).run();
   for (const descId of descendantIds) {
     db.update(tasks).set({ isTrashed: 0 }).where(eq(tasks.id, descId)).run();
+  }
+
+  // Re-add metadata markers on related tasks after restoring
+  restoreRelationshipMarkers(db, taskId);
+  for (const descId of descendantIds) {
+    restoreRelationshipMarkers(db, descId);
   }
 
   const msg = descendantIds.length > 0
@@ -1059,27 +1073,27 @@ export function getRelationshipCounts(db: TaskerDb, taskIds: TaskId[]): Record<s
     if (result[r.id]) result[r.id]!.subtaskCount = r.cnt;
   }
 
-  // Blocks counts: tasks this task blocks (task_id = taskId in task_dependencies)
+  // Blocks counts: tasks this task blocks (task_id = taskId in task_dependencies), excluding trashed targets
   const blocksRows = raw.prepare(
-    `SELECT task_id AS id, COUNT(*) AS cnt FROM task_dependencies GROUP BY task_id`,
+    `SELECT td.task_id AS id, COUNT(*) AS cnt FROM task_dependencies td JOIN tasks t ON td.blocks_task_id = t.id WHERE t.is_trashed = 0 GROUP BY td.task_id`,
   ).all() as { id: string; cnt: number }[];
   for (const r of blocksRows) {
     if (result[r.id]) result[r.id]!.blocksCount = r.cnt;
   }
 
-  // BlockedBy counts: tasks blocking this task (blocks_task_id = taskId)
+  // BlockedBy counts: tasks blocking this task (blocks_task_id = taskId), excluding trashed blockers
   const blockedByRows = raw.prepare(
-    `SELECT blocks_task_id AS id, COUNT(*) AS cnt FROM task_dependencies GROUP BY blocks_task_id`,
+    `SELECT td.blocks_task_id AS id, COUNT(*) AS cnt FROM task_dependencies td JOIN tasks t ON td.task_id = t.id WHERE t.is_trashed = 0 GROUP BY td.blocks_task_id`,
   ).all() as { id: string; cnt: number }[];
   for (const r of blockedByRows) {
     if (result[r.id]) result[r.id]!.blockedByCount = r.cnt;
   }
 
-  // Related counts: both directions
+  // Related counts: both directions, excluding trashed tasks
   const relRows = raw.prepare(
-    `SELECT task_id_1 AS id, COUNT(*) AS cnt FROM task_relations GROUP BY task_id_1
+    `SELECT tr.task_id_1 AS id, COUNT(*) AS cnt FROM task_relations tr JOIN tasks t ON tr.task_id_2 = t.id WHERE t.is_trashed = 0 GROUP BY tr.task_id_1
      UNION ALL
-     SELECT task_id_2 AS id, COUNT(*) AS cnt FROM task_relations GROUP BY task_id_2`,
+     SELECT tr.task_id_2 AS id, COUNT(*) AS cnt FROM task_relations tr JOIN tasks t ON tr.task_id_1 = t.id WHERE t.is_trashed = 0 GROUP BY tr.task_id_2`,
   ).all() as { id: string; cnt: number }[];
   for (const r of relRows) {
     if (result[r.id]) result[r.id]!.relatedCount += r.cnt;
@@ -1217,6 +1231,114 @@ function syncRelatedMetadata(db: TaskerDb, taskId: TaskId): void {
   );
   if (synced !== task.description) {
     db.update(tasks).set({ description: synced }).where(eq(tasks.id, taskId)).run();
+  }
+}
+
+/** Remove metadata markers from related tasks when trashing a task. DB rows are kept intact. */
+function cleanupRelationshipMarkers(db: TaskerDb, taskId: TaskId): void {
+  const task = getTaskById(db, taskId);
+  if (!task) return;
+
+  // Parent marker: remove -^taskId from parent's description
+  if (task.parentId) {
+    removeInverseMarker(db, task.parentId, taskId, true);
+  }
+
+  // Blocks markers: remove -!taskId from each blocked task's description
+  const blocksIds = getBlocksIds(db, taskId);
+  for (const blockedId of blocksIds) {
+    removeInverseMarker(db, blockedId, taskId, false);
+  }
+
+  // BlockedBy markers: remove !taskId from each blocker's description
+  const blockedByIds = getBlockedByIds(db, taskId);
+  for (const blockerId of blockedByIds) {
+    const blocker = getTaskById(db, blockerId);
+    if (!blocker) continue;
+    const parsed = parseDescription(blocker.description);
+    const updatedBlocksIds = (parsed.blocksIds ?? []).filter(id => id !== taskId);
+    const synced = syncMetadataToDescription(
+      blocker.description, blocker.priority, blocker.dueDate, blocker.tags,
+      parsed.parentId, updatedBlocksIds.length > 0 ? updatedBlocksIds : null,
+      parsed.hasSubtaskIds, parsed.blockedByIds, parsed.relatedIds,
+    );
+    if (synced !== blocker.description) {
+      db.update(tasks).set({ description: synced }).where(eq(tasks.id, blockerId)).run();
+    }
+  }
+
+  // Related markers: remove ~taskId from each related task's description
+  const relatedIds = getRelatedIds(db, taskId);
+  for (const relId of relatedIds) {
+    const rel = getTaskById(db, relId);
+    if (!rel) continue;
+    const parsed = parseDescription(rel.description);
+    const updatedRelIds = (parsed.relatedIds ?? []).filter(id => id !== taskId);
+    const synced = syncMetadataToDescription(
+      rel.description, rel.priority, rel.dueDate, rel.tags,
+      parsed.parentId, parsed.blocksIds, parsed.hasSubtaskIds, parsed.blockedByIds,
+      updatedRelIds.length > 0 ? updatedRelIds : null,
+    );
+    if (synced !== rel.description) {
+      db.update(tasks).set({ description: synced }).where(eq(tasks.id, relId)).run();
+    }
+  }
+}
+
+/** Re-add metadata markers on related tasks when restoring a task from trash. */
+function restoreRelationshipMarkers(db: TaskerDb, taskId: TaskId): void {
+  const task = getTaskById(db, taskId);
+  if (!task) return;
+
+  // Parent marker: re-add -^taskId on parent
+  if (task.parentId) {
+    addInverseMarker(db, task.parentId, taskId, true);
+  }
+
+  // Blocks markers: re-add -!taskId on each blocked task
+  const blocksIds = getBlocksIds(db, taskId);
+  for (const blockedId of blocksIds) {
+    addInverseMarker(db, blockedId, taskId, false);
+  }
+
+  // BlockedBy markers: re-add !taskId on each blocker's description
+  const blockedByIds = getBlockedByIds(db, taskId);
+  for (const blockerId of blockedByIds) {
+    const blocker = getTaskById(db, blockerId);
+    if (!blocker) continue;
+    const parsed = parseDescription(blocker.description);
+    const currentBlocksIds = [...(parsed.blocksIds ?? [])];
+    if (!currentBlocksIds.includes(taskId)) {
+      currentBlocksIds.push(taskId);
+      const synced = syncMetadataToDescription(
+        blocker.description, blocker.priority, blocker.dueDate, blocker.tags,
+        parsed.parentId, currentBlocksIds,
+        parsed.hasSubtaskIds, parsed.blockedByIds, parsed.relatedIds,
+      );
+      if (synced !== blocker.description) {
+        db.update(tasks).set({ description: synced }).where(eq(tasks.id, blockerId)).run();
+      }
+    }
+  }
+
+  // Related markers: re-add ~taskId on each related task
+  const relatedIds = getRelatedIds(db, taskId);
+  for (const relId of relatedIds) {
+    const rel = getTaskById(db, relId);
+    if (!rel) continue;
+    const parsed = parseDescription(rel.description);
+    const currentRelIds = [...(parsed.relatedIds ?? [])];
+    if (!currentRelIds.includes(taskId)) {
+      currentRelIds.push(taskId);
+      const synced = syncMetadataToDescription(
+        rel.description, rel.priority, rel.dueDate, rel.tags,
+        parsed.parentId, parsed.blocksIds, parsed.hasSubtaskIds, parsed.blockedByIds,
+        currentRelIds,
+      );
+      if (synced !== rel.description) {
+        db.update(tasks).set({ description: synced }).where(eq(tasks.id, relId)).run();
+      }
+    }
   }
 }
 

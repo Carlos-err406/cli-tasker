@@ -3,11 +3,11 @@ import type { Task, TaskStatus } from '@tasker/core/types';
 import { TaskStatus as TS } from '@tasker/core/types';
 import type { TaskRelDetails } from '@/hooks/use-tasker-store.js';
 import { cn } from '@/lib/utils.js';
-import { useClickOutside } from '@/hooks/use-click-outside.js';
 import { useMetadataAutocomplete } from '@/hooks/use-metadata-autocomplete.js';
 import { AutocompleteDropdown } from '@/components/AutocompleteDropdown.js';
 import { Check, Minus, Ellipsis, CornerLeftUp, CornerRightDown, Ban, Link2, Calendar, Tag } from 'lucide-react';
 import { MarkdownContent } from '@/components/MarkdownContent.js';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   getDisplayTitle,
   getDescriptionPreview,
@@ -30,7 +30,7 @@ interface TaskItemProps {
   onToggleStatus: (taskId: string, currentStatus: TaskStatus) => void;
   onSetStatus: (taskId: string, status: TaskStatus) => void;
   onRename: (taskId: string, newDescription: string) => void;
-  onDelete: (taskId: string) => void;
+  onDelete: (taskId: string, cascade?: boolean) => void;
   onMove: (taskId: string, targetList: string) => void;
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;
@@ -54,18 +54,7 @@ export function TaskItem({
 }: TaskItemProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
-  const [showMenu, setShowMenu] = useState(false);
-  const [showMoveMenu, setShowMoveMenu] = useState(false);
-  const [showStatusMenu, setShowStatusMenu] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  const closeMenus = useCallback(() => {
-    setShowMenu(false);
-    setShowMoveMenu(false);
-    setShowStatusMenu(false);
-  }, []);
-  useClickOutside(menuRef, closeMenus);
 
   const ac = useMetadataAutocomplete(editValue, inputRef, task.id);
 
@@ -87,7 +76,7 @@ export function TaskItem({
   const startEdit = () => {
     setEditValue(task.description);
     setEditing(true);
-    setShowMenu(false);
+    // Delay focus to let Radix DropdownMenu finish closing and restoring focus
     setTimeout(() => {
       const el = inputRef.current;
       if (el) {
@@ -95,7 +84,7 @@ export function TaskItem({
         el.style.height = 'auto';
         el.style.height = el.scrollHeight + 'px';
       }
-    }, 0);
+    }, 50);
   };
 
   const submitEdit = () => {
@@ -306,108 +295,126 @@ export function TaskItem({
       </div>
 
       {/* Menu button */}
-      <div className="relative">
-        <button
-          onClick={() => {
-            setShowMenu(!showMenu);
-            setShowMoveMenu(false);
-            setShowStatusMenu(false);
-          }}
-          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground p-1 transition-opacity"
-        >
-          <Ellipsis className="h-4 w-4" />
-        </button>
-
-        {showMenu && (
-          <div
-            ref={menuRef}
-            className="absolute right-0 top-6 z-50 min-w-[140px] bg-popover border border-border rounded-md shadow-lg py-1 text-sm"
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button
+            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground p-1 transition-opacity"
           >
-            <button
-              onClick={startEdit}
-              className="w-full text-left px-3 py-1.5 hover:bg-accent"
+            <Ellipsis className="h-4 w-4" />
+          </button>
+        </DropdownMenu.Trigger>
+
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            side="bottom"
+            align="end"
+            collisionPadding={8}
+            className="z-50 min-w-[140px] bg-popover border border-border rounded-md shadow-lg py-1 text-sm"
+          >
+            <DropdownMenu.Item
+              onSelect={startEdit}
+              className="px-3 py-1.5 hover:bg-accent outline-none cursor-default"
             >
               Edit
-            </button>
-            <button
-              onClick={() => {
-                onCreateSubtask(task.id);
-                closeMenus();
-              }}
-              className="w-full text-left px-3 py-1.5 hover:bg-accent"
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onSelect={() => onCreateSubtask(task.id)}
+              className="px-3 py-1.5 hover:bg-accent outline-none cursor-default"
             >
               Create subtask
-            </button>
-            <button
-              onClick={() => setShowMoveMenu(!showMoveMenu)}
-              className="w-full text-left px-3 py-1.5 hover:bg-accent"
-            >
-              Move to...
-            </button>
-            {showMoveMenu && (
-              <div className="border-t border-border">
-                {lists
-                  .filter((l) => l !== task.listName)
-                  .map((l) => (
-                    <button
-                      key={l}
-                      onClick={() => {
-                        onMove(task.id, l);
-                        setShowMenu(false);
-                        setShowMoveMenu(false);
-                      }}
-                      className="w-full text-left px-5 py-1 hover:bg-accent text-xs"
+            </DropdownMenu.Item>
+
+            <DropdownMenu.Sub>
+              <DropdownMenu.SubTrigger className="px-3 py-1.5 hover:bg-accent outline-none cursor-default flex items-center justify-between">
+                Move to...
+              </DropdownMenu.SubTrigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.SubContent
+                  collisionPadding={8}
+                  className="z-50 min-w-[100px] bg-popover border border-border rounded-md shadow-lg py-1 text-xs"
+                >
+                  {lists
+                    .filter((l) => l !== task.listName)
+                    .map((l) => (
+                      <DropdownMenu.Item
+                        key={l}
+                        onSelect={() => onMove(task.id, l)}
+                        className="px-3 py-1 hover:bg-accent outline-none cursor-default"
+                      >
+                        {l}
+                      </DropdownMenu.Item>
+                    ))}
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Sub>
+
+            <DropdownMenu.Sub>
+              <DropdownMenu.SubTrigger className="px-3 py-1.5 hover:bg-accent outline-none cursor-default flex items-center justify-between">
+                Set Status
+              </DropdownMenu.SubTrigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.SubContent
+                  collisionPadding={8}
+                  className="z-50 min-w-[100px] bg-popover border border-border rounded-md shadow-lg py-1 text-xs"
+                >
+                  {[
+                    { label: 'Pending', status: TS.Pending },
+                    { label: 'In Progress', status: TS.InProgress },
+                    { label: 'Done', status: TS.Done },
+                  ].map(({ label, status }) => (
+                    <DropdownMenu.Item
+                      key={label}
+                      onSelect={() => onSetStatus(task.id, status)}
+                      className={cn(
+                        'px-3 py-1 hover:bg-accent outline-none cursor-default',
+                        task.status === status && 'text-primary font-medium',
+                      )}
                     >
-                      {l}
-                    </button>
+                      {task.status === status && '~ '}
+                      {label}
+                    </DropdownMenu.Item>
                   ))}
-              </div>
-            )}
-            <button
-              onClick={() => setShowStatusMenu(!showStatusMenu)}
-              className="w-full text-left px-3 py-1.5 hover:bg-accent"
-            >
-              Set Status
-            </button>
-            {showStatusMenu && (
-              <div className="border-t border-border">
-                {[
-                  { label: 'Pending', status: TS.Pending },
-                  { label: 'In Progress', status: TS.InProgress },
-                  { label: 'Done', status: TS.Done },
-                ].map(({ label, status }) => (
-                  <button
-                    key={label}
-                    onClick={() => {
-                      onSetStatus(task.id, status);
-                      setShowMenu(false);
-                      setShowStatusMenu(false);
-                    }}
-                    className={cn(
-                      'w-full text-left px-5 py-1 hover:bg-accent text-xs',
-                      task.status === status && 'text-primary font-medium',
-                    )}
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Sub>
+
+            <DropdownMenu.Separator className="h-px bg-border my-1" />
+            {relDetails && relDetails.subtasks.length > 0 ? (
+              <DropdownMenu.Sub>
+                <DropdownMenu.SubTrigger className="px-3 py-1.5 hover:bg-accent outline-none cursor-default text-red-400 flex items-center justify-between">
+                  Delete...
+                </DropdownMenu.SubTrigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.SubContent
+                    collisionPadding={8}
+                    className="z-50 min-w-[140px] bg-popover border border-border rounded-md shadow-lg py-1 text-xs"
                   >
-                    {task.status === status && '~ '}
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="border-t border-border mt-1 pt-1">
-              <button
-                onClick={() => {
-                  onDelete(task.id);
-                  setShowMenu(false);
-                }}
-                className="w-full text-left px-3 py-1.5 hover:bg-accent text-red-400"
+                    <DropdownMenu.Item
+                      onSelect={() => onDelete(task.id, false)}
+                      className="px-3 py-1 hover:bg-accent outline-none cursor-default text-red-400"
+                    >
+                      This task only
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onSelect={() => onDelete(task.id, true)}
+                      className="px-3 py-1 hover:bg-accent outline-none cursor-default text-red-400"
+                    >
+                      Task and subtasks
+                    </DropdownMenu.Item>
+                  </DropdownMenu.SubContent>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Sub>
+            ) : (
+              <DropdownMenu.Item
+                onSelect={() => onDelete(task.id)}
+                className="px-3 py-1.5 hover:bg-accent outline-none cursor-default text-red-400"
               >
                 Delete
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+              </DropdownMenu.Item>
+            )}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
     </div>
   );
 }

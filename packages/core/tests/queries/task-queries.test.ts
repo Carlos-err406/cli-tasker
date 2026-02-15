@@ -29,6 +29,8 @@ import {
   getBlockedByIds,
   getRelatedIds,
   getAllDescendantIds,
+  deleteTasks,
+  getRelationshipCounts,
 } from '../../src/queries/task-queries.js';
 import {
   getAllListNames,
@@ -417,5 +419,117 @@ describe('getSortedTasks', () => {
     expect(sorted[0]!.status).toBe(TaskStatus.InProgress);
     expect(sorted[1]!.status).toBe(TaskStatus.Pending);
     expect(sorted[2]!.status).toBe(TaskStatus.Done);
+  });
+});
+
+describe('delete cleans up relationship markers', () => {
+  it('removes -! marker from blocked task when blocker is deleted', () => {
+    const { task: a } = addTask(db, 'blocker', 'tasks');
+    const { task: b } = addTask(db, 'blocked', 'tasks');
+    addBlocker(db, a.id, b.id);
+
+    // b should have -!aId marker
+    let bTask = getTaskById(db, b.id)!;
+    expect(bTask.description).toContain(`-!${a.id}`);
+
+    deleteTask(db, a.id);
+
+    // marker should be cleaned up
+    bTask = getTaskById(db, b.id)!;
+    expect(bTask.description).not.toContain(`-!${a.id}`);
+  });
+
+  it('removes ! marker from blocker when blocked task is deleted', () => {
+    const { task: b } = addTask(db, 'blocked', 'tasks');
+    // Create blocker with forward !bId marker in description
+    const { task: a } = addTask(db, `blocker\n!${b.id}`, 'tasks');
+
+    // a should have !bId marker
+    let aTask = getTaskById(db, a.id)!;
+    expect(aTask.description).toContain(`!${b.id}`);
+
+    deleteTask(db, b.id);
+
+    // marker should be cleaned up
+    aTask = getTaskById(db, a.id)!;
+    expect(aTask.description).not.toContain(`!${b.id}`);
+  });
+
+  it('removes ~ marker from related task when one is deleted', () => {
+    const { task: a } = addTask(db, 'task a', 'tasks');
+    const { task: b } = addTask(db, 'task b', 'tasks');
+    addRelated(db, a.id, b.id);
+
+    let bTask = getTaskById(db, b.id)!;
+    expect(bTask.description).toContain(`~${a.id}`);
+
+    deleteTask(db, a.id);
+
+    bTask = getTaskById(db, b.id)!;
+    expect(bTask.description).not.toContain(`~${a.id}`);
+  });
+
+  it('removes -^ marker from parent when subtask is deleted', () => {
+    const { task: parent } = addTask(db, 'parent', 'tasks');
+    const { task: child } = addTask(db, `child\n^${parent.id}`, 'tasks');
+
+    let parentTask = getTaskById(db, parent.id)!;
+    expect(parentTask.description).toContain(`-^${child.id}`);
+
+    deleteTask(db, child.id);
+
+    parentTask = getTaskById(db, parent.id)!;
+    expect(parentTask.description).not.toContain(`-^${child.id}`);
+  });
+
+  it('restores all markers when task is restored from trash', () => {
+    const { task: a } = addTask(db, 'blocker', 'tasks');
+    const { task: b } = addTask(db, 'blocked', 'tasks');
+    addBlocker(db, a.id, b.id);
+
+    const { task: c } = addTask(db, 'related', 'tasks');
+    addRelated(db, a.id, c.id);
+
+    deleteTask(db, a.id);
+
+    // markers should be gone
+    let bTask = getTaskById(db, b.id)!;
+    expect(bTask.description).not.toContain(`-!${a.id}`);
+    let cTask = getTaskById(db, c.id)!;
+    expect(cTask.description).not.toContain(`~${a.id}`);
+
+    restoreFromTrash(db, a.id);
+
+    // markers should be back
+    bTask = getTaskById(db, b.id)!;
+    expect(bTask.description).toContain(`-!${a.id}`);
+    cTask = getTaskById(db, c.id)!;
+    expect(cTask.description).toContain(`~${a.id}`);
+  });
+
+  it('relationship counts exclude trashed tasks', () => {
+    const { task: a } = addTask(db, 'blocker', 'tasks');
+    const { task: b } = addTask(db, 'blocked', 'tasks');
+    addBlocker(db, a.id, b.id);
+
+    let counts = getRelationshipCounts(db, [a.id, b.id]);
+    expect(counts[a.id]!.blocksCount).toBe(1);
+    expect(counts[b.id]!.blockedByCount).toBe(1);
+
+    deleteTask(db, b.id);
+
+    counts = getRelationshipCounts(db, [a.id]);
+    expect(counts[a.id]!.blocksCount).toBe(0);
+  });
+
+  it('batch deleteTasks cleans markers', () => {
+    const { task: a } = addTask(db, 'task a', 'tasks');
+    const { task: b } = addTask(db, 'task b', 'tasks');
+    addRelated(db, a.id, b.id);
+
+    deleteTasks(db, [a.id]);
+
+    const bTask = getTaskById(db, b.id)!;
+    expect(bTask.description).not.toContain(`~${a.id}`);
   });
 });

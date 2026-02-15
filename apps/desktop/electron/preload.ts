@@ -8,6 +8,7 @@ import { logsInvokerFactory } from './ipc/logs/preload.js';
 import { LOGS_ENTRY } from './ipc/logs/channels.js';
 
 contextBridge.exposeInMainWorld('ipc', {
+  homePath: process.env.HOME ?? '/tmp',
   ...tasksInvokerFactory(ipcRenderer),
   ...listsInvokerFactory(ipcRenderer),
   ...undoInvokerFactory(ipcRenderer),

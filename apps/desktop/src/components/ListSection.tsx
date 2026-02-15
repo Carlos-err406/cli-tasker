@@ -1,7 +1,6 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import type { Task, TaskStatus } from '@tasker/core/types';
 import type { TaskRelDetails } from '@/hooks/use-tasker-store.js';
-import { useClickOutside } from '@/hooks/use-click-outside.js';
 import { useMetadataAutocomplete } from '@/hooks/use-metadata-autocomplete.js';
 import { AutocompleteDropdown } from '@/components/AutocompleteDropdown.js';
 import {
@@ -9,6 +8,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { ChevronDown, Plus, Ellipsis, Eye, EyeOff } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SortableTaskItem } from './SortableTaskItem.js';
 
 interface ListSectionProps {
@@ -23,7 +23,7 @@ interface ListSectionProps {
   onToggleStatus: (taskId: string, currentStatus: TaskStatus) => void;
   onSetStatus: (taskId: string, status: TaskStatus) => void;
   onRename: (taskId: string, newDescription: string) => void;
-  onDelete: (taskId: string) => void;
+  onDelete: (taskId: string, cascade?: boolean) => void;
   onMove: (taskId: string, targetList: string) => void;
   onRenameList: (oldName: string, newName: string) => void;
   onDeleteList: (name: string) => void;
@@ -60,12 +60,8 @@ export function ListSection({
   const [addValue, setAddValue] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState('');
-  const [showListMenu, setShowListMenu] = useState(false);
   const addInputRef = useRef<HTMLTextAreaElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const listMenuRef = useRef<HTMLDivElement>(null);
-
-  useClickOutside(listMenuRef, useCallback(() => setShowListMenu(false), []));
 
   const ac = useMetadataAutocomplete(addValue, addInputRef);
 
@@ -141,8 +137,7 @@ export function ListSection({
   const startEditName = () => {
     setNameValue(listName);
     setEditingName(true);
-    setShowListMenu(false);
-    setTimeout(() => nameInputRef.current?.focus(), 0);
+    setTimeout(() => nameInputRef.current?.focus(), 50);
   };
 
   const submitNameEdit = () => {
@@ -206,33 +201,34 @@ export function ListSection({
           </button>
 
           {!isDefault && (
-            <div ref={listMenuRef} className="relative">
-              <button
-                onClick={() => setShowListMenu(!showListMenu)}
-                className="text-muted-foreground hover:text-foreground p-0.5"
-              >
-              <Ellipsis className="h-4 w-4" />
-            </button>
-            {showListMenu && (
-              <div className="absolute right-0 top-6 z-50 min-w-[120px] bg-popover border border-border rounded-md shadow-lg py-1 text-sm">
-                <button
-                  onClick={startEditName}
-                  className="w-full text-left px-3 py-1.5 hover:bg-accent"
-                >
-                  Rename
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button className="text-muted-foreground hover:text-foreground p-0.5">
+                  <Ellipsis className="h-4 w-4" />
                 </button>
-                <button
-                  onClick={() => {
-                    onDeleteList(listName);
-                    setShowListMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-accent text-red-400"
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  side="bottom"
+                  align="end"
+                  collisionPadding={8}
+                  className="z-50 min-w-[120px] bg-popover border border-border rounded-md shadow-lg py-1 text-sm"
                 >
-                  Delete
-                </button>
-              </div>
-            )}
-          </div>
+                  <DropdownMenu.Item
+                    onSelect={startEditName}
+                    className="px-3 py-1.5 hover:bg-accent outline-none cursor-default"
+                  >
+                    Rename
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => onDeleteList(listName)}
+                    className="px-3 py-1.5 hover:bg-accent outline-none cursor-default text-red-400"
+                  >
+                    Delete
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           )}
         </div>
       </div>

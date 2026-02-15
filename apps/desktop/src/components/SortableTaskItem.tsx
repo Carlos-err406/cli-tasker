@@ -11,7 +11,7 @@ interface SortableTaskItemProps {
   onToggleStatus: (taskId: string, currentStatus: TaskStatus) => void;
   onSetStatus: (taskId: string, status: TaskStatus) => void;
   onRename: (taskId: string, newDescription: string) => void;
-  onDelete: (taskId: string) => void;
+  onDelete: (taskId: string, cascade?: boolean) => void;
   onMove: (taskId: string, targetList: string) => void;
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;

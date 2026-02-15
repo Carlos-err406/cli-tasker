@@ -32,8 +32,8 @@ export async function renameTask(taskId: string, newDescription: string): Promis
   return unwrap(IPC['tasks:rename'](taskId, newDescription));
 }
 
-export async function deleteTask(taskId: string): Promise<TaskResult> {
-  return unwrap(IPC['tasks:delete'](taskId));
+export async function deleteTask(taskId: string, cascade?: boolean): Promise<TaskResult> {
+  return unwrap(IPC['tasks:delete'](taskId, cascade));
 }
 
 export async function moveTask(taskId: string, targetList: string): Promise<TaskResult> {

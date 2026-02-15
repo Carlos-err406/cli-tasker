@@ -324,9 +324,9 @@ export function useTaskerStore() {
   );
 
   const deleteTaskAction = useCallback(
-    async (taskId: string) => {
+    async (taskId: string, cascade?: boolean) => {
       try {
-        await taskService.deleteTask(taskId);
+        await taskService.deleteTask(taskId, cascade);
         showStatus('Deleted');
         await refresh();
       } catch (err) {

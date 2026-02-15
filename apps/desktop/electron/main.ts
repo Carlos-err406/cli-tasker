@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, protocol, net } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDb, getDefaultDbPath, UndoManager } from '@tasker/core';
@@ -11,6 +11,11 @@ import { migrateJsonSettings } from './lib/migrate-json-settings.js';
 import { initLogCapture } from './lib/log-buffer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Register custom protocol for loading local files (works in both dev http:// and prod file:// origins)
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-file', privileges: { bypassCSP: true, supportFetchAPI: true, standard: false, secure: true } },
+]);
 
 // Use a different app name in dev to avoid single-instance conflict with installed app
 if (process.env['VITE_DEV_SERVER_URL']) {
@@ -41,6 +46,13 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     console.log('[tasker-desktop] App ready, initializing...');
+
+    // Handle local-file:// protocol for loading local images in markdown
+    protocol.handle('local-file', (request) => {
+      const filePath = decodeURIComponent(request.url.slice('local-file://'.length));
+      return net.fetch(`file://${filePath}`);
+    });
+
     // Hide from dock on macOS (menu bar app)
     if (process.platform === 'darwin') {
       app.dock.hide();

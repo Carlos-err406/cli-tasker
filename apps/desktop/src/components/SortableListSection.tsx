@@ -16,7 +16,7 @@ interface SortableListSectionProps {
   onToggleStatus: (taskId: string, currentStatus: TaskStatus) => void;
   onSetStatus: (taskId: string, status: TaskStatus) => void;
   onRename: (taskId: string, newDescription: string) => void;
-  onDelete: (taskId: string) => void;
+  onDelete: (taskId: string, cascade?: boolean) => void;
   onMove: (taskId: string, targetList: string) => void;
   onRenameList: (oldName: string, newName: string) => void;
   onDeleteList: (name: string) => void;

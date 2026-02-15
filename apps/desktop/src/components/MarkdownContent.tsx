@@ -4,7 +4,30 @@ import type { Components } from "react-markdown";
 import { CheckSquare, Square } from "lucide-react";
 import { openExternal } from "@/lib/services/window";
 
+function resolveImageSrc(src: string | undefined): string | undefined {
+  if (!src) return src;
+  if (src.startsWith("~/")) return `local-file://${window.ipc.homePath}${src.slice(1)}`;
+  if (src.startsWith("/")) return `local-file://${src}`;
+  return src;
+}
+
 const components: Components = {
+  img: ({ src, alt }) => {
+    const resolvedSrc = resolveImageSrc(src);
+    return (
+      <span className="block w-full my-1">
+        <img
+          src={resolvedSrc}
+          alt={alt ?? ""}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (src) openExternal(src);
+          }}
+          className="max-w-full h-auto mx-auto block rounded cursor-pointer"
+        />
+      </span>
+    );
+  },
   table: ({ children }) => <table className="w-full">{children}</table>,
   th: ({ children }) => (
     <th className="border p-1 border-border">{children}</th>

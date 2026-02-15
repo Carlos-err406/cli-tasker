@@ -15,6 +15,8 @@ import {
   getRelationshipCounts,
   getTaskTitles,
   applySystemSort,
+  getSubtasks,
+  unsetParent,
 } from '@tasker/core';
 import type { TaskStatus, Priority } from '@tasker/core';
 import $try from '@utils/try.js';
@@ -111,11 +113,44 @@ export const tasksRegister: IPCRegisterFunction = (ipcMain, _widget, { db, undo 
     });
   });
 
-  ipcMain.handle(TASKS_DELETE, (_, taskId: string) => {
-    log('delete', taskId);
+  ipcMain.handle(TASKS_DELETE, (_, taskId: string, cascade = true) => {
+    log('delete', taskId, cascade ? 'cascade' : 'no-cascade');
     return $try(() => {
       const task = getTaskById(db, taskId);
       if (!task) return { type: 'not-found' as const, taskId };
+
+      if (!cascade) {
+        // Unparent direct children first, then delete just this task (no descendants)
+        const children = getSubtasks(db, taskId);
+        for (const child of children) {
+          unsetParent(db, child.id);
+        }
+        const result = deleteTask(db, taskId);
+        if (result.type === 'success') {
+          // Record as batch: set-parent undos (to restore parentage) + the delete
+          const commands: any[] = children.map((child) => ({
+            $type: 'set-parent' as const,
+            taskId: child.id,
+            oldParentId: taskId,
+            newParentId: null as string | null,
+            executedAt: new Date().toISOString(),
+          }));
+          commands.push({
+            $type: 'delete',
+            deletedTask: task,
+            executedAt: new Date().toISOString(),
+          });
+          undo.recordCommand({
+            $type: 'batch',
+            batchDescription: `Delete task only: ${taskId}`,
+            commands,
+            executedAt: new Date().toISOString(),
+          });
+          undo.saveHistory();
+        }
+        return result;
+      }
+
       const result = deleteTask(db, taskId);
       if (result.type === 'success') {
         undo.recordCommand({

@@ -53,9 +53,10 @@ export const tasksInvokerFactory = (ipcRenderer: Electron.IpcRenderer) => ({
     newDescription: string,
   ) => TryResult<TaskResult>,
 
-  [TASKS_DELETE]: ((taskId: string) =>
-    ipcRenderer.invoke(TASKS_DELETE, taskId)) as (
+  [TASKS_DELETE]: ((taskId: string, cascade?: boolean) =>
+    ipcRenderer.invoke(TASKS_DELETE, taskId, cascade)) as (
     taskId: string,
+    cascade?: boolean,
   ) => TryResult<TaskResult>,
 
   [TASKS_MOVE]: ((taskId: string, targetList: string) =>

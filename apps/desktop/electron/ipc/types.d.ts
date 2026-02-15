@@ -25,6 +25,7 @@ export type IPC = ReturnType<typeof tasksInvokerFactory> &
   ReturnType<typeof windowInvokerFactory> &
   ReturnType<typeof reminderInvokerFactory> &
   ReturnType<typeof logsInvokerFactory> & {
+    homePath: string;
     onLogEntry: (callback: (entry: LogEntry) => void) => () => void;
     onDbChanged: (callback: () => void) => () => void;
     onPopupHidden: (callback: () => void) => () => void;
