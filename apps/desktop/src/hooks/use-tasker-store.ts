@@ -28,6 +28,7 @@ interface TaskerState {
   lists: string[];
   defaultList: string;
   collapsedLists: Set<string>;
+  hideCompletedLists: Set<string>;
   relDetails: Record<string, TaskRelDetails>;
   searchQuery: string;
   statusMessage: string;
@@ -41,6 +42,8 @@ type Action =
   | { type: 'SET_DEFAULT_LIST'; name: string }
   | { type: 'SET_COLLAPSED'; name: string; collapsed: boolean }
   | { type: 'SET_COLLAPSED_MAP'; map: Map<string, boolean> }
+  | { type: 'SET_HIDE_COMPLETED'; name: string; hide: boolean }
+  | { type: 'SET_HIDE_COMPLETED_MAP'; map: Map<string, boolean> }
   | { type: 'SET_REL_DETAILS'; details: Record<string, TaskRelDetails> }
   | { type: 'SET_SEARCH'; query: string }
   | { type: 'SET_STATUS_MESSAGE'; message: string }
@@ -70,6 +73,19 @@ function reducer(state: TaskerState, action: Action): TaskerState {
         if (collapsed) set.add(name);
       }
       return { ...state, collapsedLists: set };
+    }
+    case 'SET_HIDE_COMPLETED': {
+      const next = new Set(state.hideCompletedLists);
+      if (action.hide) next.add(action.name);
+      else next.delete(action.name);
+      return { ...state, hideCompletedLists: next };
+    }
+    case 'SET_HIDE_COMPLETED_MAP': {
+      const set = new Set<string>();
+      for (const [name, hide] of action.map) {
+        if (hide) set.add(name);
+      }
+      return { ...state, hideCompletedLists: set };
     }
     case 'SET_REL_DETAILS':
       return { ...state, relDetails: action.details };
@@ -121,6 +137,7 @@ const initialState: TaskerState = {
   lists: [],
   defaultList: 'tasks',
   collapsedLists: new Set(),
+  hideCompletedLists: new Set(),
   relDetails: {},
   searchQuery: '',
   statusMessage: '',
@@ -158,6 +175,16 @@ export function useTaskerStore() {
         }),
       );
       dispatch({ type: 'SET_COLLAPSED_MAP', map: collapsedMap });
+
+      // Load hide-completed states
+      const hideCompletedMap = new Map<string, boolean>();
+      await Promise.all(
+        lists.map(async (name) => {
+          const hide = await listService.isListHideCompleted(name);
+          hideCompletedMap.set(name, hide);
+        }),
+      );
+      dispatch({ type: 'SET_HIDE_COMPLETED_MAP', map: hideCompletedMap });
 
       // Load tasks
       const tasks = state.searchQuery
@@ -397,6 +424,15 @@ export function useTaskerStore() {
     [state.collapsedLists],
   );
 
+  const toggleHideCompleted = useCallback(
+    async (name: string) => {
+      const hide = !state.hideCompletedLists.has(name);
+      dispatch({ type: 'SET_HIDE_COMPLETED', name, hide });
+      await listService.setListHideCompleted(name, hide);
+    },
+    [state.hideCompletedLists],
+  );
+
   const toggleCollapseAll = useCallback(async () => {
     const allCollapsed = state.lists.every((name) => state.collapsedLists.has(name));
     const target = !allCollapsed;
@@ -466,6 +502,12 @@ export function useTaskerStore() {
         await listService.setListCollapsed(task.listName, false);
       }
 
+      // Un-hide completed tasks if the target task is done and hidden
+      if (task.status === TS.Done && state.hideCompletedLists.has(task.listName)) {
+        dispatch({ type: 'SET_HIDE_COMPLETED', name: task.listName, hide: false });
+        await listService.setListHideCompleted(task.listName, false);
+      }
+
       // Wait a frame for DOM to update after expanding
       requestAnimationFrame(() => {
         const el = document.querySelector(`[data-task-id="${taskId}"]`);
@@ -478,7 +520,7 @@ export function useTaskerStore() {
         }
       });
     },
-    [state.tasks, state.collapsedLists, showStatus],
+    [state.tasks, state.collapsedLists, state.hideCompletedLists, showStatus],
   );
 
   // Group tasks by list
@@ -512,6 +554,7 @@ export function useTaskerStore() {
     renameList: renameListAction,
     reorderList: reorderListAction,
     toggleCollapsed,
+    toggleHideCompleted,
     toggleCollapseAll,
     undo: undoAction,
     redo: redoAction,

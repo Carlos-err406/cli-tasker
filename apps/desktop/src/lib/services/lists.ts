@@ -34,6 +34,14 @@ export async function setListCollapsed(name: string, collapsed: boolean) {
   return unwrap(IPC['lists:setCollapsed'](name, collapsed));
 }
 
+export async function isListHideCompleted(name: string): Promise<boolean> {
+  return unwrap(IPC['lists:isHideCompleted'](name));
+}
+
+export async function setListHideCompleted(name: string, hide: boolean) {
+  return unwrap(IPC['lists:setHideCompleted'](name, hide));
+}
+
 export async function getDefaultList(): Promise<string> {
   return unwrap(IPC['lists:getDefault']());
 }

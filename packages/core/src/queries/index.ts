@@ -63,6 +63,8 @@ export {
   renameList,
   isListCollapsed,
   setListCollapsed,
+  isListHideCompleted,
+  setListHideCompleted,
   reorderList,
   getListIndex,
   isValidListName,

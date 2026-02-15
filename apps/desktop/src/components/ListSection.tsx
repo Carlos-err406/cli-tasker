@@ -8,7 +8,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { ChevronDown, Plus, Ellipsis } from 'lucide-react';
+import { ChevronDown, Plus, Ellipsis, Eye, EyeOff } from 'lucide-react';
 import { SortableTaskItem } from './SortableTaskItem.js';
 
 interface ListSectionProps {
@@ -30,6 +30,8 @@ interface ListSectionProps {
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;
   onTagClick?: (tag: string) => void;
+  hideCompleted: boolean;
+  onToggleHideCompleted: () => void;
 }
 
 export function ListSection({
@@ -51,6 +53,8 @@ export function ListSection({
   onShowStatus,
   onNavigateToTask,
   onTagClick,
+  hideCompleted,
+  onToggleHideCompleted,
 }: ListSectionProps) {
   const [adding, setAdding] = useState(false);
   const [addValue, setAddValue] = useState('');
@@ -70,13 +74,22 @@ export function ListSection({
     if (adding) ac.detect();
   }, [addValue, adding]);
 
-  const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
+  const visibleTasks = useMemo(
+    () => hideCompleted ? tasks.filter((t) => t.status !== 2) : tasks,
+    [tasks, hideCompleted],
+  );
+
+  const taskIds = useMemo(() => visibleTasks.map((t) => t.id), [visibleTasks]);
 
   const pendingCount = tasks.filter((t) => t.status === 0).length;
+  const doneCount = tasks.filter((t) => t.status === 2).length;
   const totalCount = tasks.length;
-  const summary = pendingCount < totalCount
-    ? `${totalCount} task${totalCount !== 1 ? 's' : ''}, ${pendingCount} pending`
-    : `${totalCount} task${totalCount !== 1 ? 's' : ''}`;
+  const hiddenDoneCount = hideCompleted ? doneCount : 0;
+  const summaryParts: string[] = [];
+  summaryParts.push(`${totalCount} task${totalCount !== 1 ? 's' : ''}`);
+  if (pendingCount < totalCount) summaryParts.push(`${pendingCount} pending`);
+  if (hiddenDoneCount > 0) summaryParts.push(`+${hiddenDoneCount} done`);
+  const summary = summaryParts.join(', ');
 
   const startAdd = (initialValue?: string) => {
     setAdding(true);
@@ -175,6 +188,15 @@ export function ListSection({
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
+          {doneCount > 0 && (
+            <button
+              onClick={onToggleHideCompleted}
+              className="text-muted-foreground hover:text-foreground p-0.5"
+              title={hideCompleted ? 'Show completed tasks' : 'Hide completed tasks'}
+            >
+              {hideCompleted ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          )}
           <button
             onClick={() => startAdd()}
             className="text-muted-foreground hover:text-foreground p-0.5"
@@ -257,14 +279,14 @@ export function ListSection({
             </div>
           )}
 
-          {tasks.length === 0 && !adding && (
+          {visibleTasks.length === 0 && !adding && (
             <div className="px-3 py-3 text-xs text-muted-foreground/50 text-center">
-              No tasks
+              {hideCompleted && doneCount > 0 ? 'All tasks completed' : 'No tasks'}
             </div>
           )}
 
           <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-            {tasks.map((task) => (
+            {visibleTasks.map((task) => (
               <SortableTaskItem
                 key={task.id}
                 task={task}

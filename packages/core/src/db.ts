@@ -29,6 +29,7 @@ export const CREATE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS lists (
     name TEXT PRIMARY KEY,
     is_collapsed INTEGER DEFAULT 0,
+    hide_completed INTEGER DEFAULT 0,
     sort_order INTEGER DEFAULT 0
 );
 
@@ -108,6 +109,9 @@ export function createDb(path?: string): TaskerDb {
   // Ensure schema exists (idempotent — all statements use IF NOT EXISTS)
   sqlite.exec(CREATE_SCHEMA_SQL);
   sqlite.exec(`INSERT OR IGNORE INTO lists (name, sort_order) VALUES ('tasks', 0)`);
+
+  // Migrations for existing databases (safe to re-run — ALTER TABLE errors are caught)
+  try { sqlite.exec(`ALTER TABLE lists ADD COLUMN hide_completed INTEGER DEFAULT 0`); } catch { /* column already exists */ }
 
   return drizzle(sqlite, { schema });
 }

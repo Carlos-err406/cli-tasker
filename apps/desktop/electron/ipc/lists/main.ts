@@ -6,6 +6,8 @@ import {
   reorderList,
   isListCollapsed,
   setListCollapsed,
+  isListHideCompleted,
+  setListHideCompleted,
   getDefaultList,
   getListIndex,
   getSortedTasks,
@@ -21,6 +23,8 @@ import {
   LISTS_REORDER,
   LISTS_IS_COLLAPSED,
   LISTS_SET_COLLAPSED,
+  LISTS_IS_HIDE_COMPLETED,
+  LISTS_SET_HIDE_COMPLETED,
   LISTS_GET_DEFAULT,
 } from './channels.js';
 import { log } from './utils.js';
@@ -100,6 +104,14 @@ export const listsRegister: IPCRegisterFunction = (ipcMain, _widget, { db, undo 
 
   ipcMain.handle(LISTS_SET_COLLAPSED, (_, name: string, collapsed: boolean) => {
     return $try(() => setListCollapsed(db, name, collapsed));
+  });
+
+  ipcMain.handle(LISTS_IS_HIDE_COMPLETED, (_, name: string) => {
+    return $try(() => isListHideCompleted(db, name));
+  });
+
+  ipcMain.handle(LISTS_SET_HIDE_COMPLETED, (_, name: string, hide: boolean) => {
+    return $try(() => setListHideCompleted(db, name, hide));
   });
 
   ipcMain.handle(LISTS_GET_DEFAULT, () => {

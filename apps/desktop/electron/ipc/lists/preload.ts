@@ -7,6 +7,8 @@ import {
   LISTS_REORDER,
   LISTS_IS_COLLAPSED,
   LISTS_SET_COLLAPSED,
+  LISTS_IS_HIDE_COMPLETED,
+  LISTS_SET_HIDE_COMPLETED,
   LISTS_GET_DEFAULT,
 } from './channels.js';
 
@@ -45,6 +47,17 @@ export const listsInvokerFactory = (ipcRenderer: Electron.IpcRenderer) => ({
     ipcRenderer.invoke(LISTS_SET_COLLAPSED, name, collapsed)) as (
     name: string,
     collapsed: boolean,
+  ) => TryResult<void>,
+
+  [LISTS_IS_HIDE_COMPLETED]: ((name: string) =>
+    ipcRenderer.invoke(LISTS_IS_HIDE_COMPLETED, name)) as (
+    name: string,
+  ) => TryResult<boolean>,
+
+  [LISTS_SET_HIDE_COMPLETED]: ((name: string, hide: boolean) =>
+    ipcRenderer.invoke(LISTS_SET_HIDE_COMPLETED, name, hide)) as (
+    name: string,
+    hide: boolean,
   ) => TryResult<void>,
 
   [LISTS_GET_DEFAULT]: (() =>

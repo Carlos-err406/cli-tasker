@@ -374,6 +374,8 @@ export default function App() {
                       onShowStatus={store.showStatus}
                       onNavigateToTask={store.navigateToTask}
                       onTagClick={(tag) => setSearchInput(`tag:${tag}`)}
+                      hideCompleted={store.hideCompletedLists.has(listName)}
+                      onToggleHideCompleted={() => store.toggleHideCompleted(listName)}
                     />
                   );
                 })}

@@ -5,4 +5,6 @@ export const LISTS_RENAME = 'lists:rename';
 export const LISTS_REORDER = 'lists:reorder';
 export const LISTS_IS_COLLAPSED = 'lists:isCollapsed';
 export const LISTS_SET_COLLAPSED = 'lists:setCollapsed';
+export const LISTS_IS_HIDE_COMPLETED = 'lists:isHideCompleted';
+export const LISTS_SET_HIDE_COMPLETED = 'lists:setHideCompleted';
 export const LISTS_GET_DEFAULT = 'lists:getDefault';

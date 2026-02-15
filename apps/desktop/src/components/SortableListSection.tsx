@@ -23,6 +23,8 @@ interface SortableListSectionProps {
   onShowStatus: (message: string) => void;
   onNavigateToTask: (taskId: string) => void;
   onTagClick?: (tag: string) => void;
+  hideCompleted: boolean;
+  onToggleHideCompleted: () => void;
 }
 
 export function SortableListSection({ listName, ...rest }: SortableListSectionProps) {

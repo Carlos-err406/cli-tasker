@@ -70,6 +70,17 @@ export function setListCollapsed(db: TaskerDb, listName: ListName, collapsed: bo
   db.update(lists).set({ isCollapsed: collapsed ? 1 : 0 }).where(eq(lists.name, listName)).run();
 }
 
+/** Check if a list hides completed tasks */
+export function isListHideCompleted(db: TaskerDb, listName: ListName): boolean {
+  const row = db.select({ hideCompleted: lists.hideCompleted }).from(lists).where(eq(lists.name, listName)).get();
+  return row?.hideCompleted === 1;
+}
+
+/** Set a list's hide-completed state */
+export function setListHideCompleted(db: TaskerDb, listName: ListName, hide: boolean): void {
+  db.update(lists).set({ hideCompleted: hide ? 1 : 0 }).where(eq(lists.name, listName)).run();
+}
+
 /** Reorder a list within the list order */
 export function reorderList(db: TaskerDb, listName: ListName, newIndex: number): void {
   const allNames = getAllListNames(db);
