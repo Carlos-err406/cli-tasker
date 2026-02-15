@@ -6,6 +6,7 @@ import registerIPCs from './ipc/register.js';
 import { createTray, getPopupWindow } from './lib/tray.js';
 import { startDbWatcher, stopDbWatcher } from './lib/watcher.js';
 import { startReminderSync, stopReminderSync } from './lib/reminder-sync/index.js';
+import { initLogCapture } from './lib/log-buffer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +20,9 @@ process.env['APP_ROOT'] = path.join(__dirname, '..');
 process.env['VITE_PUBLIC'] = process.env['VITE_DEV_SERVER_URL']
   ? path.join(process.env['APP_ROOT'], 'public')
   : path.join(process.env['APP_ROOT'], 'dist');
+
+// Capture logs before anything else runs
+initLogCapture();
 
 // Prevent multiple instances
 const gotLock = app.requestSingleInstanceLock();

@@ -4,6 +4,8 @@ import { listsInvokerFactory } from './ipc/lists/preload.js';
 import { undoInvokerFactory } from './ipc/undo/preload.js';
 import { windowInvokerFactory } from './ipc/window/preload.js';
 import { reminderInvokerFactory } from './ipc/reminder/preload.js';
+import { logsInvokerFactory } from './ipc/logs/preload.js';
+import { LOGS_ENTRY } from './ipc/logs/channels.js';
 
 contextBridge.exposeInMainWorld('ipc', {
   ...tasksInvokerFactory(ipcRenderer),
@@ -11,6 +13,14 @@ contextBridge.exposeInMainWorld('ipc', {
   ...undoInvokerFactory(ipcRenderer),
   ...windowInvokerFactory(ipcRenderer),
   ...reminderInvokerFactory(ipcRenderer),
+  ...logsInvokerFactory(ipcRenderer),
+  onLogEntry: (callback: (entry: import('./lib/log-buffer.js').LogEntry) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, entry: import('./lib/log-buffer.js').LogEntry) => callback(entry);
+    ipcRenderer.on(LOGS_ENTRY, handler);
+    return () => {
+      ipcRenderer.removeListener(LOGS_ENTRY, handler);
+    };
+  },
   onDbChanged: (callback: () => void) => {
     ipcRenderer.on('db:changed', callback);
     return () => {

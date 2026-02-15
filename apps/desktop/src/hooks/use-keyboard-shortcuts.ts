@@ -7,6 +7,7 @@ interface ShortcutHandlers {
   onRefresh: () => void;
   onFocusSearch: () => void;
   onToggleHelp: () => void;
+  onToggleLogs: () => void;
   onApplySort: () => void;
   onToggleCollapseAll: () => void;
   onEscape: () => void;
@@ -50,6 +51,13 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       if (meta && e.key === 'j') {
         e.preventDefault();
         handlers.onApplySort();
+        return;
+      }
+
+      // Cmd+L - toggle logs
+      if (meta && e.key === 'l') {
+        e.preventDefault();
+        handlers.onToggleLogs();
         return;
       }
 

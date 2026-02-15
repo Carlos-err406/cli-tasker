@@ -22,11 +22,12 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { ChevronDown, Plus, CircleHelp, ArrowUpDown, ChevronsDownUp } from 'lucide-react';
+import { ChevronDown, Plus, CircleHelp, ArrowUpDown, ChevronsDownUp, Terminal } from 'lucide-react';
 import { SortableListSection } from '@/components/SortableListSection.js';
 import { TaskItem } from '@/components/TaskItem.js';
 import { SearchBar } from '@/components/SearchBar.js';
 import { HelpPanel } from '@/components/HelpPanel.js';
+import { LogsPanel } from '@/components/LogsPanel.js';
 
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   ...transform,
@@ -36,6 +37,7 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
 export default function App() {
   const store = useTaskerStore();
   const [showHelp, setShowHelp] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [creatingList, setCreatingList] = useState(false);
   const [newListName, setNewListName] = useState('');
@@ -67,10 +69,16 @@ export default function App() {
     setShowHelp((v) => !v);
   }, []);
 
+  const handleToggleLogs = useCallback(() => {
+    setShowLogs((v) => !v);
+  }, []);
+
   const handleEscape = useCallback(() => {
-    // ESC closes the topmost layer: help > filter menu > creating list > window
+    // ESC closes the topmost layer: help > logs > filter menu > creating list > window
     if (showHelp) {
       setShowHelp(false);
+    } else if (showLogs) {
+      setShowLogs(false);
     } else if (showFilterMenu) {
       setShowFilterMenu(false);
     } else if (creatingList) {
@@ -78,7 +86,7 @@ export default function App() {
     } else {
       hideWindow();
     }
-  }, [showHelp, showFilterMenu, creatingList]);
+  }, [showHelp, showLogs, showFilterMenu, creatingList]);
 
   useKeyboardShortcuts({
     onUndo: store.undo,
@@ -86,6 +94,7 @@ export default function App() {
     onRefresh: store.refresh,
     onFocusSearch: () => searchRef.current?.focus(),
     onToggleHelp: handleToggleHelp,
+    onToggleLogs: handleToggleLogs,
     onApplySort: store.applySystemSort,
     onToggleCollapseAll: store.toggleCollapseAll,
     onEscape: handleEscape,
@@ -262,6 +271,14 @@ export default function App() {
         </button>
 
         <button
+          onClick={handleToggleLogs}
+          className="text-muted-foreground hover:text-foreground p-0.5"
+          title="Logs (⌘L)"
+        >
+          <Terminal className="h-4 w-4" />
+        </button>
+
+        <button
           onClick={handleToggleHelp}
           className="text-muted-foreground hover:text-foreground p-0.5"
           title="Help (&#8984;/)"
@@ -283,6 +300,8 @@ export default function App() {
       <div className="flex-1 overflow-auto relative">
         {showHelp ? (
           <HelpPanel onClose={() => setShowHelp(false)} />
+        ) : showLogs ? (
+          <LogsPanel onClose={() => setShowLogs(false)} />
         ) : (
           <>
             {/* Create list inline */}
