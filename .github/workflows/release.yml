@@ -50,6 +50,10 @@ jobs:
         env:
           CI: true
 
+      - name: Remove macOS-only native module
+        shell: bash
+        run: rm -rf node_modules/.pnpm/eventkit-node@*/node_modules/eventkit-node
+
       - name: Package for Windows
         run: pnpm --filter @tasker/desktop run package -- --win
         env:

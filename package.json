@@ -21,11 +21,6 @@
       "esbuild",
       "electron",
       "eventkit-node"
-    ],
-    "packageExtensions": {
-      "eventkit-node": {
-        "os": ["darwin"]
-      }
-    }
+    ]
   }
 }
