@@ -23,7 +23,7 @@ const POLL_INTERVAL_MS = 60_000; // Check Reminders.app for completions every 60
 
 export function startReminderSync(db: TaskerDb): void {
   dbRef = db;
-  const settings = getSettings();
+  const settings = getSettings(db);
   log(`initialized (enabled: ${settings.enabled}, calendar: "${settings.listPrefix}")`);
   if (settings.enabled) {
     syncNow(db).then((status) => {
@@ -65,7 +65,7 @@ function stopPolling(): void {
 
 export function triggerSync(): void {
   if (!dbRef) return;
-  const settings = getSettings();
+  const settings = getSettings(dbRef);
   if (!settings.enabled) return;
 
   if (debounceTimer) {
@@ -82,7 +82,7 @@ export function triggerSync(): void {
 }
 
 export async function syncNow(db: TaskerDb): Promise<SyncStatus> {
-  const settings = getSettings();
+  const settings = getSettings(db);
   if (!settings.enabled) {
     return currentStatus;
   }
@@ -95,14 +95,15 @@ export function getSyncStatus(): SyncStatus {
 }
 
 export async function updateSettings(
+  db: TaskerDb,
   settings: ReminderSyncSettings,
 ): Promise<SyncStatus> {
   log('settings updated:', settings);
-  saveSettings(settings);
+  saveSettings(db, settings);
 
-  if (settings.enabled && dbRef) {
-    currentStatus = await performSync(dbRef, settings);
-    startPolling(dbRef);
+  if (settings.enabled) {
+    currentStatus = await performSync(db, settings);
+    startPolling(db);
   } else {
     stopPolling();
     currentStatus = { lastSyncAt: null, lastError: null, eventCount: 0 };

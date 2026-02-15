@@ -18,8 +18,8 @@ export function createTray(db?: import('@tasker/core').TaskerDb): Tray {
   tray.setToolTip('Tasker');
   tray.on('click', () => togglePopup());
   tray.on('right-click', () => {
-    const reminderSettings = getSettings();
-    const dueDateSettings = getDueDateSettings();
+    const reminderSettings = getSettings(dbRef!);
+    const dueDateSettings = getDueDateSettings(dbRef!);
     const contextMenu = Menu.buildFromTemplate([
       { label: 'Open', click: () => togglePopup() },
       { type: 'separator' },
@@ -28,8 +28,8 @@ export function createTray(db?: import('@tasker/core').TaskerDb): Tray {
         type: 'checkbox',
         checked: reminderSettings.enabled,
         click: (menuItem) => {
-          updateSettings({
-            ...getSettings(),
+          updateSettings(dbRef!, {
+            ...getSettings(dbRef!),
             enabled: menuItem.checked,
           }).then((status) => {
             if (menuItem.checked) {

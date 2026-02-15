@@ -18,12 +18,12 @@ import { log } from './utils.js';
 export const reminderRegister: IPCRegisterFunction = (ipcMain, _widget, { db }) => {
   ipcMain.handle(REMINDER_GET_SETTINGS, () => {
     log('getSettings');
-    return $try(() => getSettings());
+    return $try(() => getSettings(db));
   });
 
   ipcMain.handle(REMINDER_SET_SETTINGS, (_, settings: ReminderSyncSettings) => {
     log('setSettings', settings);
-    return $try(() => updateSettings(settings));
+    return $try(() => updateSettings(db, settings));
   });
 
   ipcMain.handle(REMINDER_SYNC_NOW, () => {

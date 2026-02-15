@@ -7,6 +7,7 @@ import { createTray, getPopupWindow, openPopupWithSearch } from './lib/tray.js';
 import { startDbWatcher, stopDbWatcher } from './lib/watcher.js';
 import { startReminderSync, stopReminderSync } from './lib/reminder-sync/index.js';
 import { startDueDateNotifier, stopDueDateNotifier } from './lib/due-date-notifier.js';
+import { migrateJsonSettings } from './lib/migrate-json-settings.js';
 import { initLogCapture } from './lib/log-buffer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,6 +50,9 @@ if (!gotLock) {
     const dbPath = getDefaultDbPath();
     const db = createDb(dbPath);
     const undo = new UndoManager(db);
+
+    // Migrate legacy JSON settings files to SQLite config table
+    migrateJsonSettings(db);
 
     // Register IPC handlers with shared context
     registerIPCs(ipcMain, null, { db, undo });

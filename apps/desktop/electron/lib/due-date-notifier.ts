@@ -1,7 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { Notification, app } from 'electron';
-import { searchTasks, TaskStatus } from '@tasker/core';
+import { Notification } from 'electron';
+import { getConfig, setConfig, searchTasks, TaskStatus } from '@tasker/core';
 import type { TaskerDb, Task } from '@tasker/core';
 
 const log: typeof console.log = (...args) =>
@@ -14,24 +12,13 @@ interface DueDateNotifierSettings {
 }
 
 const DEFAULT_SETTINGS: DueDateNotifierSettings = { enabled: true };
-const SETTINGS_FILE = 'due-date-notifier.json';
+const CONFIG_KEY = 'desktop.due_date_notifier';
 
-function getUserDataDir(): string {
+export function getSettings(db: TaskerDb): DueDateNotifierSettings {
   try {
-    return app.getPath('userData');
-  } catch {
-    return path.join(
-      process.env['HOME'] || process.env['APPDATA'] || '.',
-      '.tasker-desktop',
-    );
-  }
-}
-
-export function getSettings(): DueDateNotifierSettings {
-  try {
-    const filePath = path.join(getUserDataDir(), SETTINGS_FILE);
-    if (fs.existsSync(filePath)) {
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const raw = getConfig(db, CONFIG_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
       return {
         enabled: typeof data.enabled === 'boolean' ? data.enabled : DEFAULT_SETTINGS.enabled,
       };
@@ -42,19 +29,8 @@ export function getSettings(): DueDateNotifierSettings {
   return { ...DEFAULT_SETTINGS };
 }
 
-function saveSettings(settings: DueDateNotifierSettings): void {
-  try {
-    const dir = getUserDataDir();
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(
-      path.join(dir, SETTINGS_FILE),
-      JSON.stringify(settings, null, 2),
-    );
-  } catch {
-    // ignore
-  }
+function saveSettings(db: TaskerDb, settings: DueDateNotifierSettings): void {
+  setConfig(db, CONFIG_KEY, JSON.stringify(settings));
 }
 
 // --- Notifier ---
@@ -80,7 +56,7 @@ export interface DueDateNotifierOptions {
 export function startDueDateNotifier(db: TaskerDb, opts: DueDateNotifierOptions): void {
   dbRef = db;
   onClickCallback = opts.onNotificationClick;
-  const settings = getSettings();
+  const settings = getSettings(db);
   log(`initialized (enabled: ${settings.enabled})`);
   if (settings.enabled) {
     startPolling(db);
@@ -96,7 +72,7 @@ export function stopDueDateNotifier(): void {
 }
 
 export function setEnabled(db: TaskerDb, enabled: boolean): void {
-  saveSettings({ enabled });
+  saveSettings(db, { enabled });
   log(`enabled: ${enabled}`);
   if (enabled) {
     dbRef = db;
