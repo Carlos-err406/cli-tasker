@@ -38,8 +38,18 @@ dotnet tool install -g cli-tasker
 ```bash
 git clone https://github.com/Carlos-err406/cli-tasker.git
 cd cli-tasker
-dotnet build
+./install.sh
 ```
+
+### macOS: "damaged" warning when installing from GitHub Releases
+
+macOS quarantines apps downloaded from the internet. Since Tasker is not code-signed, macOS will show a "damaged" warning when opening the app. To fix this, run:
+
+```bash
+xattr -cr /Applications/Tasker.app
+```
+
+This is not needed when installing from source via `install.sh`.
 
 ## Quick Start
 
