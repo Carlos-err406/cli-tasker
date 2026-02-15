@@ -1,10 +1,10 @@
 # cli-tasker
 
-A lightweight task manager for the terminal. Manage tasks from the CLI, an interactive TUI, or a macOS menu bar app — all backed by the same SQLite database.
+A lightweight task manager with two interfaces: a CLI (`tasker` command) and a macOS menu bar app — all backed by the same SQLite database.
 
 ## Features
 
-- **Three interfaces** — CLI commands, interactive TUI, and macOS menu bar app (TaskerTray)
+- **Two interfaces** — CLI commands and macOS menu bar app (Electron tray)
 - **3-state tasks** — Pending, In-Progress, and Done with status cycling
 - **Multiple lists** — Organize tasks into named lists with a configurable default
 - **Task dependencies** — Subtask hierarchies and blocking relationships with cascade operations
@@ -18,20 +18,43 @@ A lightweight task manager for the terminal. Manage tasks from the CLI, an inter
 - **Backup & Restore** — Automatic SQLite backups with hot backup API
 - **Batch operations** — Check, uncheck, and delete multiple tasks at once
 - **Soft delete** — Trash with restore, not permanent deletion
+- **Drag-and-drop reordering** — Manual task ordering in the desktop app
+- **Markdown descriptions** — Rich text rendering with task checklists, links, and nested lists
+- **macOS Reminders sync** — Tasks with due dates sync to macOS Reminders
 - **3-character IDs** — Short task IDs for easy reference
+
+## Tech Stack
+
+| | |
+|---|---|
+| **Language** | TypeScript |
+| **Monorepo** | pnpm workspaces |
+| **Database** | SQLite (Drizzle ORM + libsql) |
+| **CLI** | Commander.js + Chalk |
+| **Desktop** | Electron + React + Tailwind CSS |
+| **Testing** | Vitest |
 
 ## Requirements
 
-- .NET 10.0 or later
-- macOS for TaskerTray (menu bar app)
+- Node.js 22+
+- pnpm 10+
+- macOS for the desktop menu bar app
 
 ## Installation
 
-### As a global tool
+### From GitHub Releases
+
+Download the latest release from the [Releases page](https://github.com/Carlos-err406/cli-tasker/releases).
+
+#### macOS: "damaged" warning
+
+macOS quarantines apps downloaded from the internet. Since Tasker is not code-signed, macOS will show a "damaged" warning when opening the app. To fix this, run:
 
 ```bash
-dotnet tool install -g cli-tasker
+xattr -cr /Applications/Tasker.app
 ```
+
+This is not needed when installing from source.
 
 ### From source
 
@@ -40,16 +63,6 @@ git clone https://github.com/Carlos-err406/cli-tasker.git
 cd cli-tasker
 ./install.sh
 ```
-
-### macOS: "damaged" warning when installing from GitHub Releases
-
-macOS quarantines apps downloaded from the internet. Since Tasker is not code-signed, macOS will show a "damaged" warning when opening the app. To fix this, run:
-
-```bash
-xattr -cr /Applications/Tasker.app
-```
-
-This is not needed when installing from source via `install.sh`.
 
 ## Quick Start
 
@@ -68,9 +81,6 @@ tasker wip abc
 
 # Mark as done
 tasker check abc
-
-# Launch interactive TUI
-tasker
 ```
 
 ## Usage
@@ -117,33 +127,9 @@ tasker
 | `-p, --priority <level>` | Filter by priority (high, medium, low) |
 | `--overdue` | Show only overdue tasks |
 
-### Interactive TUI
+### Menu Bar App
 
-Run `tasker` with no arguments to launch the interactive terminal UI:
-
-| Key | Action |
-|-----|--------|
-| Arrow keys | Navigate |
-| Space / Enter | Cycle status (Pending -> In-Progress -> Done) |
-| `a` | Add task |
-| `s` | Add subtask of selected task |
-| `r` | Rename selected task |
-| `x` / Delete | Delete selected task |
-| `1` / `2` / `3` / `0` | Set priority (High / Medium / Low / Clear) |
-| `d` | Set due date |
-| `Shift+D` | Clear due date |
-| `l` | Switch list |
-| `m` | Move task to another list |
-| `/` | Search |
-| `v` | Multi-select mode (then `c`=check, `u`=uncheck, `x`=delete) |
-| `z` / `Shift+Z` | Undo / Redo |
-| `q` / Esc | Quit |
-
-### Menu Bar App (TaskerTray)
-
-A macOS menu bar app that shares the same database. Features task list popup, quick-add window, search, drag reorder, and keyboard shortcuts (Cmd+Z for undo).
-
-Built with Avalonia. Installed to /Applications via `update.sh`.
+A macOS menu bar app that shares the same database. Features task list popup, quick-add, search, drag-and-drop reordering, markdown rendering, tag filtering, and keyboard shortcuts (Cmd+Z for undo).
 
 ### Inline Metadata
 
@@ -158,6 +144,9 @@ tasker add "Write unit tests\n^abc"
 
 # Blocking relationship
 tasker add "Fix auth bug\n!def"
+
+# Related task
+tasker add "Update docs\n~ghi"
 ```
 
 | Marker | Meaning |
@@ -167,6 +156,7 @@ tasker add "Fix auth bug\n!def"
 | `#tag` | Tag |
 | `^abc` | Subtask of task abc |
 | `!abc` | Blocks task abc |
+| `~abc` | Related to task abc |
 
 ### Task Dependencies
 
@@ -200,32 +190,25 @@ tasker list -a           # Shows all lists
 
 ## Architecture
 
-Three-project structure sharing a core library:
+pnpm monorepo with three packages sharing a core library:
 
 ```
-cli-tasker       → CLI + TUI (System.CommandLine, Spectre.Console)
-TaskerCore       → Shared core (SQLite, models, data layer)
-TaskerTray       → macOS menu bar app (Avalonia)
+packages/core/    → Shared core (SQLite, Drizzle ORM, models, queries, undo system)
+apps/cli/         → CLI tool (Commander.js + Chalk)
+apps/desktop/     → macOS menu bar app (Electron + React + Tailwind)
 ```
 
-All data stored in SQLite with WAL mode for concurrent access:
+All data stored in SQLite with WAL mode for concurrent CLI + desktop access:
 `~/Library/Application Support/cli-tasker/tasker.db`
 
 ## Building from Source
 
 ```bash
-# Build CLI
-dotnet build
-
-# Run tests
-dotnet test
-
-# Package and install globally
-dotnet pack -c Release -o ./nupkg
-dotnet tool install -g cli-tasker --add-source ./nupkg
-
-# Build and install everything (CLI + TaskerTray)
-./update.sh patch
+pnpm install
+pnpm build                # Build all packages
+pnpm test                 # Run all tests
+pnpm typecheck            # Typecheck all packages
+pnpm dev:desktop          # Run desktop app in dev mode
 ```
 
 ## License
