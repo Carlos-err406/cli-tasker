@@ -69,6 +69,10 @@ export function HelpPanel({ onClose }: HelpPanelProps) {
             <span>Filter by list</span>
             <span className="font-mono">has:subtasks</span>
             <span>subtasks, parent, due, tags</span>
+            <span className="font-mono">id:abc</span>
+            <span>Filter by task ID prefix</span>
+            <span className="font-mono">status:!done</span>
+            <span>Negate any filter with !</span>
           </div>
         </section>
 

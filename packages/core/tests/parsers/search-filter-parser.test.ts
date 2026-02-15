@@ -201,4 +201,118 @@ describe('parseSearchFilters', () => {
     expect(f.descriptionQuery).toBe('hello world');
     expect(f.tags).toEqual(['ui']);
   });
+
+  // --- Negation filters ---
+
+  it('parses status:!done as notStatus', () => {
+    const f = parseSearchFilters('status:!done');
+    expect(f.notStatus).toBe(TaskStatus.Done);
+    expect(f.status).toBeNull();
+    expect(f.descriptionQuery).toBe('');
+  });
+
+  it('parses tag:!ui as notTags', () => {
+    const f = parseSearchFilters('tag:!ui');
+    expect(f.notTags).toEqual(['ui']);
+    expect(f.tags).toEqual([]);
+  });
+
+  it('parses multiple negated tags', () => {
+    const f = parseSearchFilters('tag:!ui tag:!bug');
+    expect(f.notTags).toEqual(['ui', 'bug']);
+  });
+
+  it('parses priority:!high as notPriority', () => {
+    const f = parseSearchFilters('priority:!high');
+    expect(f.notPriority).toBe(Priority.High);
+    expect(f.priority).toBeNull();
+  });
+
+  it('parses due:!today as notDueFilter', () => {
+    const f = parseSearchFilters('due:!today');
+    expect(f.notDueFilter).toBe('today');
+    expect(f.dueFilter).toBeNull();
+  });
+
+  it('parses list:!backlog as notListName', () => {
+    const f = parseSearchFilters('list:!backlog');
+    expect(f.notListName).toBe('backlog');
+    expect(f.listName).toBeNull();
+  });
+
+  it('preserves case for negated list names', () => {
+    const f = parseSearchFilters('list:!MyList');
+    expect(f.notListName).toBe('MyList');
+  });
+
+  it('parses has:!due as notHas.due', () => {
+    const f = parseSearchFilters('has:!due');
+    expect(f.notHas.due).toBe(true);
+    expect(f.has.due).toBeUndefined();
+  });
+
+  it('parses has:!subtasks as notHas.subtasks', () => {
+    const f = parseSearchFilters('has:!subtasks');
+    expect(f.notHas.subtasks).toBe(true);
+  });
+
+  it('parses has:!parent as notHas.parent', () => {
+    const f = parseSearchFilters('has:!parent');
+    expect(f.notHas.parent).toBe(true);
+  });
+
+  it('parses has:!tags as notHas.tags', () => {
+    const f = parseSearchFilters('has:!tags');
+    expect(f.notHas.tags).toBe(true);
+  });
+
+  it('keeps unknown negated status as text', () => {
+    const f = parseSearchFilters('status:!foobar');
+    expect(f.notStatus).toBeNull();
+    expect(f.descriptionQuery).toBe('status:!foobar');
+  });
+
+  it('keeps unknown negated priority as text', () => {
+    const f = parseSearchFilters('priority:!urgent');
+    expect(f.notPriority).toBeNull();
+    expect(f.descriptionQuery).toBe('priority:!urgent');
+  });
+
+  it('combines negated and positive filters', () => {
+    const f = parseSearchFilters('status:!done tag:ui');
+    expect(f.notStatus).toBe(TaskStatus.Done);
+    expect(f.tags).toEqual(['ui']);
+    expect(f.descriptionQuery).toBe('');
+  });
+
+  it('combines negated and positive tags', () => {
+    const f = parseSearchFilters('tag:ui tag:!bug');
+    expect(f.tags).toEqual(['ui']);
+    expect(f.notTags).toEqual(['bug']);
+  });
+
+  // --- ID filter ---
+
+  it('parses id:abc as idPrefix', () => {
+    const f = parseSearchFilters('id:abc');
+    expect(f.idPrefix).toBe('abc');
+    expect(f.descriptionQuery).toBe('');
+  });
+
+  it('preserves case for id filter', () => {
+    const f = parseSearchFilters('id:AbC');
+    expect(f.idPrefix).toBe('AbC');
+  });
+
+  it('combines id filter with other filters', () => {
+    const f = parseSearchFilters('id:abc status:done');
+    expect(f.idPrefix).toBe('abc');
+    expect(f.status).toBe(TaskStatus.Done);
+  });
+
+  it('combines id filter with free text', () => {
+    const f = parseSearchFilters('fix bug id:abc');
+    expect(f.idPrefix).toBe('abc');
+    expect(f.descriptionQuery).toBe('fix bug');
+  });
 });

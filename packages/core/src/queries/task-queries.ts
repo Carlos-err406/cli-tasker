@@ -3,7 +3,7 @@
  * Port of TodoTaskList from C# — the largest single file in the codebase.
  */
 
-import { eq, and, desc, max, count, sql } from 'drizzle-orm';
+import { eq, ne, and, desc, max, count, sql } from 'drizzle-orm';
 import type { TaskerDb } from '../db.js';
 import { getRawDb } from '../db.js';
 import type { Task, TaskId, ListName } from '../types/task.js';
@@ -171,6 +171,69 @@ export function searchTasks(db: TaskerDb, query: string): Task[] {
     conditions.push(sql`${tasks.parentId} IS NOT NULL` as any);
   }
 
+  // --- Negation filters ---
+
+  // notStatus
+  if (filters.notStatus != null) {
+    conditions.push(ne(tasks.status, filters.notStatus));
+  }
+
+  // notPriority
+  if (filters.notPriority != null) {
+    conditions.push(sql`(${tasks.priority} IS NULL OR ${tasks.priority} != ${filters.notPriority})` as any);
+  }
+
+  // notListName
+  if (filters.notListName != null) {
+    conditions.push(ne(tasks.listName, filters.notListName));
+  }
+
+  // notDueFilter — invert the date range
+  if (filters.notDueFilter) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = formatDate(today);
+
+    switch (filters.notDueFilter) {
+      case 'today':
+        conditions.push(sql`(${tasks.dueDate} IS NULL OR ${tasks.dueDate} != ${todayStr})` as any);
+        break;
+      case 'overdue':
+        conditions.push(sql`(${tasks.dueDate} IS NULL OR ${tasks.dueDate} >= ${todayStr})` as any);
+        break;
+      case 'week': {
+        const weekEnd = formatDate(addDays(today, 7));
+        conditions.push(sql`(${tasks.dueDate} IS NULL OR ${tasks.dueDate} < ${todayStr} OR ${tasks.dueDate} > ${weekEnd})` as any);
+        break;
+      }
+      case 'month': {
+        const monthEnd = formatDate(addDays(today, 30));
+        conditions.push(sql`(${tasks.dueDate} IS NULL OR ${tasks.dueDate} < ${todayStr} OR ${tasks.dueDate} > ${monthEnd})` as any);
+        break;
+      }
+    }
+  }
+
+  // notHas:due — tasks WITHOUT a due date
+  if (filters.notHas.due) {
+    conditions.push(sql`${tasks.dueDate} IS NULL` as any);
+  }
+
+  // notHas:tags — tasks WITHOUT tags
+  if (filters.notHas.tags) {
+    conditions.push(sql`${tasks.tags} IS NULL` as any);
+  }
+
+  // notHas:parent — tasks that are NOT subtasks
+  if (filters.notHas.parent) {
+    conditions.push(sql`${tasks.parentId} IS NULL` as any);
+  }
+
+  // ID prefix filter
+  if (filters.idPrefix) {
+    conditions.push(sql`${tasks.id} LIKE ${filters.idPrefix + '%'}` as any);
+  }
+
   const rows = db.select().from(tasks).where(and(...conditions)).orderBy(desc(tasks.sortOrder)).all();
   let results = rows.map(toTask);
 
@@ -183,6 +246,15 @@ export function searchTasks(db: TaskerDb, query: string): Task[] {
     });
   }
 
+  // Post-filter: notTags — exclude tasks that have any of the negated tags
+  if (filters.notTags.length > 0) {
+    results = results.filter(t => {
+      if (!t.tags) return true; // No tags means it can't match a negated tag
+      const lowerTags = t.tags.map(tag => tag.toLowerCase());
+      return !filters.notTags.some(nt => lowerTags.includes(nt));
+    });
+  }
+
   // Post-filter: has:subtasks (needs child lookup)
   if (filters.has.subtasks) {
     const raw = getRawDb(db);
@@ -191,6 +263,16 @@ export function searchTasks(db: TaskerDb, query: string): Task[] {
         .map(r => r.parent_id as string),
     );
     results = results.filter(t => parentIds.has(t.id));
+  }
+
+  // Post-filter: notHas:subtasks — exclude tasks that have subtasks
+  if (filters.notHas.subtasks) {
+    const raw = getRawDb(db);
+    const parentIds = new Set(
+      (raw.prepare(`SELECT DISTINCT parent_id FROM tasks WHERE parent_id IS NOT NULL AND is_trashed = 0`).all() as any[])
+        .map(r => r.parent_id as string),
+    );
+    results = results.filter(t => !parentIds.has(t.id));
   }
 
   return sortTasksForDisplay(results);
