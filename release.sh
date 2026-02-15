@@ -19,8 +19,16 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Update version in all package.json files so artifact names match the release tag
+for pkg in package.json packages/core/package.json apps/cli/package.json apps/desktop/package.json; do
+  jq --arg v "$VERSION" '.version = $v' "$pkg" > "$pkg.tmp" && mv "$pkg.tmp" "$pkg"
+done
+
+git add package.json packages/core/package.json apps/cli/package.json apps/desktop/package.json
+git commit -m "chore: bump version to ${VERSION}"
+
 git tag "$TAG"
-git push origin "$TAG"
+git push origin main "$TAG"
 
 echo "Pushed ${TAG} — release workflow triggered."
 echo "https://github.com/Carlos-err406/cli-tasker/actions"
