@@ -9,19 +9,26 @@ const log: typeof console.log = (...args) =>
 function buildSyncableReminders(tasks: Task[]): SyncableReminder[] {
   return tasks
     .filter((t) => t.dueDate != null && !t.isTrashed)
-    .map((t) => ({
-      taskId: t.id,
-      listName: t.listName,
-      title: getDisplayDescription(t.description),
-      date: t.dueDate!,
-      notes: buildNotes(t),
-      completed: t.status === TaskStatus.Done,
-      priority: t.priority,
-    }));
+    .map((t) => {
+      const display = getDisplayDescription(t.description);
+      const lines = display.split('\n');
+      const title = lines[0]!;
+      const descBody = lines.slice(1).join('\n').trim();
+      return {
+        taskId: t.id,
+        listName: t.listName,
+        title,
+        date: t.dueDate!,
+        notes: buildNotes(t, descBody),
+        completed: t.status === TaskStatus.Done,
+        priority: t.priority,
+      };
+    });
 }
 
-function buildNotes(t: Task): string {
+function buildNotes(t: Task, descBody: string): string {
   const parts: string[] = [];
+  if (descBody) parts.push(descBody);
   if (t.priority != null) parts.push(`Priority: ${t.priority}`);
   if (t.tags && t.tags.length > 0) parts.push(`Tags: ${t.tags.join(', ')}`);
   return parts.join('\n');

@@ -10,14 +10,20 @@ function buildSyncableReminders(tasks: Task[]) {
   return tasks
     .filter((t) => t.dueDate != null && !t.isTrashed)
     .map((t) => {
+      const display = getDisplayDescription(t.description);
+      const lines = display.split('\n');
+      const title = lines[0]!;
+      const descBody = lines.slice(1).join('\n').trim();
+
       const noteParts: string[] = [];
+      if (descBody) noteParts.push(descBody);
       if (t.priority != null) noteParts.push(`Priority: ${t.priority}`);
       if (t.tags && t.tags.length > 0) noteParts.push(`Tags: ${t.tags.join(', ')}`);
 
       return {
         taskId: t.id,
         listName: t.listName,
-        title: getDisplayDescription(t.description),
+        title,
         date: t.dueDate!,
         notes: noteParts.join('\n'),
         completed: t.status === TaskStatus.Done,
@@ -144,6 +150,19 @@ describe('Reminder Sync - Task Filtering', () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]!.title).toBe('Clean title');
+  });
+
+  it('splits title from description body for multi-line tasks', () => {
+    addTask(db, 'Buy groceries\n- milk\n- eggs\n- bread\n@2026-04-15', 'default');
+
+    const tasks = getAllTasks(db);
+    const events = buildSyncableReminders(tasks);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.title).toBe('Buy groceries');
+    expect(events[0]!.notes).toContain('- milk');
+    expect(events[0]!.notes).toContain('- eggs');
+    expect(events[0]!.notes).toContain('- bread');
   });
 
   it('sets null priority when no priority', () => {
