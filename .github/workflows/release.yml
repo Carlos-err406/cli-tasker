@@ -100,7 +100,7 @@ jobs:
           CI: true
 
       - name: Install setuptools for node-gyp
-        run: pip3 install setuptools
+        run: pip3 install --break-system-packages setuptools
 
       - name: Package for macOS
         run: pnpm --filter @tasker/desktop run package -- --mac
